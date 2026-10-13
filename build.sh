@@ -1,11 +1,21 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")"
-APP="$PWD/build/Monitor Toggle.app"
+APP="$PWD/build/Mac Utils.app"
 mkdir -p "$APP/Contents/MacOS"
 cp Info.plist "$APP/Contents/Info.plist"
-xcrun swiftc -swift-version 5 -warnings-as-errors -O -target arm64-apple-macos13.0 \
-    DisplayController.swift main.swift -framework AppKit -framework ServiceManagement \
-    -o "$APP/Contents/MacOS/MonitorToggle"
+mkdir -p build/objects
+for source in CStrafe IOHIDPayload; do
+    xcrun clang -O2 -arch arm64 -mmacosx-version-min=15.0 \
+        -I Vendor/strafe/CStrafe/include -c "Vendor/strafe/CStrafe/$source.c" \
+        -o "build/objects/$source.o"
+done
+xcrun swiftc -swift-version 5 -warnings-as-errors -O -target arm64-apple-macos15.0 \
+    -I Vendor/strafe/CStrafe/include \
+    DisplayController.swift MonitorRow.swift CommandRunner.swift BluetoothModule.swift \
+    SpacesModule.swift SettingsWindow.swift Vendor/strafe/Swift/*.swift main.swift \
+    build/objects/*.o -framework AppKit -framework ServiceManagement \
+    -framework ApplicationServices -framework CoreGraphics -framework CoreFoundation -framework IOKit \
+    -o "$APP/Contents/MacOS/MacUtils"
 codesign --force --sign - "$APP"
 echo "Built: $APP"

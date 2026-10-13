@@ -29,6 +29,14 @@ struct Monitor {
     let disabledByApp: Bool
 }
 
+enum DisplaySafety {
+    static func validateDisable(_ id: UInt32, activeIDs: [UInt32], mirroredIDs: Set<UInt32>) throws {
+        guard activeIDs.contains(id) else { throw ToggleError(message: "This display is not an independent active screen.") }
+        guard activeIDs.count > 1 else { throw ToggleError(message: "Refusing to disable the last usable screen.") }
+        guard mirroredIDs.isEmpty else { throw ToggleError(message: "Turn off display mirroring in System Settings first.") }
+    }
+}
+
 final class DisplayController {
     private let defaults = UserDefaults.standard
     private let framework: UnsafeMutableRawPointer?
@@ -44,6 +52,12 @@ final class DisplayController {
     }
 
     init() {
+        if defaults.object(forKey: "displayRecords") == nil,
+           let legacy = UserDefaults(suiteName: "local.jakub.monitor-toggle") {
+            for key in ["displayRecords", "savedLayout", "disabledByApp", "targetUUID", "lastDisplayID", "disabledBootSession"] {
+                if let value = legacy.object(forKey: key) { defaults.set(value, forKey: key) }
+            }
+        }
         // CLI recovery needs a WindowServer connection too.
         _ = NSApplication.shared
         _ = NSScreen.screens
@@ -185,14 +199,8 @@ final class DisplayController {
         if enabled && isEnabled(value) { return }
         if !enabled {
             let active = try activeIDs()
-            guard active.contains(id) else { throw ToggleError(message: "This display is not an independent active screen.") }
-            guard active.contains(where: { $0 != id && CGDisplayMirrorsDisplay($0) == kCGNullDirectDisplay }) else {
-                throw ToggleError(message: "Refusing to disable the last usable screen.")
-            }
-            guard !active.contains(where: { CGDisplayMirrorsDisplay($0) != kCGNullDirectDisplay }),
-                  CGDisplayMirrorsDisplay(id) == kCGNullDirectDisplay else {
-                throw ToggleError(message: "Turn off display mirroring in System Settings first.")
-            }
+            try DisplaySafety.validateDisable(id, activeIDs: active,
+                                              mirroredIDs: Set(active.filter { CGDisplayIsInMirrorSet($0) != 0 }))
             guard let bootSession else { throw ToggleError(message: "Cannot identify this boot session safely.") }
             // Keep the original complete layout until ALL app-disabled screens
             // are restored, rather than overwriting it on every toggle.

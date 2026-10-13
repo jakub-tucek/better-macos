@@ -1,0 +1,4 @@
+module CStrafe {
+    header "CStrafe.h"
+    export *
+}

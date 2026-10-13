@@ -3,6 +3,9 @@ import ServiceManagement
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let controller = DisplayController()
+    private let bluetooth = BluetoothModule()
+    private let spaces = SpacesModule()
+    private var settingsWindow: SettingsWindow?
     private var item: NSStatusItem!
     private var busy = false
     private var restoreTimers: [String: Timer] = [:]
@@ -12,9 +15,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         let menu = NSMenu()
+        menu.minimumWidth = 340
+        menu.autoenablesItems = false
         menu.delegate = self
         item.menu = menu
-        item.button?.image = NSImage(systemSymbolName: "display", accessibilityDescription: "Monitor Toggle")
+        item.button?.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "Mac Utils")
+        bluetooth.onChange = { [weak self] in
+            self?.refresh()
+            self?.settingsWindow?.refreshIfNeeded()
+        }
+        bluetooth.onError = { [weak self] error in self?.showError(error) }
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -22,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.refresh()
         }
         refresh()
+        bluetooth.start()
         if !controller.disabledUUIDs.isEmpty { restoreAll() }
     }
 
@@ -38,19 +49,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func refresh() {
         controller.refreshDisplays()
-        item.button?.toolTip = "Monitor Toggle\n" + controller.status()
+        item.button?.toolTip = "Mac Utils\n" + controller.status()
         item.menu?.removeAllItems()
-        add(busy ? "Switching…" : "Monitors — click to toggle", enabled: false)
+        add(busy ? "Switching…" : "Monitors", enabled: false)
         let monitors = controller.monitors
         let activeCount = (try? controller.activeIDs().count) ?? 0
         if monitors.isEmpty { add("No monitors found", enabled: false) }
         for monitor in monitors {
-            let label = monitor.name + (monitor.isMain ? " (main)" : "") + (monitor.enabled ? "" : " — off")
-            let row = add(label, action: #selector(toggle(_:)),
-                          enabled: !busy && controller.supported && monitor.id != nil && (!monitor.enabled || activeCount > 1))
-            row.state = monitor.enabled ? .on : .off
-            row.representedObject = monitor.uuid
-            row.toolTip = monitor.enabled ? "Disable this monitor" : "Enable this monitor"
+            let canToggle = !busy && controller.supported && monitor.id != nil && (!monitor.enabled || activeCount > 1)
+            let row = add(monitor.name)
+            row.view = MonitorRow(monitor: monitor, canToggle: canToggle, target: self, action: #selector(toggleSwitch(_:)))
             if let remaining = countdowns[monitor.uuid] {
                 let confirm = add("Keep \(monitor.name) disabled (\(remaining)s)", action: #selector(keepDisabled(_:)), enabled: !busy)
                 confirm.representedObject = monitor.uuid
@@ -58,6 +66,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         item.menu?.addItem(.separator())
         add("Enable all disabled monitors", action: #selector(enableAll), enabled: !busy && !controller.disabledUUIDs.isEmpty)
+        item.menu?.addItem(.separator())
+        add("Bluetooth", enabled: false)
+        for device in bluetooth.devices {
+            let row = add(device.name)
+            row.view = MonitorRow(title: device.name,
+                                  subtitle: (device.connected ? "Connected" : "Disconnected") + (bluetooth.autoAddresses.contains(device.address) ? " · Auto-connect" : ""),
+                                  symbol: "antenna.radiowaves.left.and.right", isOn: device.connected,
+                                  canToggle: bluetooth.available && !bluetooth.isBusy,
+                                  identifier: device.address, target: self, action: #selector(toggleBluetooth(_:)))
+        }
+        if bluetooth.devices.isEmpty { add(String(bluetooth.status.prefix(90)), enabled: false) }
+        let auto = add("Auto-connect")
+        auto.view = MonitorRow(title: "Auto-connect", subtitle: bluetooth.legacyServicePresent ? "Owned by existing Bluetooth service" : String(bluetooth.status.prefix(60)),
+                               symbol: "arrow.triangle.2.circlepath", isOn: bluetooth.autoEnabled,
+                               canToggle: bluetooth.available && !bluetooth.legacyServicePresent,
+                               identifier: "auto", target: self, action: #selector(toggleAutoConnect(_:)))
+        item.menu?.addItem(.separator())
+        add("Desktop Spaces", enabled: false)
+        let spaceRow = add("Fast Space switching")
+        spaceRow.view = MonitorRow(title: "Fast Space switching", subtitle: spaces.hasPermission ? spaces.speed.title : "Requires Accessibility permission",
+                                   symbol: "rectangle.3.group", isOn: spaces.isEnabled, canToggle: true,
+                                   identifier: "spaces", target: self, action: #selector(toggleSpaces(_:)))
+        item.menu?.addItem(.separator())
+        add("Settings…", action: #selector(openSettings))
         let login = add("Launch at login", action: #selector(toggleLogin))
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         add("Quit (restore monitors)", action: #selector(quit), enabled: !busy)
@@ -66,13 +98,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func showError(_ error: Error) {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
-        alert.messageText = "Could not toggle monitor"
+        alert.messageText = "Mac Utils"
         alert.informativeText = error.localizedDescription
         alert.runModal()
     }
 
-    @objc private func toggle(_ sender: NSMenuItem) {
-        guard !busy, let uuid = sender.representedObject as? String else { return }
+    @objc private func toggleBluetooth(_ sender: NSSwitch) {
+        guard let address = sender.identifier?.rawValue else { return }
+        item.menu?.cancelTracking()
+        DispatchQueue.main.async { [self] in bluetooth.toggleConnection(address) }
+    }
+
+    @objc private func toggleAutoConnect(_ sender: NSSwitch) {
+        bluetooth.autoEnabled = sender.state == .on
+        refresh()
+    }
+
+    @objc private func toggleSpaces(_ sender: NSSwitch) {
+        let enabled = sender.state == .on
+        item.menu?.cancelTracking()
+        DispatchQueue.main.async { [self] in
+            do { try spaces.setEnabled(enabled) } catch { showError(error) }
+            refresh()
+        }
+    }
+
+    @objc private func openSettings() {
+        if settingsWindow == nil {
+            settingsWindow = SettingsWindow(bluetooth: bluetooth, spaces: spaces)
+            settingsWindow?.onChange = { [weak self] in self?.refresh() }
+        }
+        settingsWindow?.present()
+    }
+
+    @objc private func toggleSwitch(_ sender: NSSwitch) {
+        guard !busy, let uuid = sender.identifier?.rawValue else { return }
+        // Close tracking before replacing menu views or changing the main screen.
+        item.menu?.cancelTracking()
+        DispatchQueue.main.async { [self] in toggleMonitor(uuid) }
+    }
+
+    private func toggleMonitor(_ uuid: String) {
+        guard !busy else { return }
         if !controller.isEnabled(uuid) { enable(uuid); return }
         busy = true
         do {
@@ -83,12 +150,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     showError(ToggleError(message: "macOS accepted the request but the monitor is still active."))
                 } else {
                     countdowns[uuid] = 20
-                    restoreTimers[uuid] = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+                    let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
                         guard let self else { return }
                         self.countdowns[uuid, default: 0] -= 1
                         if self.countdowns[uuid, default: 0] <= 0, !self.busy { self.enable(uuid) }
                         self.refresh()
                     }
+                    restoreTimers[uuid] = timer
+                    RunLoop.main.add(timer, forMode: .common)
                 }
                 refresh()
             }
@@ -163,6 +232,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         restoreAll { restored in sender.reply(toApplicationShouldTerminate: restored) }
         return .terminateLater
     }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        bluetooth.stop()
+        spaces.stop()
+        restoreTimers.values.forEach { $0.invalidate() }
+        if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
+    }
 }
 
 func restoreFromCLI(_ controller: DisplayController) throws {
@@ -186,7 +262,22 @@ func runChild(_ arguments: [String], capture: Bool = false) throws -> Data {
     return data
 }
 
-if CommandLine.arguments.contains("--status") {
+if CommandLine.arguments.contains("--bluetooth-status") {
+    guard let path = CommandRunner.find("blueutil") else {
+        fputs("Install blueutil with Homebrew.\n", stderr); exit(1)
+    }
+    do {
+        let backend = BluetoothBackend(runner: CommandRunner(), blueutil: path, audioTool: CommandRunner.find("SwitchAudioSource"))
+        for device in try backend.devices() { print("\(device.connected ? "●" : "○") \(device.name)") }
+    } catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
+} else if CommandLine.arguments.contains("--spaces-status") {
+    print("Accessibility permission: \(AXIsProcessTrusted() ? "granted" : "not granted")")
+} else if CommandLine.arguments.contains("--enable-login") {
+    do {
+        try SMAppService.mainApp.register()
+        print("Launch at login: \(SMAppService.mainApp.status == .enabled ? "enabled" : "requires system approval")")
+    } catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
+} else if CommandLine.arguments.contains("--status") {
     print(DisplayController().status())
 } else if CommandLine.arguments.contains("--snapshot") {
     do { print(String(decoding: try DisplayController().snapshot(), as: UTF8.self)) }
