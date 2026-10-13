@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 bash build.sh
 xcrun swiftc -swift-version 5 -warnings-as-errors -target arm64-apple-macos15.0 \
     -I Vendor/strafe/CStrafe/include \
-    DisplayController.swift Dashboard.swift SpacesModule.swift CommandRunner.swift BluetoothModule.swift Tests/main.swift \
+    DisplayController.swift DisplayRefreshGate.swift SafetyWatchdog.swift Dashboard.swift SpacesModule.swift CommandRunner.swift BluetoothModule.swift Tests/main.swift \
     Vendor/strafe/Swift/*.swift build/objects/*.o \
     -framework AppKit -framework SwiftUI -framework ApplicationServices -framework CoreGraphics \
     -framework CoreFoundation -framework IOKit -o build/isolated-tests

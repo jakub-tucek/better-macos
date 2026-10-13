@@ -1,86 +1,108 @@
 import AppKit
 import SwiftUI
 import ServiceManagement
+import os
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let controller = DisplayController()
+    private lazy var controller = DisplayController()
     private let bluetooth = BluetoothModule()
     private let spaces = SpacesModule()
     private let model = DashboardModel()
     private let popover = NSPopover()
+    private let safety = SafetySupervisor()
+    private let logger = Logger(subsystem: "io.github.jakub-tucek.mac-utils", category: "Safety")
+    private lazy var displayRefresh = DisplayRefreshGate { [weak self] in self?.refreshDisplaySnapshot() }
+    private let recoveryQueue = DispatchQueue(label: "mac-utils.display-recovery", qos: .userInitiated)
     private var item: NSStatusItem!
-    private var busy = false
-    private var wantsDashboardOpen = false
-    private var restoreTimers: [String: Timer] = [:]
-    private var countdowns: [String: Int] = [:]
+    private var recovering = false
     private var screenObserver: NSObjectProtocol?
-    private var outsideClickMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureActions()
+        safety.onStatusChanged = { [weak self] status in
+            guard let self else { return }
+            if model.watchdogStatus != status { logger.notice("Watchdog status: \(status, privacy: .public)") }
+            model.watchdogStatus = status
+        }
+        do { try safety.start() }
+        catch { showError(ToggleError(message: "Could not start the recovery watchdog: \(error.localizedDescription)")) }
+        displayRefresh.onSettlingChanged = { [weak self] settling in
+            guard let self else { return }
+            logger.notice("Display refresh settling: \(settling, privacy: .public)")
+            model.displaySettling = settling
+        }
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "Mac Utils")
         item.button?.target = self
         item.button?.action = #selector(toggleDashboard)
-        popover.behavior = .applicationDefined
+        popover.behavior = .transient
         popover.animates = false
+        popover.contentSize = NSSize(width: 430, height: 580)
         popover.contentViewController = NSHostingController(rootView: DashboardView(model: model))
-        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            self?.closeDashboard()
-        }
-        bluetooth.onChange = { [weak self] in self?.refresh() }
+        bluetooth.onChange = { [weak self] in self?.refreshBluetooth() }
         bluetooth.onError = { [weak self] in self?.showError($0) }
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
-        ) { [weak self] _ in self?.refresh() }
-        refresh()
+        ) { [weak self] _ in
+            // Return without CG/ColorSync calls while AppKit acknowledges the
+            // synchronous screen-change notification. Read only after it settles.
+            self?.displayRefresh.requestRefresh()
+        }
+        refreshPreferences()
+        refreshBluetooth()
+        displayRefresh.requestRefresh()
         bluetooth.start()
-        if !controller.disabledUUIDs.isEmpty { restoreAll() }
+        // No graphics transactions, gesture taps, or automatic restore at launch.
+        if CommandLine.arguments.contains("--show-dashboard") {
+            model.tab = .bluetooth
+            DispatchQueue.main.async { [weak self] in self?.showDashboard() }
+        }
     }
 
     private func configureActions() {
-        model.onMonitorChanged = { [weak self] uuid, enabled in self?.setMonitor(uuid, enabled: enabled) }
-        model.onKeepDisabled = { [weak self] uuid in self?.cancelCountdown(uuid); self?.refresh() }
+        model.onMonitorChanged = { [weak self] _, _ in
+            self?.showError(ToggleError(message: "Private display switching remains paused while the WindowServer stall is investigated."))
+        }
         model.onRestoreAll = { [weak self] in self?.restoreAll() }
         model.onAutoDeviceChanged = { [weak self] address, enabled in self?.bluetooth.setAutoReconnect(enabled, for: address) }
         model.onManualConnection = { [weak self] in self?.bluetooth.toggleConnection($0) }
         model.onAutomaticReconnectChanged = { [weak self] in self?.bluetooth.autoEnabled = $0 }
-        model.onProtectAudioChanged = { [weak self] enabled in self?.bluetooth.protectOtherAudio = enabled; self?.refresh() }
-        model.onSwitchAudioChanged = { [weak self] enabled in self?.bluetooth.switchAudioOutput = enabled; self?.refresh() }
+        model.onProtectAudioChanged = { [weak self] enabled in self?.bluetooth.protectOtherAudio = enabled; self?.refreshBluetooth() }
+        model.onSwitchAudioChanged = { [weak self] enabled in self?.bluetooth.switchAudioOutput = enabled; self?.refreshBluetooth() }
         model.onProtectedDeviceChanged = { [weak self] address, enabled in
             guard let self else { return }
             if enabled { bluetooth.protectedAudioAddresses.insert(address) }
             else { bluetooth.protectedAudioAddresses.remove(address) }
-            refresh()
+            refreshBluetooth()
         }
         model.onTakeOverLegacy = { [weak self] in self?.bluetooth.takeOverLegacyService() }
         model.onSpacesChanged = { [weak self] enabled in
             guard let self else { return }
             do { try spaces.setEnabled(enabled) } catch { showError(error) }
-            refresh()
+            refreshPreferences()
         }
-        model.onSpeedChanged = { [weak self] speed in self?.spaces.speed = speed; self?.refresh() }
+        model.onSpeedChanged = { [weak self] speed in self?.spaces.speed = speed; self?.refreshPreferences() }
         model.onLoginChanged = { [weak self] enabled in
             guard let self else { return }
             do {
                 if enabled { try SMAppService.mainApp.register() }
                 else { try SMAppService.mainApp.unregister() }
             } catch { showError(error) }
-            refresh()
+            refreshPreferences()
         }
-        model.onClose = { [weak self] in self?.closeDashboard() }
+        model.onClose = { [weak self] in self?.popover.performClose(nil) }
         model.onQuit = { NSApp.terminate(nil) }
     }
 
     @objc private func toggleDashboard() {
-        if popover.isShown { closeDashboard() }
-        else { wantsDashboardOpen = true; refresh(); showDashboard() }
+        if popover.isShown { popover.performClose(nil) }
+        else { refreshPreferences(); showDashboard(); displayRefresh.requestRefresh() }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        wantsDashboardOpen = true
-        refresh()
+        refreshPreferences()
         showDashboard()
+        displayRefresh.requestRefresh()
         return true
     }
 
@@ -90,20 +112,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.contentViewController?.view.window?.makeKey()
     }
 
-    private func closeDashboard() {
-        wantsDashboardOpen = false
-        popover.performClose(nil)
-    }
-
-    private func refresh() {
+    private func refreshDisplaySnapshot() {
+        guard !recovering else { return }
         controller.refreshDisplays()
-        item?.button?.toolTip = "Mac Utils\n" + controller.status()
+        item.button?.toolTip = "Mac Utils\n" + controller.status()
         model.monitors = controller.monitors
-        model.monitorBusy = busy
         model.activeMonitorCount = (try? controller.activeIDs().count) ?? 0
         model.displaySupported = controller.supported && controller.canDisableDisplays
-        model.countdowns = countdowns
         model.disabledMonitorCount = controller.disabledUUIDs.count
+    }
+
+    private func refreshBluetooth() {
+        // Bluetooth's five-second poll must never enter graphics queries.
         model.devices = bluetooth.devices
         model.selectedAddresses = bluetooth.autoAddresses
         model.automaticReconnectEnabled = bluetooth.autoEnabled
@@ -114,78 +134,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.switchAudioOutput = bluetooth.switchAudioOutput
         model.protectedAudioAddresses = bluetooth.protectedAudioAddresses
         model.legacyServicePresent = bluetooth.legacyServicePresent
+    }
+
+    private func refreshPreferences() {
         model.spacesEnabled = spaces.isEnabled
         model.spacesPermission = spaces.hasPermission
         model.spacesAvailable = spaces.isAvailable
         model.spacesSpeed = spaces.speed
         model.launchAtLogin = SMAppService.mainApp.status == .enabled
-        // Disabling the main monitor can remove the popover's original anchor.
-        // Re-anchor on the surviving screen, unless the user explicitly closed it.
-        if wantsDashboardOpen && !busy && !popover.isShown { showDashboard() }
     }
 
     private func showError(_ error: Error) { model.errorMessage = error.localizedDescription }
 
-    private func setMonitor(_ uuid: String, enabled: Bool) {
-        guard !busy else { return }
-        if enabled { enable(uuid); return }
-        busy = true
-        do {
-            try controller.setEnabled(false, for: uuid)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [self] in
-                busy = false
-                if controller.isEnabled(uuid) {
-                    showError(ToggleError(message: "macOS accepted the request but the monitor is still active."))
-                } else {
-                    countdowns[uuid] = 20
-                    let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
-                        guard let self else { return }
-                        self.countdowns[uuid, default: 0] -= 1
-                        if self.countdowns[uuid, default: 0] <= 0 && !self.busy { self.enable(uuid) }
-                        self.refresh()
-                    }
-                    restoreTimers[uuid] = timer
-                    RunLoop.main.add(timer, forMode: .common)
-                }
-                refresh()
-            }
-        } catch { busy = false; showError(error) }
-        refresh()
-    }
-
-    private func cancelCountdown(_ uuid: String) {
-        restoreTimers.removeValue(forKey: uuid)?.invalidate()
-        countdowns.removeValue(forKey: uuid)
-    }
-
-    private func enable(_ uuid: String, completion: ((Bool) -> Void)? = nil) {
-        cancelCountdown(uuid)
-        busy = true
-        do {
-            try controller.setEnabled(true, for: uuid)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [self] in
-                do {
-                    try controller.finishRestore(uuid)
-                    busy = false
-                    refresh()
-                    completion?(true)
-                } catch { busy = false; refresh(); showError(error); completion?(false) }
-            }
-        } catch { busy = false; refresh(); showError(error); completion?(false) }
-        refresh()
-    }
-
     private func restoreAll(completion: ((Bool) -> Void)? = nil) {
-        let pending = controller.disabledUUIDs
-        func next(_ index: Int, success: Bool) {
-            guard index < pending.count else { completion?(success); return }
-            enable(pending[index]) { restored in next(index + 1, success: success && restored) }
+        guard !recovering, !displayRefresh.isSettling else {
+            showError(ToggleError(message: "Wait for display connections to settle before recovery."))
+            completion?(false)
+            return
         }
-        next(0, success: true)
+        guard let executable = Bundle.main.executableURL?.path else { completion?(false); return }
+        recovering = true
+        model.monitorBusy = true
+        // Even explicit recovery is outside the UI process and time-limited.
+        recoveryQueue.async { [weak self] in
+            let result = Result { try CommandRunner().run(executable, ["--restore"]) }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.recovering = false
+                self.model.monitorBusy = false
+                self.displayRefresh.requestRefresh()
+                switch result {
+                case .success: completion?(true)
+                case .failure(let error): self.showError(error); completion?(false)
+                }
+            }
+        }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard !controller.disabledUUIDs.isEmpty else { return .terminateNow }
+        guard model.disabledMonitorCount > 0 else { return .terminateNow }
         restoreAll { restored in sender.reply(toApplicationShouldTerminate: restored) }
         return .terminateLater
     }
@@ -193,8 +180,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         bluetooth.stop()
         spaces.stop()
-        restoreTimers.values.forEach { $0.invalidate() }
+        safety.stop()
+        displayRefresh.cancel()
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
-        if let outsideClickMonitor { NSEvent.removeMonitor(outsideClickMonitor) }
     }
 }

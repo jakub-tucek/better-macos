@@ -27,7 +27,28 @@ Click the icon again, the close button, or outside the app to dismiss it.
 **Launch at login** is optional; keep the built app at a permanent location
 before enabling it.
 For the affected installation, login startup has been disabled and the app left
-stopped. Do not re-enable it as part of diagnosis.
+off at login. The guarded build can be launched manually; private display
+disabling and gesture interception still cannot be enabled during the safety hold.
+
+### Recovery safeguards
+
+- A separate, Foundation-only watchdog checks a main-run-loop heartbeat. After
+  an eight-second UI stall it terminates **only its own parent app** and records
+  the incident. It does not restart the app or Mac, or kill Dock/WindowServer.
+- An unclean previous session is recorded. Gesture interception never auto-starts.
+- Display notifications are deferred until a 1.5-second quiet period and bursts
+  are coalesced. Their callbacks perform no graphics queries. Bluetooth polling
+  updates only Bluetooth state, never display state.
+- Any explicit display recovery runs in a separate, time-limited process. The
+  watchdog attempts recovery only if app-disabled displays are recorded.
+- The popup dismisses normally outside the app or with Escape; no global input
+  monitor is used by the dashboard.
+- Every manual Bluetooth disconnect requires confirmation, including a warning
+  about keyboard/mouse access. Selected reconnect rules change only with consent.
+
+The watchdog cannot guarantee recovery from a stalled macOS graphics driver or
+WindowServer. The live incident's root cause has not yet been confirmed; private
+system controls remain blocked rather than treating watchdog coverage as proof.
 
 ## Monitors
 

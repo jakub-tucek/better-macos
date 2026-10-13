@@ -27,6 +27,7 @@ struct Monitor {
     let enabled: Bool
     let isMain: Bool
     let disabledByApp: Bool
+    var isBuiltIn: Bool = false
 }
 
 enum DisplaySafety {
@@ -106,6 +107,8 @@ final class DisplayController {
     }
 
     func refreshDisplays() {
+        if let data = defaults.data(forKey: "displayRecords"),
+           let saved = try? JSONDecoder().decode([DisplayRecord].self, from: data) { records = saved }
         var visibleUUIDs = Set<String>()
         for screen in NSScreen.screens {
             guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? UInt32,
@@ -163,7 +166,8 @@ final class DisplayController {
         records.map { record in
             let id = displayID(for: record.uuid)
             return Monitor(uuid: record.uuid, name: record.name, id: id, enabled: isEnabled(record.uuid),
-                           isMain: id.map { CGDisplayIsMain($0) != 0 } ?? false, disabledByApp: record.disabledByApp)
+                           isMain: id.map { CGDisplayIsMain($0) != 0 } ?? false, disabledByApp: record.disabledByApp,
+                           isBuiltIn: id.map { CGDisplayIsBuiltin($0) != 0 } ?? false)
         }.sorted { $0.name == $1.name ? $0.uuid < $1.uuid : $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 

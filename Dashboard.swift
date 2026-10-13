@@ -15,6 +15,8 @@ final class DashboardModel: ObservableObject {
     @Published var monitorBusy = false
     @Published var activeMonitorCount = 0
     @Published var displaySupported = false
+    @Published var displaySettling = true
+    @Published var watchdogStatus = "Starting recovery watchdog…"
     @Published var countdowns: [String: Int] = [:]
     @Published var disabledMonitorCount = 0
     @Published var devices: [BluetoothDevice] = []
@@ -89,6 +91,11 @@ struct DashboardView: View {
     @State private var showDisconnectWarning = false
     @State private var showLegacyWarning = false
 
+    private var disconnectDisablesRule: Bool {
+        guard let device = disconnectWarning else { return false }
+        return model.automaticReconnectEnabled && model.selectedAddresses.contains(device.address)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -98,6 +105,7 @@ struct DashboardView: View {
                 Button(action: model.onClose) { Image(systemName: "xmark") }
                     .buttonStyle(.plain).help("Close dashboard")
             }.padding(16)
+            Text(model.watchdogStatus).font(.caption2).foregroundStyle(.secondary).padding(.bottom, 8)
             Picker("Controls", selection: $model.tab) {
                 ForEach(DashboardTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }.pickerStyle(.segmented).padding(.horizontal, 16).padding(.bottom, 12)
@@ -133,16 +141,17 @@ struct DashboardView: View {
         }
         .frame(width: 430, height: 580)
         .background(Color(nsColor: .windowBackgroundColor))
-        .alert("Disconnect and turn off auto-reconnect?", isPresented: $showDisconnectWarning) {
-            Button("Turn off & disconnect", role: .destructive) {
+        .onExitCommand(perform: model.onClose)
+        .alert(disconnectDisablesRule ? "Disconnect and turn off auto-reconnect?" : "Disconnect this device?", isPresented: $showDisconnectWarning) {
+            Button(disconnectDisablesRule ? "Turn off & disconnect" : "Disconnect", role: .destructive) {
                 if let device = disconnectWarning {
-                    model.onAutoDeviceChanged(device.address, false)
+                    if disconnectDisablesRule { model.onAutoDeviceChanged(device.address, false) }
                     model.onManualConnection(device.address)
                 }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("\(disconnectWarning?.name ?? "This device") is selected for automatic reconnection. Turning that rule off keeps it disconnected; your other devices are unaffected.")
+            Text("Disconnect \(disconnectWarning?.name ?? "this device")? \(disconnectDisablesRule ? "Its auto-reconnect rule will be turned off; other rules are unchanged. " : "")If this is your keyboard or mouse, make sure you have another usable input device first.")
         }
         .alert("Move auto-connect into Mac Utils?", isPresented: $showLegacyWarning) {
             Button("Take over", action: model.onTakeOverLegacy)
@@ -169,7 +178,7 @@ struct DashboardView: View {
             card {
                 ForEach(model.monitors, id: \.uuid) { monitor in
                     HStack(spacing: 10) {
-                        Image(systemName: monitor.id.map { CGDisplayIsBuiltin($0) != 0 } == true ? "laptopcomputer" : "display")
+                        Image(systemName: monitor.isBuiltIn ? "laptopcomputer" : "display")
                             .frame(width: 22).foregroundStyle(.secondary)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(monitor.name).font(.system(size: 13, weight: .medium))
@@ -179,7 +188,7 @@ struct DashboardView: View {
                         Spacer()
                         BlueSwitch(label: "\(monitor.name) enabled", isOn: Binding(
                             get: { monitor.enabled }, set: { model.onMonitorChanged(monitor.uuid, $0) }))
-                            .disabled(model.monitorBusy || !model.displaySupported || monitor.id == nil || (monitor.enabled && model.activeMonitorCount <= 1))
+                            .disabled(model.displaySettling || model.monitorBusy || !model.displaySupported || monitor.id == nil || (monitor.enabled && model.activeMonitorCount <= 1))
                     }
                     if let seconds = model.countdowns[monitor.uuid] {
                         HStack {
@@ -192,8 +201,9 @@ struct DashboardView: View {
                 }
             }
             if model.monitorBusy { ProgressView("Applying display change…").controlSize(.small) }
+            if model.displaySettling { Text("Waiting for display connections to settle…").font(.caption).foregroundStyle(.secondary) }
             Button("Enable all disabled displays", action: model.onRestoreAll)
-                .disabled(model.monitorBusy || model.disabledMonitorCount == 0)
+                .disabled(model.displaySettling || model.monitorBusy || model.disabledMonitorCount == 0)
             Text("The last usable display is protected. Quit restores screens disabled by this app.")
                 .font(.caption).foregroundStyle(.secondary)
         }
@@ -237,7 +247,7 @@ struct DashboardView: View {
                         }
                         Spacer(minLength: 4)
                         Button(device.connected ? "Disconnect" : "Connect") {
-                            if device.connected && model.automaticReconnectEnabled && model.selectedAddresses.contains(device.address) {
+                            if device.connected {
                                 disconnectWarning = device
                                 showDisconnectWarning = true
                             } else { model.onManualConnection(device.address) }

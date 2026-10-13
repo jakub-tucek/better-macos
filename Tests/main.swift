@@ -2,6 +2,20 @@ import AppKit
 import SwiftUI
 import CStrafe
 
+if let index = CommandLine.arguments.firstIndex(of: "--watchdog"), index + 1 < CommandLine.arguments.count {
+    exit(SafetyWatchdog.run(directory: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true)))
+}
+if let index = CommandLine.arguments.firstIndex(of: "--watchdog-fixture"), index + 2 < CommandLine.arguments.count {
+    if CommandLine.arguments.contains("--expect-bundle"), Bundle.main.bundleIdentifier != CommandLine.arguments[index + 1] { exit(76) }
+    let supervisor = SafetySupervisor(domain: CommandLine.arguments[index + 1], timeout: 0.75,
+                                      root: URL(fileURLWithPath: CommandLine.arguments[index + 2], isDirectory: true))
+    try supervisor.start()
+    // Deliberately stall THIS expendable child, never the real app or desktop.
+    Thread.sleep(forTimeInterval: 4)
+    supervisor.stop()
+    exit(77)
+}
+
 let speaker = BluetoothDevice(address: "00-00-00-00-00-01", name: "Test speakers", connected: false)
 let headphones = BluetoothDevice(address: "00-00-00-00-00-02", name: "Test headphones", connected: true)
 let keyboard = BluetoothDevice(address: "00-00-00-00-00-03", name: "Test keyboard", connected: true)
@@ -203,6 +217,48 @@ let safeDisplays = DisplayController()
 expect(!safeDisplays.canDisableDisplays, "Safety hold blocks new display disabling")
 do { try safeDisplays.setEnabled(false, for: "fixture-not-a-real-display"); expect(false, "Display disabling must remain blocked") }
 catch { expect(true, "Display disabling is rejected before starting a configuration transaction") }
+
+var metadataReads = 0
+let refreshGate = DisplayRefreshGate(delay: 0.02) { metadataReads += 1 }
+for _ in 0..<100 { refreshGate.requestRefresh() }
+expect(metadataReads == 0 && refreshGate.isSettling, "Display notification callbacks do not perform synchronous graphics reads")
+RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+expect(metadataReads == 1 && !refreshGate.isSettling, "A display-notification storm coalesces into one quiet-period refresh")
+refreshGate.requestRefresh()
+refreshGate.cancel()
+RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+expect(metadataReads == 1, "Canceled display refresh cannot run during shutdown")
+expect(!WatchdogPolicy.shouldStop(parentIsAlive: true, now: 100, heartbeat: 99, timeout: 8), "Fresh UI heartbeat does not trigger watchdog")
+expect(WatchdogPolicy.shouldStop(parentIsAlive: true, now: 100, heartbeat: 90, timeout: 8), "Expired UI heartbeat triggers watchdog")
+expect(!WatchdogPolicy.shouldStop(parentIsAlive: false, now: 100, heartbeat: 90, timeout: 8), "An exited/reparented process is never targeted")
+for bundled in [false, true] { do {
+    let domain = "mac-utils.watchdog-tests.\(UUID().uuidString)"
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("opencode/mac-utils-watchdog-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let fixture = Process()
+    let original = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL
+    if bundled {
+        let contents = root.appendingPathComponent("Fixture.app/Contents", isDirectory: true)
+        let executable = contents.appendingPathComponent("MacOS/Fixture")
+        try FileManager.default.createDirectory(at: executable.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: original, to: executable)
+        let info: [String: String] = ["CFBundleIdentifier": domain, "CFBundleExecutable": "Fixture", "CFBundlePackageType": "APPL"]
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+            .write(to: contents.appendingPathComponent("Info.plist"))
+        fixture.executableURL = executable
+    } else { fixture.executableURL = original }
+    fixture.arguments = ["--watchdog-fixture", domain, root.path]
+    if bundled { fixture.arguments?.append("--expect-bundle") }
+    try fixture.run()
+    fixture.waitUntilExit()
+    let terminatedByWatchdog = fixture.terminationReason == .uncaughtSignal && [SIGTERM, SIGKILL].contains(fixture.terminationStatus)
+    let sessions = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+    let tripRecorded = sessions.contains { FileManager.default.fileExists(atPath: $0.appendingPathComponent("tripped").path) }
+    Thread.sleep(forTimeInterval: 1.2) // Let the orphaned test watchdog finish.
+    UserDefaults(suiteName: domain)?.removePersistentDomain(forName: domain)
+    try FileManager.default.removeItem(at: root)
+    expect(terminatedByWatchdog && tripRecorded, "Watchdog initializes and terminates a stalled \(bundled ? "APP-BUNDLED" : "CLI") disposable child")
+} catch { expect(false, "Watchdog fixture failed: \(error)") } }
 
 if let index = CommandLine.arguments.firstIndex(of: "--preview"), index + 1 < CommandLine.arguments.count {
     let directory = URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true)

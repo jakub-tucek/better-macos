@@ -22,7 +22,10 @@ func runChild(_ arguments: [String], capture: Bool = false) throws -> Data {
     return data
 }
 
-if CommandLine.arguments.contains("--bluetooth-status") {
+if let index = CommandLine.arguments.firstIndex(of: "--watchdog") {
+    guard index + 1 < CommandLine.arguments.count else { exit(2) }
+    exit(SafetyWatchdog.run(directory: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true)))
+} else if CommandLine.arguments.contains("--bluetooth-status") {
     guard let path = CommandRunner.find("blueutil") else {
         fputs("Install blueutil with Homebrew.\n", stderr); exit(1)
     }
