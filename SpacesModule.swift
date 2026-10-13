@@ -9,6 +9,9 @@ final class SpacesModule {
     private var observer: NSObjectProtocol?
 
     var hasPermission: Bool { AXIsProcessTrusted() }
+    // Fail closed after the reported system input freeze. Keep the implementation
+    // available for isolated diagnosis, but never install a live event tap.
+    var isAvailable: Bool { false }
     var isEnabled: Bool { interceptor?.isRunning == true && interceptor?.overrideEnabled == true }
     var speed: TransitionSpeed {
         get { TransitionSpeed.from(rawValue: defaults.integer(forKey: "spaces.speed")) }
@@ -20,7 +23,7 @@ final class SpacesModule {
         observer = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
         ) { [engine] _ in engine.resetPredictions() }
-        if defaults.bool(forKey: "spaces.enabled"), hasPermission { try? setEnabled(true) }
+        defaults.set(false, forKey: "spaces.enabled")
     }
 
     func setEnabled(_ enabled: Bool) throws {
@@ -30,6 +33,9 @@ final class SpacesModule {
             interceptor = nil
             defaults.set(false, forKey: "spaces.enabled")
             return
+        }
+        guard isAvailable else {
+            throw ToggleError(message: "Space interception is disabled for safety while investigating a system input freeze.")
         }
         guard hasPermission else {
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary

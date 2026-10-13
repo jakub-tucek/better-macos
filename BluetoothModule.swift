@@ -14,6 +14,16 @@ struct BluetoothConfiguration {
     var protectedAudioAddresses: Set<String> = []
 }
 
+enum BluetoothPresentation {
+    static func summary(enabled: Bool, selected: Set<String>, devices: [BluetoothDevice]) -> String {
+        guard !selected.isEmpty else { return "Choose devices to reconnect below" }
+        let names = devices.filter { selected.contains($0.address) }.map(\.name)
+        guard !names.isEmpty else { return "Selected devices are unavailable" }
+        let selection = names.joined(separator: ", ")
+        return enabled ? "Monitoring: \(selection)" : "Paused: \(selection)"
+    }
+}
+
 enum BluetoothPolicy {
     static func shouldPause(target: BluetoothDevice, devices: [BluetoothDevice], audioOutputs: Set<String>?, knownAudioAddresses: Set<String> = []) -> Bool {
         devices.contains { device in
@@ -72,7 +82,7 @@ struct BluetoothBackend {
 }
 
 final class BluetoothModule {
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
     private let queue = DispatchQueue(label: "mac-utils.bluetooth", qos: .utility)
     private var timer: Timer?
     private var busy = false
@@ -82,12 +92,13 @@ final class BluetoothModule {
     var onChange: (() -> Void)?
     var onError: ((Error) -> Void)?
 
-    init() {
-        backend = CommandRunner.find("blueutil").map {
+    init(defaults: UserDefaults = .standard, backend: BluetoothBackend? = nil, importLegacyConfiguration: Bool = true) {
+        self.defaults = defaults
+        self.backend = backend ?? CommandRunner.find("blueutil").map {
             BluetoothBackend(runner: CommandRunner(), blueutil: $0, audioTool: CommandRunner.find("SwitchAudioSource"))
         }
         defaults.register(defaults: ["bluetooth.protectAudio": true, "bluetooth.switchAudio": true])
-        if defaults.object(forKey: "bluetooth.autoAddresses") == nil {
+        if importLegacyConfiguration && defaults.object(forKey: "bluetooth.autoAddresses") == nil {
             // Import only the old speaker NAME into local settings, never into
             // source control. Resolve its address after the first device query.
             let script = FileManager.default.homeDirectoryForCurrentUser
@@ -107,11 +118,11 @@ final class BluetoothModule {
     var isBusy: Bool { busy }
     var autoEnabled: Bool {
         get { defaults.bool(forKey: "bluetooth.autoEnabled") }
-        set { defaults.set(newValue, forKey: "bluetooth.autoEnabled"); poll() }
+        set { defaults.set(newValue, forKey: "bluetooth.autoEnabled"); onChange?(); poll() }
     }
     var autoAddresses: Set<String> {
         get { Set(defaults.stringArray(forKey: "bluetooth.autoAddresses") ?? []) }
-        set { defaults.set(newValue.sorted(), forKey: "bluetooth.autoAddresses") }
+        set { defaults.set(newValue.sorted(), forKey: "bluetooth.autoAddresses"); onChange?() }
     }
     var protectOtherAudio: Bool {
         get { defaults.bool(forKey: "bluetooth.protectAudio") }
@@ -131,6 +142,16 @@ final class BluetoothModule {
     }
     var legacyServicePresent: Bool {
         FileManager.default.fileExists(atPath: legacyPlist.path) && !defaults.bool(forKey: "bluetooth.legacyTakenOver")
+    }
+
+    var reconnectSummary: String {
+        if legacyServicePresent { return "Existing Bluetooth service owns reconnection" }
+        return BluetoothPresentation.summary(enabled: autoEnabled, selected: autoAddresses, devices: devices)
+    }
+
+    func setAutoReconnect(_ enabled: Bool, for address: String) {
+        if enabled { autoAddresses.insert(address) }
+        else { autoAddresses.remove(address) }
     }
 
     func start() {
@@ -162,8 +183,8 @@ final class BluetoothModule {
 
     func toggleConnection(_ address: String) {
         guard !busy, let backend, let device = devices.first(where: { $0.address == address }) else { return }
-        // An intentional disconnect should not be immediately undone by us.
-        if device.connected { autoAddresses.remove(address) }
+        // Manual actions and persistent reconnect policy are separate. The UI
+        // explicitly asks before turning off a selected device's reconnect rule.
         busy = true
         onChange?()
         queue.async { [weak self] in
@@ -187,7 +208,7 @@ final class BluetoothModule {
                let device = updated.first(where: { $0.name == name }) {
                 protectedAudioAddresses = [device.address]
             }
-            status = legacyServicePresent ? "Existing auto-connect service still owns reconnection" : autoEnabled ? "Auto-connect enabled" : "Auto-connect paused"
+            status = reconnectSummary
         case .failure(let error):
             status = error.localizedDescription
             if reportError { onError?(error) }

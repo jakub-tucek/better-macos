@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import CStrafe
 
 let speaker = BluetoothDevice(address: "00-00-00-00-00-01", name: "Test speakers", connected: false)
@@ -126,23 +127,110 @@ do {
     expect(manual.audioSwitches.isEmpty, "Manual connection does not silently change audio")
 } catch { fputs("Unexpected failure: \(error)\n", stderr); exit(1) }
 
-final class SwitchTarget: NSObject {
-    var received: String?
-    @objc func changed(_ sender: NSSwitch) { received = sender.identifier?.rawValue }
+let testDomain = "mac-utils.tests.\(UUID().uuidString)"
+let testDefaults = UserDefaults(suiteName: testDomain)!
+testDefaults.set([speaker.address], forKey: "bluetooth.autoAddresses")
+testDefaults.set(false, forKey: "bluetooth.autoEnabled")
+let moduleRunner = FakeRunner()
+moduleRunner.current = [BluetoothDevice(address: speaker.address, name: speaker.name, connected: true)]
+let testModule = BluetoothModule(defaults: testDefaults, backend: backend(moduleRunner), importLegacyConfiguration: false)
+func waitForModule() {
+    let deadline = Date().addingTimeInterval(2)
+    while testModule.isBusy && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+    expect(!testModule.isBusy, "Background Bluetooth operation completed")
 }
+testModule.poll()
+waitForModule()
+testModule.toggleConnection(speaker.address)
+waitForModule()
+let selectionPreserved = testModule.autoAddresses.contains(speaker.address)
+testDefaults.removePersistentDomain(forName: testDomain)
+expect(selectionPreserved, "Manual connection actions do not silently rewrite auto-reconnect choices")
 
 _ = NSApplication.shared
-let target = SwitchTarget()
-let row = MonitorRow(title: "A very long display name that should fit without overlapping the switch", subtitle: "Main display",
-                     symbol: "display", isOn: true, canToggle: true, identifier: "test-device", target: target, action: #selector(SwitchTarget.changed(_:)))
-row.layoutSubtreeIfNeeded()
-expect(row.toggle.state == .on && row.toggle.isEnabled, "Native switch reflects enabled state")
-expect(row.toggle.frame.maxX > 300 && row.toggle.frame.maxX <= row.bounds.maxX, "Native switch is right-aligned inside its row")
-_ = row.toggle.sendAction(row.toggle.action, to: row.toggle.target)
-expect(target.received == "test-device", "Switch action carries stable device identity")
-let disabled = MonitorRow(title: "Last screen", subtitle: "On", symbol: "display", isOn: true, canToggle: false,
-                          identifier: "last", target: target, action: #selector(SwitchTarget.changed(_:)))
-expect(!disabled.toggle.isEnabled, "Unavailable/last-screen switch is disabled")
+expect(BluetoothPresentation.summary(enabled: true, selected: [], devices: [speaker]).contains("Choose devices"),
+       "Enabled automation with no targets explicitly requests device selection")
+expect(BluetoothPresentation.summary(enabled: false, selected: [speaker.address], devices: [speaker]).contains("Paused: Test speakers"),
+       "Paused automation still shows selected device names")
+let dashboardModel = DashboardModel()
+dashboardModel.devices = [speaker]
+var selectionAction: (String, Bool)?
+var closeRequests = 0
+dashboardModel.onAutoDeviceChanged = { selectionAction = ($0, $1) }
+dashboardModel.onClose = { closeRequests += 1 }
+let selectionBinding = dashboardModel.autoReconnectBinding(for: speaker.address)
+selectionBinding.wrappedValue = true
+expect(dashboardModel.selectedAddresses.contains(speaker.address) && selectionAction?.0 == speaker.address && selectionAction?.1 == true,
+       "Device auto-reconnect switch updates policy independently of physical connection")
+expect(dashboardModel.devices.first?.connected == false, "Selecting auto-reconnect does not pretend device is connected")
+expect(closeRequests == 0, "Toggling auto-reconnect does not request dashboard dismissal")
+selectionBinding.wrappedValue = false
+expect(dashboardModel.selectedAddresses.isEmpty, "Turning a device rule off is explicit and reflected immediately")
+
+func bluePixels(isOn: Bool) -> Int {
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 80, height: 50), styleMask: [.borderless], backing: .buffered, defer: false)
+    window.appearance = NSAppearance(named: .aqua)
+    let view = NSHostingView(rootView: BlueSwitch(label: "Test switch", isOn: .constant(isOn)).frame(width: 80, height: 50))
+    window.contentView = view
+    RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+    view.layoutSubtreeIfNeeded()
+    guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return 0 }
+    view.cacheDisplay(in: view.bounds, to: bitmap)
+    var pixels = 0
+    for x in 0..<bitmap.pixelsWide {
+        for y in 0..<bitmap.pixelsHigh {
+            if let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB),
+               color.blueComponent > 0.5, color.blueComponent > color.redComponent * 1.5, color.blueComponent > color.greenComponent * 1.2 {
+                pixels += 1
+            }
+        }
+    }
+    return pixels
+}
+// Rendering creates WindowServer/CoreAnimation resources. Keep it opt-in while
+// investigating the system rendering stall; the normal suite stays non-rendering.
+if CommandLine.arguments.contains("--render-ui") {
+    expect(bluePixels(isOn: true) > 100, "Enabled switch actually renders blue even in an inactive window")
+    expect(bluePixels(isOn: false) == 0, "Disabled switch renders gray, not blue")
+}
+
+let safeSpaces = SpacesModule()
+expect(!safeSpaces.isAvailable && !safeSpaces.isEnabled, "Safety hold never starts gesture interception on initialization")
+do { try safeSpaces.setEnabled(true); expect(false, "Space interception must remain blocked") }
+catch { expect(!safeSpaces.isEnabled, "Attempting to enable Space interception fails closed") }
+safeSpaces.stop()
+let safeDisplays = DisplayController()
+expect(!safeDisplays.canDisableDisplays, "Safety hold blocks new display disabling")
+do { try safeDisplays.setEnabled(false, for: "fixture-not-a-real-display"); expect(false, "Display disabling must remain blocked") }
+catch { expect(true, "Display disabling is rejected before starting a configuration transaction") }
+
+if let index = CommandLine.arguments.firstIndex(of: "--preview"), index + 1 < CommandLine.arguments.count {
+    let directory = URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    dashboardModel.monitors = [
+        Monitor(uuid: "fixture-main", name: "Main display", id: 101, enabled: true, isMain: true, disabledByApp: false),
+        Monitor(uuid: "fixture-second", name: "Secondary display", id: 102, enabled: true, isMain: false, disabledByApp: false)
+    ]
+    dashboardModel.activeMonitorCount = 2
+    dashboardModel.displaySupported = true
+    dashboardModel.devices = [speaker, headphones, keyboard]
+    dashboardModel.bluetoothAvailable = true
+    dashboardModel.automaticReconnectEnabled = true
+    dashboardModel.bluetoothSummary = BluetoothPresentation.summary(enabled: true, selected: [], devices: dashboardModel.devices)
+    for tab in DashboardTab.allCases {
+        dashboardModel.tab = tab
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 430, height: 580), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.appearance = NSAppearance(named: .aqua)
+        let view = NSHostingView(rootView: DashboardView(model: dashboardModel))
+        window.contentView = view
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        view.layoutSubtreeIfNeeded()
+        guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { fatalError("Cannot render preview") }
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        try bitmap.representation(using: .png, properties: [:])!.write(to: directory.appendingPathComponent("\(tab.rawValue.lowercased()).png"))
+    }
+    print("Fixture previews saved to \(directory.path)")
+}
 
 do {
     try DisplaySafety.validateDisable(1, activeIDs: [1, 2], mirroredIDs: [])

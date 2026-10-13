@@ -85,6 +85,9 @@ final class DisplayController {
     }
 
     var supported: Bool { configureEnabled != nil }
+    // Recovery remains allowed, but no new display may be disabled until the
+    // reported cursor-only/input freeze has been diagnosed safely.
+    var canDisableDisplays: Bool { false }
     var disabledUUIDs: [String] { records.filter(\.disabledByApp).map(\.uuid) }
 
     func uuid(for id: CGDirectDisplayID) -> String? {
@@ -191,6 +194,9 @@ final class DisplayController {
     }
 
     func setEnabled(_ enabled: Bool, for value: String) throws {
+        guard enabled || canDisableDisplays else {
+            throw ToggleError(message: "Display disabling is paused for safety while investigating a system freeze.")
+        }
         guard let configureEnabled else { throw ToggleError(message: "This macOS version lacks the display disconnect API.") }
         refreshDisplays()
         guard let index = records.firstIndex(where: { $0.uuid == value }), let id = displayID(for: value) else {
