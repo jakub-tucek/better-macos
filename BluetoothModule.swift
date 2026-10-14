@@ -137,6 +137,8 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     private let defaults: UserDefaults
     private let queue = DispatchQueue(label: "mac-utils.bluetooth", qos: .utility)
     private var timer: Timer?
+    private var stopped = false
+    private var onStopped: (() -> Void)?
     private var busy = false
     private var manualBusy = false
     private enum ManualRequest { case connection(String, Bool); case powerOn }
@@ -252,16 +254,27 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     func start() {
+        stopped = false
+        timer?.invalidate()
         poll()
         let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in self?.poll() }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
     }
 
-    func stop() { timer?.invalidate(); timer = nil; cycleCancellation?.cancel(); pendingManual = nil }
+    func stop(completion: (() -> Void)? = nil) {
+        stopped = true
+        timer?.invalidate()
+        timer = nil
+        cycleCancellation?.cancel()
+        pendingManual = nil
+        permissionManager = nil
+        onStopped = completion
+        if !busy { onStopped = nil; completion?() }
+    }
 
     func poll() {
-        guard !busy else { return }
+        guard !stopped, !busy else { return }
         guard !permissionRequired else {
             radioPoweredOn = nil
             status = reconnectSummary
@@ -299,6 +312,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     func requestConnection(_ connected: Bool, address: String) {
+        guard !stopped else { return }
         guard !permissionRequired else { onError?(ToggleError(message: reconnectSummary)); onChange?(); return }
         pendingManual = .connection(address, connected)
         cycleCancellation?.cancel() // Manual intent takes precedence over later auto targets.
@@ -307,6 +321,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     func turnBluetoothOn() {
+        guard !stopped else { return }
         guard !permissionRequired else { onError?(ToggleError(message: reconnectSummary)); onChange?(); return }
         pendingManual = .powerOn
         cycleCancellation?.cancel()
@@ -315,7 +330,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     private func startPendingManual() {
-        guard !busy, let backend, let request = pendingManual else { return }
+        guard !stopped, !busy, let backend, let request = pendingManual else { return }
         pendingManual = nil
         // Manual actions and persistent reconnect policy are separate. The UI
         // explicitly asks before turning off a selected device's reconnect rule.
@@ -361,6 +376,14 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     private func complete(_ result: Result<[BluetoothDevice], Error>, reportError: Bool) {
+        if stopped {
+            busy = false
+            manualBusy = false
+            let completion = onStopped
+            onStopped = nil
+            completion?()
+            return
+        }
         busy = false
         manualBusy = false
         activity = nil

@@ -99,8 +99,10 @@ final class DisplayController {
     }
 
     var supported: Bool { configureEnabled != nil }
+    deinit { if let framework { dlclose(framework) } }
     // The GUI authorizes changes only while its independent watchdog is ready.
     var canDisableDisplays = false
+    var smartArrangementEnabled = true
     var disabledUUIDs: [String] { records.filter(\.disabledByApp).map(\.uuid) }
     var hasPendingArrangement: Bool { defaults.data(forKey: "pendingArrangement") != nil }
 
@@ -302,7 +304,7 @@ final class DisplayController {
         }
         // Plan before changing the hardware; disable + compact origins commit
         // together so macOS cannot pick a different intermediate arrangement.
-        let arrangement = enabled ? nil : try plannedLayout(excluding: value)
+        let arrangement = enabled || !smartArrangementEnabled ? nil : try plannedLayout(excluding: value)
         try transaction { config in
             let result = configureEnabled(config, id, enabled)
             guard result == 0 else { throw ToggleError(message: "Display toggle failed (\(result)).") }

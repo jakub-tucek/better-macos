@@ -56,5 +56,6 @@ final class SpacesModule {
         interceptor?.overrideEnabled = false
         interceptor?.teardown()
         if let observer { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
+        observer = nil
     }
 }

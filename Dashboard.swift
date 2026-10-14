@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 
 enum DashboardTab: String, CaseIterable {
+    case modules = "Modules"
     case monitors = "Monitors"
     case bluetooth = "Bluetooth"
     case spaces = "Spaces"
@@ -10,6 +11,8 @@ enum DashboardTab: String, CaseIterable {
 /// The same state drives the persistent popover and its controls. Refreshes
 /// update values without destroying the UI or closing its containing popover.
 final class DashboardModel: ObservableObject {
+    @Published var enabledModules = Set(AppModule.allCases)
+    @Published var stoppingModules = Set<AppModule>()
     @Published var tab: DashboardTab = .monitors
     @Published var monitors: [Monitor] = []
     @Published var monitorBusy = false
@@ -44,6 +47,7 @@ final class DashboardModel: ObservableObject {
     @Published var errorMessage: String?
 
     var onMonitorChanged: (String, Bool) -> Void = { _, _ in }
+    var onModuleChanged: (AppModule, Bool) -> Void = { _, _ in }
     var onKeepDisabled: (String) -> Void = { _ in }
     var onRestoreAll: () -> Void = {}
     var onArrangeDisplays: () -> Void = {}
@@ -191,9 +195,16 @@ struct DashboardView: View {
                         }.padding(10).background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
                     }
                     switch model.tab {
-                    case .monitors: monitors
-                    case .bluetooth: bluetooth
-                    case .spaces: spaces
+                    case .modules: modules
+                    case .monitors:
+                        if !model.enabledModules.isDisjoint(with: [.monitors, .arrangement]) || model.pendingArrangement || model.disabledMonitorCount > 0 { monitors }
+                        else { disabledModule("Display modules") }
+                    case .bluetooth:
+                        if model.enabledModules.contains(.bluetooth) { bluetooth }
+                        else { disabledModule("Bluetooth reconnect") }
+                    case .spaces:
+                        if model.enabledModules.contains(.spaces) { spaces }
+                        else { disabledModule("Space animations") }
                     }
                 }.padding(16)
             }
@@ -256,7 +267,7 @@ struct DashboardView: View {
                     }
                 }
             }
-            arrangementPreview
+            if model.enabledModules.contains(.arrangement) { arrangementPreview }
             card {
                 ForEach(model.monitors, id: \.uuid) { monitor in
                     HStack(spacing: 10) {
@@ -268,9 +279,11 @@ struct DashboardView: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
+                        if model.enabledModules.contains(.monitors) {
                         BlueSwitch(label: "\(monitor.name) enabled", isOn: Binding(
                             get: { monitor.enabled }, set: { model.onMonitorChanged(monitor.uuid, $0) }))
                             .disabled(model.displaySettling || model.monitorBusy || !model.displaySupported || monitor.id == nil || (monitor.enabled && model.activeMonitorCount <= 1))
+                        }
                     }
                     if monitor.uuid != model.monitors.last?.uuid { Divider() }
                 }
@@ -294,7 +307,7 @@ struct DashboardView: View {
                 Spacer()
                 Text("Automatic").font(.caption2).foregroundStyle(.blue)
             }
-            Text("Click a screen to preview turning it off. Nothing changes until you apply.")
+            Text(model.enabledModules.contains(.monitors) ? "Click a screen to preview turning it off. Nothing changes until you apply." : "Monitor switching is off. Use Arrange displays to edit screen positions.")
                 .font(.caption).foregroundStyle(.secondary)
             Button("Arrange displays…", action: model.onArrangeDisplays)
                 .disabled(busy || !model.displaySupported || model.disabledMonitorCount > 0 || model.pendingArrangement || model.currentLayout.count < 2)
@@ -302,9 +315,9 @@ struct DashboardView: View {
                 .font(.caption2).foregroundStyle(.secondary)
             Text("Current layout").font(.caption).bold()
             MonitorLayoutMap(positions: model.currentLayout, monitors: model.monitors,
-                             selected: selected?.uuid, onSelect: { previewMonitor = $0 })
+                             selected: selected?.uuid, onSelect: model.enabledModules.contains(.monitors) ? { previewMonitor = $0 } : nil)
                 .disabled(busy)
-            if let selected {
+            if let selected, model.enabledModules.contains(.monitors) {
                 HStack {
                     Text("Without \(selected.name)").font(.caption).bold()
                     Spacer()
@@ -331,6 +344,43 @@ struct DashboardView: View {
                 Text("Turning screens back on restores their saved positions. The switches below apply changes directly.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
+        }
+    }
+
+    private func disabledModule(_ title: String) -> some View {
+        card {
+            Text("\(title) is off").font(.headline)
+            Text("Its settings are saved. Enable it in Modules when you need it.").font(.caption).foregroundStyle(.secondary)
+            Button("Manage modules") { model.tab = .modules }
+        }
+    }
+
+    private var modules: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            heading("Modules", detail: "Enable only the features you use. Off stops background work and releases module state; settings are remembered.")
+            ForEach(AppModule.allCases) { module in
+                card {
+                    HStack {
+                        Text(module.title).font(.headline)
+                        Spacer()
+                        BlueSwitch(label: "\(module.title) module", isOn: Binding(
+                            get: { model.enabledModules.contains(module) },
+                            set: { model.onModuleChanged(module, $0) }))
+                            .disabled(model.stoppingModules.contains(module) ||
+                                      ((module == .monitors || module == .arrangement) && model.monitorBusy))
+                    }
+                    Text(module.detail).font(.caption).foregroundStyle(.secondary)
+                    if model.stoppingModules.contains(module) {
+                        Text(module == .bluetooth ? "Stopping — finishing the current Bluetooth command…" : "Restoring displays before unloading…")
+                            .font(.caption).foregroundStyle(.orange)
+                    } else {
+                        Text(model.enabledModules.contains(module) ? "Enabled · loaded when needed" : "Off · module state released")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            Text("Display discovery is shared by the two display modules. The recovery watchdog stays available. macOS pages executable code on demand; switching modules off does not unload the executable.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 

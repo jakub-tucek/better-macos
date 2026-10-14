@@ -20,12 +20,39 @@ bash build.sh
 open "build/Fix macOS.app"
 ```
 
-Click the sliders icon in the top menu bar. The dashboard has **Monitors**,
+Click the sliders icon in the top menu bar. The dashboard has **Modules**, **Monitors**,
 **Bluetooth**, and **Spaces** tabs and stays open when you toggle controls.
 Blue means on, gray means off, independent of your system accent color.
 Click the icon again, the close button, or outside the app to dismiss it.
 **Launch at login** is optional; keep the built app at a permanent location
 before enabling it.
+
+### Optional modules
+
+The **Modules** tab independently enables **Monitor switching**, **Display
+arrangement**, **Bluetooth reconnect**, and **Space animations**. Existing
+installations start with all four enabled; choices persist across launches.
+
+- Bluetooth is created only when enabled. Disabling cancels polling and queued
+  requests, waits for an already-running OS command, and releases the module.
+  Paired devices and reconnect selections are preserved; unloading does not
+  disconnect hardware or change radio power.
+- Space animations release their event tap, observer, and engine when disabled.
+  Enabling the module makes its controls available; interception still starts off.
+- Display discovery is shared and released when neither display module needs it.
+  Arrangement previews and the editor are not loaded when that module is off;
+  monitor switching then uses the normal macOS arrangement without gap closing.
+- Disabling a display module first restores any app-disabled screens or pending
+  arrangement trial. Recovery remains accessible after an unclean exit, even if
+  the feature switches are off. The independent watchdog belongs to the app shell.
+
+These are lazy, in-process modules. Disabling releases their owned state and stops
+work; the OS still demand-pages the shared executable and frameworks. Heap/runtime
+caches mean process memory need not drop immediately or by a fixed amount. This
+does not dynamically unload Swift code or launch four separate app processes.
+
+`"build/Fix macOS.app/Contents/MacOS/fix-mac-os" --module-status` reports the last
+GUI snapshot of enabled modules and instantiated feature objects.
 For the affected installation, login startup has been disabled and the app left
 off at login. The guarded build can be launched manually; enable Space interception
 explicitly in the dashboard after granting Accessibility permission.

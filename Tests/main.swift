@@ -296,6 +296,54 @@ do {
 } catch { expect(false, "Saved topology decode failed: \(error)") }
 
 let safeSpaces = SpacesModule()
+let moduleSettingsDomain = "fix-macos.modules-test.\(UUID().uuidString)"
+let modulePreferences = UserDefaults(suiteName: moduleSettingsDomain)!
+let moduleSettings = ModuleSettings(defaults: modulePreferences)
+expect(moduleSettings.enabled == Set(AppModule.allCases), "Existing installations retain all four features by default")
+modulePreferences.set(["remembered-device"], forKey: "bluetooth.autoAddresses")
+moduleSettings.set(.bluetooth, enabled: false)
+expect(!ModuleSettings(defaults: modulePreferences).enabled.contains(.bluetooth), "Disabled modules stay off across host recreation")
+expect(modulePreferences.stringArray(forKey: "bluetooth.autoAddresses") == ["remembered-device"], "Unloading a module preserves its feature settings")
+moduleSettings.set(.monitors, enabled: false)
+expect(moduleSettings.needsDisplays, "Arrangement alone keeps shared display discovery available")
+moduleSettings.set(.arrangement, enabled: false)
+expect(!moduleSettings.needsDisplays, "Shared display discovery can unload when both display modules are off")
+moduleSettings.set(.monitors, enabled: true)
+expect(moduleSettings.needsDisplays && !moduleSettings.enabled.contains(.arrangement), "Monitor switching can run independently of arrangement")
+modulePreferences.removePersistentDomain(forName: moduleSettingsDomain)
+
+final class DelayedBluetoothRunner: CommandRunning {
+    let entered = DispatchSemaphore(value: 0)
+    let resume = DispatchSemaphore(value: 0)
+    let fake = FakeRunner()
+    private var first = true
+    func run(_ executable: String, _ arguments: [String]) throws -> String {
+        if first { first = false; entered.signal(); _ = resume.wait(timeout: .now() + 5) }
+        return try fake.run(executable, arguments)
+    }
+}
+let delayed = DelayedBluetoothRunner()
+let stoppingDomain = "fix-macos.stopping-test.\(UUID().uuidString)"
+let stoppingPreferences = UserDefaults(suiteName: stoppingDomain)!
+stoppingPreferences.set(true, forKey: "bluetooth.autoEnabled")
+stoppingPreferences.set([speaker.address], forKey: "bluetooth.autoAddresses")
+var stoppingModule: BluetoothModule? = BluetoothModule(defaults: stoppingPreferences,
+    backend: BluetoothBackend(runner: delayed, blueutil: "blueutil", audioTool: nil),
+    importLegacyConfiguration: false, authorizationProvider: { .allowedAlways })
+weak var releasedModule = stoppingModule
+stoppingModule?.poll()
+expect(delayed.entered.wait(timeout: .now() + 2) == .success, "Bluetooth unload fixture has an in-flight command")
+stoppingModule?.requestConnection(true, address: speaker.address)
+var stoppedCallback = false
+stoppingModule?.stop { stoppedCallback = true; stoppingModule = nil }
+expect(!stoppedCallback, "Module stop waits for the in-flight OS command to finish")
+delayed.resume.signal()
+let stopDeadline = Date().addingTimeInterval(3)
+while !stoppedCallback && Date() < stopDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+expect(stoppedCallback && releasedModule == nil, "Stopped Bluetooth module releases its instance after draining")
+expect(delayed.fake.connections.isEmpty, "Module shutdown cancels queued manual and subsequent automatic connection attempts")
+stoppingPreferences.removePersistentDomain(forName: stoppingDomain)
 let draggedLaptop = DisplayTopology.snapped(topologyBaseline, moving: "Mac", to: CGPoint(x: 40, y: 1500))
 expect(draggedLaptop?.first(where: { $0.uuid == "Mac" })?.x == 0 &&
        draggedLaptop?.first(where: { $0.uuid == "Mac" })?.y == 1440,

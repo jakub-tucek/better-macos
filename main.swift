@@ -34,6 +34,11 @@ if let index = CommandLine.arguments.firstIndex(of: "--watchdog") {
         let backend = BluetoothBackend(runner: CommandRunner(), blueutil: path, audioTool: CommandRunner.find("SwitchAudioSource"))
         for device in try backend.devices() { print("\(device.connected ? "●" : "○") \(device.name)") }
     } catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
+} else if CommandLine.arguments.contains("--module-status") {
+    guard let data = UserDefaults.standard.data(forKey: "modules.runtimeStatus") else {
+        fputs("The GUI has not published module status yet.\n", stderr); exit(1)
+    }
+    print(String(decoding: data, as: UTF8.self))
 } else if CommandLine.arguments.contains("--bluetooth-app-status") {
     guard let data = UserDefaults.standard.data(forKey: "bluetooth.lastSnapshot") else {
         fputs("The GUI has not published a Bluetooth snapshot yet.\n", stderr); exit(1)
@@ -121,6 +126,7 @@ if let index = CommandLine.arguments.firstIndex(of: "--watchdog") {
         guard state == "on" || state == "off" else { throw ToggleError(message: "Expected on or off") }
         let uuid = CommandLine.arguments[index + 1]
         controller.canDisableDisplays = true
+        controller.smartArrangementEnabled = !CommandLine.arguments.contains("--basic-layout")
         try controller.setEnabled(state == "on", for: uuid)
         if state == "on" { Thread.sleep(forTimeInterval: 1); try controller.finishRestore(uuid) }
         else if controller.isEnabled(uuid) { throw ToggleError(message: "Display remained active after disabling") }

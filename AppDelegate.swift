@@ -4,9 +4,10 @@ import ServiceManagement
 import os
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private lazy var controller = DisplayController()
-    private let bluetooth = BluetoothModule()
-    private let spaces = SpacesModule()
+    private var controller: DisplayController?
+    private var bluetooth: BluetoothModule?
+    private var spaces: SpacesModule?
+    private let modules = ModuleSettings()
     private let model = DashboardModel()
     private let popover = NSPopover()
     private let safety = SafetySupervisor()
@@ -29,7 +30,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         if let index = CommandLine.arguments.firstIndex(of: "--test-connect-in-gui"), index + 1 < CommandLine.arguments.count {
             guiTestTarget = CommandLine.arguments[index + 1]
-            bluetooth.suspendAutomaticReconnection = true
         }
         if let index = CommandLine.arguments.firstIndex(of: "--preserve-audio-output"), index + 1 < CommandLine.arguments.count {
             guiTestOriginalOutput = CommandLine.arguments[index + 1]
@@ -39,8 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             if model.watchdogStatus != status { logger.notice("Watchdog status: \(status, privacy: .public)") }
             model.watchdogStatus = status
-            spaces.isAvailable = safety.isReady
-            if !safety.isReady { try? spaces.setEnabled(false) }
+            spaces?.isAvailable = safety.isReady
+            if !safety.isReady { try? spaces?.setEnabled(false) }
             refreshPreferences()
             displayRefresh.requestRefresh()
         }
@@ -60,34 +60,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.animates = false
         popover.contentSize = NSSize(width: 430, height: 580)
         popover.contentViewController = NSHostingController(rootView: DashboardView(model: model))
-        bluetooth.onChange = { [weak self] in self?.refreshBluetooth() }
-        bluetooth.onError = { [weak self] in self?.showError($0) }
-        screenObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            // Return without CG/ColorSync calls while AppKit acknowledges the
-            // synchronous screen-change notification. Read only after it settles.
-            self?.displayRefresh.requestRefresh()
-            DispatchQueue.main.async { [weak self] in
-                try? self?.spaces.setEnabled(false)
-                self?.refreshPreferences()
-            }
-        }
+        updateModules()
         refreshPreferences()
         refreshBluetooth()
         displayRefresh.requestRefresh()
-        bluetooth.start()
         if CommandLine.arguments.contains("--request-bluetooth-access") {
-            DispatchQueue.main.async { [weak self] in self?.bluetooth.requestBluetoothAccess() }
+            DispatchQueue.main.async { [weak self] in self?.bluetooth?.requestBluetoothAccess() }
         }
         // No graphics transactions, gesture taps, or automatic restore at launch.
         if CommandLine.arguments.contains("--show-dashboard") {
             model.tab = CommandLine.arguments.contains("--show-monitors") ? .monitors : .bluetooth
+            if CommandLine.arguments.contains("--show-modules") { model.tab = .modules }
             DispatchQueue.main.async { [weak self] in self?.showDashboard() }
         }
     }
 
     private func configureActions() {
+        model.onModuleChanged = { [weak self] module, enabled in self?.setModule(module, enabled: enabled) }
         model.onMonitorChanged = { [weak self] uuid, enabled in self?.setMonitor(uuid, enabled: enabled) }
         model.onKeepDisabled = { [weak self] uuid in
             guard let self, rollbackUUID == uuid else { return }
@@ -102,29 +91,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model.pendingArrangement = false
             clearRollback()
         }
-        model.onAutoDeviceChanged = { [weak self] address, enabled in self?.bluetooth.setAutoReconnect(enabled, for: address) }
-        model.onManualConnection = { [weak self] in self?.bluetooth.toggleConnection($0) }
-        model.onAutomaticReconnectChanged = { [weak self] in self?.bluetooth.autoEnabled = $0 }
-        model.onBluetoothPowerOn = { [weak self] in self?.bluetooth.turnBluetoothOn() }
-        model.onBluetoothAccessRequested = { [weak self] in self?.bluetooth.requestBluetoothAccess() }
-        model.onProtectAudioChanged = { [weak self] enabled in self?.bluetooth.protectOtherAudio = enabled; self?.refreshBluetooth() }
-        model.onSwitchAudioChanged = { [weak self] enabled in self?.bluetooth.switchAudioOutput = enabled; self?.refreshBluetooth() }
+        model.onAutoDeviceChanged = { [weak self] address, enabled in self?.bluetooth?.setAutoReconnect(enabled, for: address) }
+        model.onManualConnection = { [weak self] in self?.bluetooth?.toggleConnection($0) }
+        model.onAutomaticReconnectChanged = { [weak self] in self?.bluetooth?.autoEnabled = $0 }
+        model.onBluetoothPowerOn = { [weak self] in self?.bluetooth?.turnBluetoothOn() }
+        model.onBluetoothAccessRequested = { [weak self] in self?.bluetooth?.requestBluetoothAccess() }
+        model.onProtectAudioChanged = { [weak self] enabled in self?.bluetooth?.protectOtherAudio = enabled; self?.refreshBluetooth() }
+        model.onSwitchAudioChanged = { [weak self] enabled in self?.bluetooth?.switchAudioOutput = enabled; self?.refreshBluetooth() }
         model.onProtectedDeviceChanged = { [weak self] address, enabled in
             guard let self else { return }
-            if enabled { bluetooth.protectedAudioAddresses.insert(address) }
-            else { bluetooth.protectedAudioAddresses.remove(address) }
+            if enabled { bluetooth?.protectedAudioAddresses.insert(address) }
+            else { bluetooth?.protectedAudioAddresses.remove(address) }
             refreshBluetooth()
         }
-        model.onTakeOverLegacy = { [weak self] in self?.bluetooth.takeOverLegacyService() }
+        model.onTakeOverLegacy = { [weak self] in self?.bluetooth?.takeOverLegacyService() }
         model.onSpacesChanged = { [weak self] enabled in
             guard let self else { return }
             guard !enabled || (safety.isReady && !recovering && !displayRefresh.isSettling && rollbackUUID == nil && !model.pendingArrangement) else {
                 showError(ToggleError(message: "Wait for the watchdog and pending display changes before enabling Space interception.")); return
             }
-            do { try spaces.setEnabled(enabled) } catch { showError(error) }
+            do { try spaces?.setEnabled(enabled) } catch { showError(error) }
             refreshPreferences()
         }
-        model.onSpeedChanged = { [weak self] speed in self?.spaces.speed = speed; self?.refreshPreferences() }
+        model.onSpeedChanged = { [weak self] speed in self?.spaces?.speed = speed; self?.refreshPreferences() }
         model.onLoginChanged = { [weak self] enabled in
             guard let self else { return }
             do {
@@ -135,6 +124,100 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model.onClose = { [weak self] in self?.popover.performClose(nil) }
         model.onQuit = { NSApp.terminate(nil) }
+    }
+
+    private func setModule(_ module: AppModule, enabled: Bool) {
+        guard !model.stoppingModules.contains(module) else { return }
+        if module == .monitors || module == .arrangement {
+            guard !recovering else { showError(ToggleError(message: "Wait for the current display operation to finish.")); return }
+            if !enabled && (model.disabledMonitorCount > 0 || model.pendingArrangement || rollbackUUID != nil) {
+                model.stoppingModules.insert(module)
+                restoreAll { [weak self] restored in
+                    guard let self else { return }
+                    model.stoppingModules.remove(module)
+                    if restored { modules.set(module, enabled: false); updateModules() }
+                }
+                return
+            }
+        }
+        modules.set(module, enabled: enabled)
+        updateModules()
+    }
+
+    private func updateModules() {
+        model.enabledModules = modules.enabled
+        if modules.enabled.contains(.bluetooth) {
+            if bluetooth == nil {
+                let module = BluetoothModule()
+                bluetooth = module
+                module.suspendAutomaticReconnection = guiTestTarget != nil
+                module.onChange = { [weak self] in self?.refreshBluetooth() }
+                module.onError = { [weak self] in self?.showError($0) }
+                module.start()
+            }
+        } else if let module = bluetooth, !model.stoppingModules.contains(.bluetooth) {
+            model.stoppingModules.insert(.bluetooth)
+            module.onChange = nil
+            module.onError = nil
+            module.stop { [weak self, weak module] in
+                guard let self, bluetooth === module else { return }
+                bluetooth = nil
+                model.stoppingModules.remove(.bluetooth)
+                refreshBluetooth()
+                refreshPreferences()
+            }
+        }
+        if modules.enabled.contains(.spaces) {
+            if spaces == nil { spaces = SpacesModule() }
+            spaces?.isAvailable = safety.isReady
+        } else {
+            try? spaces?.setEnabled(false)
+            spaces?.stop()
+            spaces = nil
+        }
+        if !modules.enabled.contains(.arrangement) {
+            arrangementWindow?.close()
+            arrangementWindow?.contentView = nil
+            arrangementWindow = nil
+            model.currentLayout = []
+            model.layoutPreviews = [:]
+            openArrangementWhenReady = false
+        }
+        // Recovery metadata is cheap to read and must remain reachable even if
+        // every feature was disabled before an unclean exit.
+        model.pendingArrangement = UserDefaults.standard.data(forKey: "pendingArrangement") != nil
+        if controller == nil, let data = UserDefaults.standard.data(forKey: "displayRecords"),
+           let records = try? JSONDecoder().decode([DisplayRecord].self, from: data) {
+            model.disabledMonitorCount = records.filter(\.disabledByApp).count
+        }
+        let recoveryNeeded = model.pendingArrangement || model.disabledMonitorCount > 0
+        let observeScreens = modules.needsDisplays || spaces != nil || recoveryNeeded
+        if observeScreens && screenObserver == nil {
+            screenObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                self?.displayRefresh.requestRefresh()
+                DispatchQueue.main.async { [weak self] in
+                    try? self?.spaces?.setEnabled(false)
+                    self?.refreshPreferences()
+                }
+            }
+        } else if !observeScreens, let screenObserver {
+            NotificationCenter.default.removeObserver(screenObserver)
+            self.screenObserver = nil
+        }
+        if modules.needsDisplays || recoveryNeeded { displayRefresh.requestRefresh() }
+        else {
+            controller = nil
+            displayRefresh.cancel()
+            model.displaySettling = false
+            model.monitors = []
+            model.activeMonitorCount = 0
+            model.displaySupported = false
+            item?.button?.toolTip = "Fix macOS"
+        }
+        refreshBluetooth()
+        refreshPreferences()
     }
 
     @objc private func toggleDashboard() {
@@ -156,7 +239,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshDisplaySnapshot() {
-        guard !recovering else { return }
+        guard !recovering, modules.needsDisplays || model.pendingArrangement || model.disabledMonitorCount > 0 else { return }
+        if controller == nil { controller = DisplayController() }
+        guard let controller else { return }
         controller.refreshDisplays()
         item.button?.toolTip = "Fix macOS\n" + controller.status()
         model.monitors = controller.monitors
@@ -164,16 +249,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.displaySupported = controller.supported && safety.isReady
         model.disabledMonitorCount = controller.disabledUUIDs.count
         model.pendingArrangement = controller.hasPendingArrangement
-        model.currentLayout = (try? controller.currentLayout()) ?? []
-        model.layoutPreviews = (try? controller.layoutPreviews()) ?? [:]
+        model.currentLayout = modules.enabled.contains(.arrangement) ? (try? controller.currentLayout()) ?? [] : []
+        model.layoutPreviews = modules.enabled.contains(.arrangement) && modules.enabled.contains(.monitors) ? (try? controller.layoutPreviews()) ?? [:] : [:]
         if openArrangementWhenReady, safety.isReady, !model.pendingArrangement, model.disabledMonitorCount == 0,
            model.currentLayout.count > 1 {
             openArrangementWhenReady = false
             showArrangementEditor()
         }
+        if !modules.needsDisplays && !model.pendingArrangement && model.disabledMonitorCount == 0 { updateModules() }
+        publishModuleStatus()
     }
 
     private func refreshBluetooth() {
+        guard modules.enabled.contains(.bluetooth), let bluetooth else {
+            model.devices = []
+            model.selectedAddresses = []
+            model.bluetoothDeviceStates = [:]
+            model.protectedAudioAddresses = []
+            model.bluetoothAvailable = false
+            model.bluetoothBusy = false
+            model.bluetoothManualBusy = false
+            model.bluetoothPermissionRequired = false
+            model.bluetoothRadioOn = nil
+            model.bluetoothSummary = "Bluetooth module is off"
+            return
+        }
         // Bluetooth's five-second poll must never enter graphics queries.
         model.devices = bluetooth.devices
         model.selectedAddresses = bluetooth.autoAddresses
@@ -194,7 +294,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func checkGUIBluetoothTest() {
-        guard let name = guiTestTarget, !guiTestFinished, !bluetooth.permissionRequired,
+        guard let bluetooth, modules.enabled.contains(.bluetooth), let name = guiTestTarget, !guiTestFinished, !bluetooth.permissionRequired,
               bluetooth.radioPoweredOn == true, let device = bluetooth.devices.first(where: { $0.name == name }) else { return }
         if !guiTestStarted {
             guiTestStarted = true
@@ -221,11 +321,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshPreferences() {
-        model.spacesEnabled = spaces.isEnabled
-        model.spacesPermission = spaces.hasPermission
-        model.spacesAvailable = spaces.isAvailable && !recovering && !displayRefresh.isSettling && rollbackUUID == nil && !model.pendingArrangement
-        model.spacesSpeed = spaces.speed
+        model.spacesEnabled = spaces?.isEnabled ?? false
+        model.spacesPermission = spaces?.hasPermission ?? false
+        model.spacesAvailable = spaces?.isAvailable == true && !recovering && !displayRefresh.isSettling && rollbackUUID == nil && !model.pendingArrangement
+        model.spacesSpeed = spaces?.speed ?? .instant
         model.launchAtLogin = SMAppService.mainApp.status == .enabled
+        publishModuleStatus()
+    }
+
+    private func publishModuleStatus() {
+        let status: [String: Any] = [
+            "updatedAt": ISO8601DateFormatter().string(from: Date()),
+            "enabled": modules.enabled.map(\.rawValue).sorted(),
+            "stopping": model.stoppingModules.map(\.rawValue).sorted(),
+            "bluetoothLoaded": bluetooth != nil, "spacesLoaded": spaces != nil,
+            "displayDiscoveryLoaded": controller != nil, "screenObserverInstalled": screenObserver != nil,
+            "arrangementEditorLoaded": arrangementWindow?.contentView != nil
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: status, options: [.prettyPrinted, .sortedKeys]) {
+            UserDefaults.standard.set(data, forKey: "modules.runtimeStatus")
+        }
     }
 
     private func showError(_ error: Error) { model.errorMessage = error.localizedDescription }
@@ -240,19 +355,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setMonitor(_ uuid: String, enabled: Bool) {
-        guard safety.isReady, !recovering, !displayRefresh.isSettling, !model.pendingArrangement,
+        guard modules.enabled.contains(.monitors), safety.isReady, !recovering, !displayRefresh.isSettling, !model.pendingArrangement,
               rollbackUUID == nil || (enabled && rollbackUUID == uuid),
               let executable = Bundle.main.executableURL?.path else {
             showError(ToggleError(message: "Wait for the watchdog, display changes, and current confirmation to finish."))
             return
         }
         // Do not synthesize Space gestures while display topology is changing.
-        try? spaces.setEnabled(false)
+        try? spaces?.setEnabled(false)
         refreshPreferences()
         recovering = true
         model.monitorBusy = true
+        let arguments = ["--set-display", uuid, enabled ? "on" : "off"] + (modules.enabled.contains(.arrangement) ? [] : ["--basic-layout"])
         recoveryQueue.async { [weak self] in
-            let result = Result { try CommandRunner().run(executable, ["--set-display", uuid, enabled ? "on" : "off"]) }
+            let result = Result { try CommandRunner().run(executable, arguments) }
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 recovering = false
@@ -292,7 +408,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showArrangementEditor() {
-        guard safety.isReady, !recovering, !displayRefresh.isSettling, rollbackUUID == nil,
+        guard modules.enabled.contains(.arrangement), safety.isReady, !recovering, !displayRefresh.isSettling, rollbackUUID == nil,
               !model.pendingArrangement, model.disabledMonitorCount == 0, model.currentLayout.count > 1,
               let main = model.monitors.first(where: \.isMain)?.uuid else { return }
         arrangementWindow?.close()
@@ -312,7 +428,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyArrangement(_ request: DisplayArrangementRequest) {
-        guard safety.isReady, !recovering, !displayRefresh.isSettling, rollbackUUID == nil,
+        guard modules.enabled.contains(.arrangement), safety.isReady, !recovering, !displayRefresh.isSettling, rollbackUUID == nil,
               !model.pendingArrangement, model.disabledMonitorCount == 0,
               let executable = Bundle.main.executableURL?.path else {
             showError(ToggleError(message: "Wait for display changes or restore the pending layout first."))
@@ -321,7 +437,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         guard let data = try? JSONEncoder().encode(request) else { return }
         arrangementWindow?.close()
-        try? spaces.setEnabled(false)
+        try? spaces?.setEnabled(false)
         recovering = true
         model.monitorBusy = true
         refreshPreferences()
@@ -362,7 +478,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         guard let executable = Bundle.main.executableURL?.path else { completion?(false); return }
-        try? spaces.setEnabled(false)
+        try? spaces?.setEnabled(false)
         refreshPreferences()
         recovering = true
         model.monitorBusy = true
@@ -390,8 +506,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        bluetooth.stop()
-        spaces.stop()
+        bluetooth?.stop()
+        spaces?.stop()
         safety.stop()
         rollbackTimer?.invalidate()
         displayRefresh.cancel()
