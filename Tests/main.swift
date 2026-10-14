@@ -4,6 +4,46 @@ import CStrafe
 import CoreBluetooth
 import IOKit.pwr_mgt
 
+// Explicit, bounded OS probe; never part of the normal isolated suite.
+if CommandLine.arguments.contains("--awake-power-probe") {
+    let backend = SystemPowerAssertions()
+    var owned: [IOPMAssertionID] = []
+    defer { for id in owned { try? backend.release(id) } }
+    for display in [false, true] { owned.append(try backend.create(display: display, timeout: 3)) }
+    print(try CommandRunner().run("/usr/bin/pmset", ["-g", "assertions"]))
+    Thread.sleep(forTimeInterval: 8)
+    let expiredListing = try CommandRunner().run("/usr/bin/pmset", ["-g", "assertions"])
+    print(expiredListing)
+    for id in owned {
+        let properties = IOPMAssertionCopyProperties(id)?.takeRetainedValue() as? [String: Any]
+        print("Expired assertion properties: \(String(describing: properties))")
+        guard !expiredListing.contains("pid \(ProcessInfo.processInfo.processIdentifier)(isolated-tests)") else {
+            for ownedID in owned { try? backend.release(ownedID) }
+            throw ToggleError(message: "OS timeout did not turn assertion off within eight seconds")
+        }
+        try backend.setTimeout(id, seconds: 3)
+        let renewed = IOPMAssertionCopyProperties(id)?.takeRetainedValue() as? [String: Any]
+        guard (renewed?[kIOPMAssertionLevelKey] as? NSNumber)?.intValue == Int(kIOPMAssertionLevelOn) else {
+            for ownedID in owned { try? backend.release(ownedID) }
+            throw ToggleError(message: "Expired lease did not rearm")
+        }
+    }
+    let renewedListing = try CommandRunner().run("/usr/bin/pmset", ["-g", "assertions"])
+    guard renewedListing.contains("pid \(ProcessInfo.processInfo.processIdentifier)(isolated-tests)") else {
+        for ownedID in owned { try? backend.release(ownedID) }
+        throw ToggleError(message: "Renewed lease missing from pmset")
+    }
+    for id in owned { try backend.release(id) }
+    owned.removeAll()
+    let releasedListing = try CommandRunner().run("/usr/bin/pmset", ["-g", "assertions"])
+    print(releasedListing)
+    guard !releasedListing.contains("pid \(ProcessInfo.processInfo.processIdentifier)(isolated-tests)") else {
+        throw ToggleError(message: "Released assertions still listed")
+    }
+    print("Bounded keep-awake OS probe passed; all owned assertions released.")
+    exit(0)
+}
+
 if let index = CommandLine.arguments.firstIndex(of: "--watchdog"), index + 1 < CommandLine.arguments.count {
     exit(SafetyWatchdog.run(directory: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true)))
 }
@@ -951,6 +991,7 @@ final class FakePowerAssertions: PowerAssertionBackend {
     var failCreate = false
     var failDisplayCreate = false
     var failTimeout = false
+    var failTimeoutID: IOPMAssertionID?
     var failRelease: IOPMAssertionID?
     func create(display: Bool, timeout: TimeInterval) throws -> IOPMAssertionID {
         if failCreate || (display && failDisplayCreate) { throw ToggleError(message: "Injected power creation failure") }
@@ -960,7 +1001,7 @@ final class FakePowerAssertions: PowerAssertionBackend {
         return id
     }
     func setTimeout(_ id: IOPMAssertionID, seconds: TimeInterval) throws {
-        if failTimeout { throw ToggleError(message: "Injected timeout failure") }
+        if failTimeout || failTimeoutID == id { throw ToggleError(message: "Injected timeout failure") }
         guard let entry = entries[id] else { throw ToggleError(message: "Unknown assertion") }
         entries[id] = (entry.display, seconds)
     }
@@ -1012,6 +1053,12 @@ power.failTimeout = true
 do { try awake.extend(); expect(false, "Timeout update should fail") }
 catch { expect(awake.remaining == oldRemaining, "Failed extension does not claim a later deadline") }
 power.failTimeout = false
+let timeoutDisplayID = power.entries.first { $0.value.display }!.key
+power.failTimeoutID = timeoutDisplayID
+do { try awake.extend(); expect(false, "Second assertion timeout failure must throw") }
+catch { expect(awake.remaining == oldRemaining && power.entries.values.first { !$0.display }?.timeout == oldRemaining,
+               "Partial extension rolls successful system timeout back to the original deadline") }
+power.failTimeoutID = nil
 let failingPowerID = power.entries.first { $0.value.display }!.key
 power.failRelease = failingPowerID
 do { try awake.stop(); expect(false, "Release should fail") }
@@ -1036,13 +1083,25 @@ let appAwakeDefaults = UserDefaults(suiteName: appAwakeDomain)!
 let appPower = FakePowerAssertions()
 var runningAwakeApps = ["test.one": "One"]
 var appAwakeTime: TimeInterval = 0
+var appProcessID: pid_t = 1
+var extraAppProcess: pid_t?
 let appAwake = KeepAwakeModule(defaults: appAwakeDefaults, backend: appPower,
-    now: { appAwakeTime }, automaticUpdates: false, runningApps: { runningAwakeApps })
+    now: { appAwakeTime }, automaticUpdates: false, runningApps: { runningAwakeApps },
+    processInstances: { runningAwakeApps.mapValues { _ in Set([appProcessID] + (extraAppProcess.map { [$0] } ?? [])) } })
 try appAwake.setApp("test.one", name: "One", selected: true)
 try appAwake.setApp("test.two", name: "Two", selected: true)
 expect(!appAwake.active, "App rules wait for module activation")
 appAwake.activate()
 expect(appAwake.active && appAwake.activeAppNames == ["One"], "Activation discovers already-running selected apps")
+appPower.failTimeout = true
+do { try appAwake.start(); expect(false, "Failed overlapping Start must throw") }
+catch { expect(appAwake.active && !appAwake.appsPaused && appAwake.remaining == 0,
+               "Failed timed Start preserves independent app reason") }
+appAwake.tick()
+expect(appAwake.protectionFailed, "Failed lease maintenance is visible instead of claiming protection")
+appPower.failTimeout = false
+appAwake.tick()
+expect(!appAwake.protectionFailed, "Successful retry clears failed protection status")
 try appAwake.start()
 runningAwakeApps = [:]
 appAwake.tick()
@@ -1054,6 +1113,14 @@ expect(appAwake.active && appAwake.remaining == 0 && appAwake.activeAppNames == 
 try appAwake.stop()
 appAwake.tick()
 expect(!appAwake.active && appAwake.appsPaused, "Stop pauses running app across subsequent reconciliation")
+extraAppProcess = 3
+appAwake.tick()
+expect(!appAwake.active && appAwake.appsPaused, "Additional instance does not clear pause while stopped instance lives")
+extraAppProcess = nil
+appProcessID = 2
+appAwake.tick()
+expect(appAwake.active && !appAwake.appsPaused, "Rapid restart clears pause without an empty bundle snapshot")
+try appAwake.stop()
 try appAwake.resumeApps()
 expect(appAwake.active && !appAwake.appsPaused, "Resume restores running app reason")
 try appAwake.stop()
@@ -1073,6 +1140,11 @@ try appAwake.resumeApps()
 try appAwake.deactivate()
 appAwake.tick()
 expect(!appAwake.active && appPower.entries.isEmpty && appAwake.selectedApps.count == 2, "Disable releases assertions and keeps rules without reactivation")
+var idlePublications = 0
+appAwake.onChange = { idlePublications += 1 }
+appAwake.tick()
+appAwake.tick()
+expect(idlePublications == 0, "Unchanged idle ticks do not publish redundant runtime preference writes")
 appAwakeDefaults.removePersistentDomain(forName: appAwakeDomain)
 
 print("\(checks) isolated checks passed; no Bluetooth, display, or real Space changes.")

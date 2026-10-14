@@ -69,6 +69,7 @@ final class DashboardModel: ObservableObject {
     @Published var keepAwakeApps: [String: String] = [:]
     @Published var keepAwakeAppNames: [String] = []
     @Published var keepAwakeAppsPaused = false
+    @Published var keepAwakeProtectionFailed = false
     var onKeepAwakeAddApp: () -> Void = {}
     var onKeepAwakeRemoveApp: (String) -> Void = { _ in }
     var onKeepAwakeResume: () -> Void = {}
@@ -325,7 +326,8 @@ struct DashboardView: View {
                 HStack {
                     Label("Keep awake", systemImage: "cup.and.saucer.fill").font(.headline)
                     Spacer()
-                    Text(model.keepAwakeActive ? "Active" : "Off").foregroundStyle(model.keepAwakeActive ? .blue : .secondary)
+                    Text(model.keepAwakeProtectionFailed ? "Needs retry" : (model.keepAwakeActive ? "Active" : "Off"))
+                        .foregroundStyle(model.keepAwakeActive ? .blue : .secondary)
                 }
                 if model.keepAwakeRemaining > 0 {
                     Text(countdown).font(.system(size: 36, weight: .medium, design: .rounded)).monospacedDigit()
@@ -373,7 +375,7 @@ struct DashboardView: View {
                 }
                 Button("Add apps…", action: model.onKeepAwakeAddApp)
                 if !model.keepAwakeAppNames.isEmpty {
-                    Text("Keeping awake: " + model.keepAwakeAppNames.joined(separator: ", ")).font(.caption)
+                    Text("Requested by: " + model.keepAwakeAppNames.joined(separator: ", ")).font(.caption)
                 }
                 if model.keepAwakeAppsPaused {
                     Text("Stopped apps stay paused until they exit.").font(.caption)

@@ -230,7 +230,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setModule(_ module: AppModule, enabled: Bool) {
         guard !model.stoppingModules.contains(module) else { return }
         if module == .keepAwake && !enabled {
-            do { try keepAwake?.stop() } catch { showError(error); return }
+            do { try keepAwake?.deactivate() } catch { keepAwake?.activate(); showError(error); return }
         }
         if module == .menuBar && !enabled {
             do { try menuBarSpacing.restore(preserveChoice: true) }
@@ -274,9 +274,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.keepAwakeApps = keepAwake?.selectedApps ?? [:]
         model.keepAwakeAppNames = keepAwake?.activeAppNames ?? []
         model.keepAwakeAppsPaused = keepAwake?.appsPaused ?? false
+        model.keepAwakeProtectionFailed = keepAwake?.protectionFailed ?? false
         model.keepDisplayAwake = keepAwake?.keepDisplayAwake ?? false
         item?.button?.image = NSImage(systemSymbolName: model.keepAwakeActive ? "cup.and.saucer.fill" : "slider.horizontal.3", accessibilityDescription: "Fix macOS")
-        item?.button?.toolTip = model.keepAwakeActive ? "Fix macOS — keeping awake" : "Fix macOS"
+        item?.button?.toolTip = model.keepAwakeProtectionFailed ? "Fix macOS — keep awake needs retry" : (model.keepAwakeActive ? "Fix macOS — keeping awake" : "Fix macOS")
         publishModuleStatus()
     }
 
@@ -798,7 +799,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        try? keepAwake?.stop()
+        try? keepAwake?.deactivate()
         quitGuard?.stop()
         menuBar?.stop()
         sourceUpdater.stop()

@@ -11,6 +11,20 @@ partial creation/release failure, retries, duration limits, app startup/exit/rel
 overlapping reasons, pause/resume, and module disable with saved preferences.
 `git diff --check` passes. Tests use disposable preference domains.
 
+The opt-in `build/isolated-tests --awake-power-probe` creates two three-second idle
+assertions, observes them with `pmset -g assertions`, waits eight seconds, verifies
+they are absent, renews them, and explicitly releases both. This passed on this Mac.
+An initial probe using `IOPMAssertionCopyProperties`'s level field failed: that field
+remained 255 after timeout even though `AssertTimedOutWhen` was present and `pmset`
+confirmed no active assertions. The probe now uses the active `pmset` list. Failed
+probe processes exited and their assertions were reclaimed; subsequent probes
+explicitly release owned assertions. No sleep or display configuration was changed.
+
+Independent adversarial review identified failed-Start rollback, rapid app restarts,
+misleading failure status, and idle publication churn. Fixes preserve app reasons,
+track paused process instances, expose retry status, avoid redundant idle publishing,
+and use the same deactivate path in production and tests. Regression tests cover each.
+
 Not exercised: actual system sleep, lid close, interacting with the new app picker,
 or real third-party app launch/quit notifications. No external apps were quit, no
 monitors or user preferences were changed, and the installed app was not relaunched.

@@ -51,11 +51,31 @@ final class KeepAwakeModule {
     private let runningApps: () -> [String: String]
     private var watchingApps = false
     private var pausedApps = Set<String>()
+    private var pausedInstances: [String: Set<pid_t>] = [:]
+    private let processInstances: () -> [String: Set<pid_t>]
+    private struct PublishedState: Equatable {
+        let active: Bool
+        let seconds: Int
+        let apps: [String: String]
+        let paused: Set<String>
+        let failed: Bool
+    }
+    private var lastPublished: PublishedState?
+    private var lastError: String?
+    private(set) var protectionFailed = false
     private var cleanupPending = false
     private(set) var matchingApps: [String: String] = [:]
     var selectedApps: [String: String] { defaults.dictionary(forKey: "keepAwake.apps") as? [String: String] ?? [:] }
     var appsPaused: Bool { !pausedApps.isEmpty }
     var activeAppNames: [String] { matchingApps.filter { !pausedApps.contains($0.key) }.values.sorted() }
+    private func assertionTimeout(remaining: TimeInterval) -> TimeInterval {
+        activeAppNames.isEmpty ? remaining : max(60, remaining)
+    }
+    private func currentMatchingApps() -> [String: String] {
+        guard watchingApps else { return [:] }
+        let selected = selectedApps
+        return runningApps().filter { selected[$0.key] != nil }
+    }
     var onChange: (() -> Void)?
     var onError: ((Error) -> Void)?
     var active: Bool { systemAssertion != nil || displayAssertion != nil }
@@ -71,12 +91,22 @@ final class KeepAwakeModule {
 
     init(defaults: UserDefaults = .standard, backend: PowerAssertionBackend = SystemPowerAssertions(),
          now: @escaping () -> TimeInterval = KeepAwakeModule.continuousTime, automaticUpdates: Bool = true,
-         runningApps: @escaping () -> [String: String] = KeepAwakeModule.systemRunningApps) {
+         runningApps: @escaping () -> [String: String] = KeepAwakeModule.systemRunningApps,
+         processInstances: @escaping () -> [String: Set<pid_t>] = KeepAwakeModule.systemInstances) {
         self.defaults = defaults
         self.backend = backend
         self.now = now
         self.automaticUpdates = automaticUpdates
         self.runningApps = runningApps
+        self.processInstances = processInstances
+    }
+
+    static func systemInstances() -> [String: Set<pid_t>] {
+        var result: [String: Set<pid_t>] = [:]
+        for app in NSWorkspace.shared.runningApplications where !app.isTerminated {
+            if let id = app.bundleIdentifier { result[id, default: []].insert(app.processIdentifier) }
+        }
+        return result
     }
 
     static func systemRunningApps() -> [String: String] {
@@ -94,7 +124,7 @@ final class KeepAwakeModule {
                 appObservers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.tick() })
             }
         }
-        beginUpdates()
+        if !selectedApps.isEmpty { beginUpdates() }
         tick()
     }
 
@@ -102,12 +132,14 @@ final class KeepAwakeModule {
         var apps = selectedApps
         apps[id] = selected ? name : nil
         defaults.set(apps, forKey: "keepAwake.apps")
+        if watchingApps && !apps.isEmpty { beginUpdates() }
         try reconcile()
         onChange?()
     }
 
     func resumeApps() throws {
         pausedApps.removeAll()
+        pausedInstances.removeAll()
         try reconcile()
         onChange?()
     }
@@ -136,7 +168,13 @@ final class KeepAwakeModule {
             try reconcile()
         } catch {
             let creationError = error
-            do { try stop() } catch { throw ToggleError(message: "Starting display wake failed; cleanup needs retry: \(error.localizedDescription)") }
+            deadline = nil
+            // Roll back only the new timed reason, preserving app rules and pauses.
+            if activeAppNames.isEmpty {
+                do { try releaseAssertions() } catch { throw ToggleError(message: "Starting display wake failed; cleanup needs retry: \(error.localizedDescription)") }
+            }
+            protectionFailed = true
+            onChange?()
             throw creationError
         }
         onChange?()
@@ -146,9 +184,15 @@ final class KeepAwakeModule {
         try expireIfNeeded()
         guard deadline != nil, !cleanupPending else { return }
         let seconds = min(24 * 3600, remaining + 15 * 60)
-        let timeout = activeAppNames.isEmpty ? seconds : max(60, seconds)
-        if let systemAssertion { try backend.setTimeout(systemAssertion, seconds: timeout) }
-        if let displayAssertion { try backend.setTimeout(displayAssertion, seconds: timeout) }
+        let timeout = assertionTimeout(remaining: seconds)
+        do {
+            if let systemAssertion { try backend.setTimeout(systemAssertion, seconds: timeout) }
+            if let displayAssertion { try backend.setTimeout(displayAssertion, seconds: timeout) }
+        } catch {
+            // Restore the original deadline on assertions already updated before failure.
+            try? reconcile()
+            throw error
+        }
         deadline = now() + seconds
         onChange?()
     }
@@ -157,7 +201,7 @@ final class KeepAwakeModule {
         try expireIfNeeded()
         if active {
             if enabled && displayAssertion == nil {
-                displayAssertion = try backend.create(display: true, timeout: activeAppNames.isEmpty ? remaining : max(60, remaining))
+                displayAssertion = try backend.create(display: true, timeout: assertionTimeout(remaining: remaining))
             } else if !enabled, let id = displayAssertion {
                 try backend.release(id)
                 displayAssertion = nil
@@ -168,8 +212,14 @@ final class KeepAwakeModule {
     }
 
     func tick() {
-        do { try reconcile() } catch { onError?(error) }
-        onChange?()
+        do { try reconcile(); protectionFailed = false; lastError = nil }
+        catch {
+            protectionFailed = true
+            if lastError != error.localizedDescription { lastError = error.localizedDescription; onError?(error) }
+        }
+        let state = PublishedState(active: active, seconds: Int(ceil(remaining)), apps: matchingApps,
+                                   paused: pausedApps, failed: protectionFailed)
+        if state != lastPublished { lastPublished = state; onChange?() }
     }
 
     private func expireIfNeeded() throws {
@@ -177,13 +227,24 @@ final class KeepAwakeModule {
     }
 
     private func reconcile() throws {
+        do { try reconcileAssertions(); protectionFailed = false }
+        catch { protectionFailed = true; throw error }
+    }
+
+    private func reconcileAssertions() throws {
         if watchingApps {
-            matchingApps = runningApps().filter { selectedApps[$0.key] != nil }
+            matchingApps = currentMatchingApps()
             pausedApps.formIntersection(matchingApps.keys)
+            let instances = processInstances()
+            for id in pausedApps {
+                let surviving = (pausedInstances[id] ?? []).intersection(instances[id] ?? [])
+                pausedInstances[id] = surviving
+                if surviving.isEmpty { pausedApps.remove(id) }
+            }
         } else { matchingApps = [:] }
         if deadline != nil && remaining <= 0 { deadline = nil }
         if cleanupPending { try releaseAssertions() }
-        let timeout = activeAppNames.isEmpty ? remaining : max(60, remaining)
+        let timeout = assertionTimeout(remaining: remaining)
         guard timeout > 0 else { try releaseAssertions(); return }
         if let id = systemAssertion { try backend.setTimeout(id, seconds: timeout) }
         else { systemAssertion = try backend.create(display: false, timeout: timeout) }
@@ -194,9 +255,12 @@ final class KeepAwakeModule {
     }
 
     func stop() throws {
+        defer { onChange?() }
         deadline = nil
-        matchingApps = watchingApps ? runningApps().filter { selectedApps[$0.key] != nil } : [:]
+        matchingApps = currentMatchingApps()
         pausedApps.formUnion(matchingApps.keys)
+        let instances = processInstances()
+        for id in matchingApps.keys { pausedInstances[id] = instances[id] ?? [] }
         try releaseAssertions()
     }
 
@@ -212,9 +276,8 @@ final class KeepAwakeModule {
         }
         if !active {
             cleanupPending = false
-            if !watchingApps { endUpdates() }
+            if !watchingApps || selectedApps.isEmpty { endUpdates() }
         }
-        onChange?()
         if let failure { throw failure }
     }
 
