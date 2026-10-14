@@ -9,8 +9,21 @@ if CommandLine.arguments.contains("--awake-power-probe") {
     let backend = SystemPowerAssertions()
     var owned: [IOPMAssertionID] = []
     defer { for id in owned { try? backend.release(id) } }
+    func listsBothOwnedTypes(_ listing: String) -> Bool {
+        let lines = listing.components(separatedBy: "\n").filter {
+            $0.contains("pid \(ProcessInfo.processInfo.processIdentifier)(isolated-tests)")
+        }
+        return ["PreventUserIdleSystemSleep", "PreventUserIdleDisplaySleep"].allSatisfy { type in
+            lines.contains { $0.contains(type) }
+        }
+    }
     for display in [false, true] { owned.append(try backend.create(display: display, timeout: 3)) }
-    print(try CommandRunner().run("/usr/bin/pmset", ["-g", "assertions"]))
+    let initialListing = try CommandRunner().run("/usr/bin/pmset", ["-g", "assertions"])
+    print(initialListing)
+    guard listsBothOwnedTypes(initialListing) else {
+        for ownedID in owned { try? backend.release(ownedID) }
+        throw ToggleError(message: "Both created assertion types must appear in pmset")
+    }
     Thread.sleep(forTimeInterval: 8)
     let expiredListing = try CommandRunner().run("/usr/bin/pmset", ["-g", "assertions"])
     print(expiredListing)
@@ -22,16 +35,11 @@ if CommandLine.arguments.contains("--awake-power-probe") {
             throw ToggleError(message: "OS timeout did not turn assertion off within eight seconds")
         }
         try backend.setTimeout(id, seconds: 3)
-        let renewed = IOPMAssertionCopyProperties(id)?.takeRetainedValue() as? [String: Any]
-        guard (renewed?[kIOPMAssertionLevelKey] as? NSNumber)?.intValue == Int(kIOPMAssertionLevelOn) else {
-            for ownedID in owned { try? backend.release(ownedID) }
-            throw ToggleError(message: "Expired lease did not rearm")
-        }
     }
     let renewedListing = try CommandRunner().run("/usr/bin/pmset", ["-g", "assertions"])
-    guard renewedListing.contains("pid \(ProcessInfo.processInfo.processIdentifier)(isolated-tests)") else {
+    guard listsBothOwnedTypes(renewedListing) else {
         for ownedID in owned { try? backend.release(ownedID) }
-        throw ToggleError(message: "Renewed lease missing from pmset")
+        throw ToggleError(message: "Both renewed assertion types must appear in pmset")
     }
     for id in owned { try backend.release(id) }
     owned.removeAll()
@@ -1146,5 +1154,39 @@ appAwake.tick()
 appAwake.tick()
 expect(idlePublications == 0, "Unchanged idle ticks do not publish redundant runtime preference writes")
 appAwakeDefaults.removePersistentDomain(forName: appAwakeDomain)
+
+let retryAwakeDomain = "fix-macos.awake-scheduled-retry.\(UUID().uuidString)"
+let retryAwakeDefaults = UserDefaults(suiteName: retryAwakeDomain)!
+let retryPower = FakePowerAssertions()
+let retryAwake = KeepAwakeModule(defaults: retryAwakeDefaults, backend: retryPower,
+    runningApps: { [:] }, processInstances: { [:] })
+try retryAwake.start()
+retryPower.failRelease = retryPower.entries.keys.first!
+do { try retryAwake.deactivate(); expect(false, "Failed timed-only deactivation must throw") }
+catch { expect(retryAwake.active, "Failed disable retains owned assertion") }
+retryAwake.activate() // Same recovery path used by the host; immediate retry still fails.
+retryPower.failRelease = nil
+let retryDeadline = Date().addingTimeInterval(2)
+while retryAwake.active && Date() < retryDeadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
+expect(!retryAwake.active && retryPower.entries.isEmpty,
+       "Scheduled timer retries failed timed-only disable without manual ticks or workspace events")
+try retryAwake.deactivate()
+
+let failedRulePower = FakePowerAssertions()
+failedRulePower.failCreate = true
+let failedRuleAwake = KeepAwakeModule(defaults: retryAwakeDefaults, backend: failedRulePower,
+    automaticUpdates: false, runningApps: { ["test.failure": "Failure"] },
+    processInstances: { ["test.failure": [42]] })
+try failedRuleAwake.setApp("test.failure", name: "Failure", selected: true)
+failedRuleAwake.activate()
+expect(!failedRuleAwake.active && failedRuleAwake.canStop && failedRuleAwake.protectionFailed,
+       "Pending app-only request exposes Stop even when no assertion could be created")
+try failedRuleAwake.stop()
+failedRulePower.failCreate = false
+failedRuleAwake.tick()
+expect(!failedRuleAwake.active && !failedRuleAwake.canStop && failedRuleAwake.appsPaused,
+       "Stop pauses failed app request before backend recovery can activate it")
+try failedRuleAwake.deactivate()
+retryAwakeDefaults.removePersistentDomain(forName: retryAwakeDomain)
 
 print("\(checks) isolated checks passed; no Bluetooth, display, or real Space changes.")

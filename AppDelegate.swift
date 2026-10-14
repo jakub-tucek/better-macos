@@ -269,6 +269,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func refreshKeepAwake() {
         model.keepAwakeActive = keepAwake?.active ?? false
+        model.keepAwakeCanStop = keepAwake?.canStop ?? false
         model.keepAwakeRemaining = keepAwake?.remaining ?? 0
         model.keepAwakeMinutes = keepAwake?.selectedMinutes ?? 30
         model.keepAwakeApps = keepAwake?.selectedApps ?? [:]

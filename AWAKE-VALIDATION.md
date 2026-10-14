@@ -25,6 +25,16 @@ misleading failure status, and idle publication churn. Fixes preserve app reason
 track paused process instances, expose retry status, avoid redundant idle publishing,
 and use the same deactivate path in production and tests. Regression tests cover each.
 
+Follow-up review found two more recovery gaps: timed-only failed disable lost its
+timer, and initial app-assertion failure hid Stop. Activation now reinstates updates
+for owned/pending cleanup, and Stop reflects requested reasons as well as ownership.
+A real run-loop regression verifies scheduled cleanup without manual ticks; another
+verifies Stop prevents a failed app request from activating after backend recovery.
+The strengthened bounded probe independently checks both owned assertion types in
+`pmset` after creation and renewal, and their absence after timeout and release.
+The full signed build, 220 isolated checks, installer checks, strengthened probe,
+and whitespace check passed after these fixes.
+
 Not exercised: actual system sleep, lid close, interacting with the new app picker,
 or real third-party app launch/quit notifications. No external apps were quit, no
 monitors or user preferences were changed, and the installed app was not relaunched.

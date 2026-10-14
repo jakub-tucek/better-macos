@@ -79,6 +79,7 @@ final class KeepAwakeModule {
     var onChange: (() -> Void)?
     var onError: ((Error) -> Void)?
     var active: Bool { systemAssertion != nil || displayAssertion != nil }
+    var canStop: Bool { active || deadline != nil || !activeAppNames.isEmpty }
     var remaining: TimeInterval { max(0, (deadline ?? now()) - now()) }
     var keepDisplayAwake: Bool { defaults.bool(forKey: "keepAwake.display") }
     var selectedMinutes: Int {
@@ -124,7 +125,7 @@ final class KeepAwakeModule {
                 appObservers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.tick() })
             }
         }
-        if !selectedApps.isEmpty { beginUpdates() }
+        if !selectedApps.isEmpty || active || cleanupPending { beginUpdates() }
         tick()
     }
 

@@ -64,6 +64,7 @@ final class DashboardModel: ObservableObject {
     @Published var quitGuardActive = false
     @Published var quitGuardDuration = 3.0
     @Published var keepAwakeActive = false
+    @Published var keepAwakeCanStop = false
     @Published var keepAwakeRemaining: TimeInterval = 0
     @Published var keepAwakeMinutes = 30
     @Published var keepAwakeApps: [String: String] = [:]
@@ -357,7 +358,7 @@ struct DashboardView: View {
                             set: model.onKeepAwakeMinutesChanged), in: 5...1440, step: 5)
                     }
                     Button("Start session", action: model.onKeepAwakeStart).buttonStyle(.borderedProminent)
-                    if model.keepAwakeActive { Button("Stop", action: model.onKeepAwakeStop) }
+                    if model.keepAwakeCanStop { Button("Stop", action: model.onKeepAwakeStop) }
                 }
             }
             card {
