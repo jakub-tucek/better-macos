@@ -63,6 +63,9 @@ final class SystemMouseHIDAccess: MouseHIDAccess {
 }
 
 final class SystemMouseBackend: MouseSettingsBackend {
+    static let trackingRange = 0.0...3.0
+    static let fixedPointTolerance = 1.0 / 65536
+    private static func validLinear(_ value: Double) -> Bool { value == 0 || value == 1 }
     let identifier = "iohid-mouse-v1"
     private let access: MouseHIDAccess
     init(access: MouseHIDAccess = SystemMouseHIDAccess()) { self.access = access }
@@ -70,31 +73,31 @@ final class SystemMouseBackend: MouseSettingsBackend {
     func read() throws -> MouseOriginalSettings {
         let linear = try access.readLinear()
         let tracking = try access.readTracking()
-        guard [0.0, 1.0].contains(linear), tracking.isFinite, (0...3).contains(tracking) else { throw MouseModule.unavailable }
+        guard Self.validLinear(linear), tracking.isFinite, Self.trackingRange.contains(tracking) else { throw MouseModule.unavailable }
         return MouseOriginalSettings(acceleration: .number(linear), speed: .number(tracking))
     }
     func apply(acceleration: Bool, speed: Double) throws {
-        guard speed.isFinite, (0.1...3).contains(speed) else { throw MouseModule.unavailable }
+        guard speed.isFinite, Self.trackingRange.contains(speed) else { throw MouseModule.unavailable }
         try access.setLinear(acceleration ? 0 : 1)
         try access.setTracking(speed)
         let actual = try read()
         guard actual.acceleration == .number(acceleration ? 0 : 1),
-              case .number(let tracking) = actual.speed, abs(tracking - speed) < 1.0 / 65536 else {
+              case .number(let tracking) = actual.speed, abs(tracking - speed) < Self.fixedPointTolerance else {
             throw NSError(domain: "MouseHID", code: 2, userInfo: [NSLocalizedDescriptionKey: "Mouse settings did not read back as requested; restoring originals."])
         }
     }
     func restore(_ original: MouseOriginalSettings) throws {
         // Runtime parameters cannot safely be deleted through this API. Refuse
         // absent or malformed snapshots instead of guessing an original default.
-        guard case .number(let linear) = original.acceleration, [0.0, 1.0].contains(linear),
-              case .number(let tracking) = original.speed, tracking.isFinite, (0...3).contains(tracking) else {
+        guard case .number(let linear) = original.acceleration, Self.validLinear(linear),
+              case .number(let tracking) = original.speed, tracking.isFinite, Self.trackingRange.contains(tracking) else {
             throw MouseModule.unavailable
         }
         try access.setLinear(linear)
         try access.setTracking(tracking)
         let actual = try read()
         guard actual.acceleration == original.acceleration,
-              case .number(let restored) = actual.speed, abs(restored - tracking) < 1.0 / 65536 else {
+              case .number(let restored) = actual.speed, abs(restored - tracking) < Self.fixedPointTolerance else {
             throw NSError(domain: "MouseHID", code: 3, userInfo: [NSLocalizedDescriptionKey: "Original mouse runtime settings did not read back; recovery journal retained."])
         }
     }

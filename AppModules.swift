@@ -30,7 +30,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .keepAwake: return "Timed and app-based awake sessions, with optional display wake."
         case .windows: return "Named window layouts with optional reconnect and wake restoration."
         case .clipboard: return "Local history, search, pins, and optional disk retention. Recording starts paused."
-        case .mouse: return "Mouse control availability and recovery; live controls await hardware verification."
+        case .mouse: return "Opt-in mouse acceleration and tracking, with runtime restoration."
         }
     }
 }

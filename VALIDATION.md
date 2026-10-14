@@ -193,8 +193,17 @@ Injected HID-boundary tests cover exact mouse-only operations, fixed-point
 readback tolerance, explicit original restoration, invalid/absent rejection,
 ignored writes, capability failure and transaction rollback. Development performs
 only real capability reads, never real pointer writes or synthetic input.
-`bash test.sh` passed **255 isolated checks** and **7 installer scenarios**, including
+`bash test.sh` passed **265 isolated checks** and **7 installer scenarios**, including
 the signed app/UI build. Real write behavior was deliberately not exercised.
+
+The independent GPT-6.1 Sol review of the real-backend increment identified one
+warning: failed Apply rollback did not publish recovery state to the host UI.
+The fix exposes that state through the actual lifecycle Apply entry point; tests
+verify global Restore eligibility, retained ownership/journal and successful
+rollback remaining idle. Review notes also prompted injected-owner capability
+reads, an explicit read/refresh button, actual-current draft initialization while
+preserving unsaved edits, source-contract checks for mouse keys, setter failures
+and malformed read tests. Fixed-point tolerance/range validators are shared.
 
 ## Initial foundation validation (historical)
 

@@ -48,11 +48,17 @@ private final class FakeMouseHIDAccess: MouseHIDAccess {
     var writes: [String] = []
     var ignoreTracking = false
     var failRead = false
+    var failLinearWrite = false
+    var failTrackingWrite = false
     func readLinear() throws -> Double { if failRead { throw MouseModule.unavailable }; return linear }
     func readTracking() throws -> Double { tracking }
-    func setLinear(_ value: Double) throws { writes.append("mouse-linear"); linear = value }
+    func setLinear(_ value: Double) throws {
+        if failLinearWrite { throw MouseModule.unavailable }
+        writes.append("mouse-linear"); linear = value
+    }
     func setTracking(_ value: Double) throws {
         writes.append("mouse-tracking")
+        if failTrackingWrite { throw MouseModule.unavailable }
         if !ignoreTracking { tracking = floor(value * 65536) / 65536 }
     }
 }
@@ -75,6 +81,22 @@ func testMouseControls() throws {
     do { try system.apply(acceleration: true, speed: 2); expect(false, "Ignored runtime write must fail readback") } catch {}
     expect(hid.tracking == 0.6875, "Runtime write readback detects an ignored setting")
     hid.ignoreTracking = false
+    hid.linear = 2
+    expect(!system.available, "Malformed linear runtime values fail capability validation")
+    hid.linear = 0
+    hid.failLinearWrite = true
+    do { try system.apply(acceleration: false, speed: 1); expect(false, "Throwing linear setter must fail") } catch {}
+    expect(hid.linear == 0, "Throwing linear setter does not claim a successful override")
+    hid.failLinearWrite = false
+    hid.failTrackingWrite = true
+    do { try system.restore(systemOriginal); expect(false, "Throwing restore setter must fail") } catch {}
+    expect(hid.tracking == 0.6875, "Runtime restore surfaces setter failures")
+    hid.failTrackingWrite = false
+    let sourceRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+    let shim = try String(contentsOf: sourceRoot.appendingPathComponent("MouseHID/MouseHID.c"), encoding: .utf8)
+    expect(shim.components(separatedBy: "CFSTR(kIOHIDMouseAccelerationTypeKey)").count == 3 &&
+           !shim.contains("CFSTR(kIOHIDPointerAccelerationKey)"),
+           "C compatibility shim uses the SDK mouse-specific key for both getter and setter")
     hid.failRead = true
     expect(!system.available, "Runtime read failure reports unsupported capability without writes")
     hid.failRead = false
@@ -102,6 +124,7 @@ func testMouseControls() throws {
     do { try module.apply(acceleration: false, speed: 2); expect(false, "Journal failure must throw") } catch {}
     expect(backend.writes == writes, "Journal failure prevents pointer mutation")
     recovery.failSave = false
+    try module.stop()
     backend.failApply = true
     do { try module.apply(acceleration: false, speed: 2); expect(false, "Partial apply must throw") } catch {}
     expect(backend.value == original && recovery.pending == nil, "Partial mouse change rolls back automatically")
@@ -131,7 +154,7 @@ func testMouseControls() throws {
     do { try module.apply(acceleration: false, speed: 2); expect(false, "Unavailable backend must throw") } catch {}
     expect(backend.writes == beforeUnavailable && recovery.pending == nil, "Unqualified hardware cannot mutate or capture settings")
     backend.available = true
-    for invalid in [Double.nan, .infinity, -1, 0, 3.1] {
+    for invalid in [Double.nan, .infinity, -1, 3.1] {
         do { try module.apply(acceleration: false, speed: invalid); expect(false, "Invalid speed must throw") } catch {}
     }
     expect(backend.writes == beforeUnavailable, "Invalid tracking speeds cannot reach the backend")
@@ -149,6 +172,7 @@ func testMouseControls() throws {
     do { try module.apply(acceleration: false, speed: 2); expect(false, "Snapshot failure must throw") } catch {}
     expect(backend.writes == beforeUnavailable && recovery.pending == nil, "Snapshot failure prevents journaling and mutation")
     backend.failRead = false
+    try module.stop()
     backend.beforeWrite = {}
     for baseline in [MouseOriginalSettings(acceleration: .boolean(false), speed: .absent),
                      MouseOriginalSettings(acceleration: .absent, speed: .absent)] {
@@ -225,6 +249,7 @@ func testMouseControls() throws {
     let settings = ModuleSettings(defaults: defaults)
     settings.set(.mouse, enabled: false)
     let hostBackend = FakeMouseBackend()
+    hostBackend.value.acceleration = .number(0)
     let hostRecovery = FakeMouseRecovery()
     let hostOriginal = hostBackend.value
     hostRecovery.pending = MouseRecovery(backend: hostBackend.identifier, original: hostOriginal)
@@ -235,9 +260,31 @@ func testMouseControls() throws {
     let model = DashboardModel()
     lifecycle.onChange = { model.updateMouseRecovery(required: lifecycle.recoveryRequired, message: lifecycle.errorMessage) }
     lifecycle.start()
+    let hostSnapshot = try lifecycle.snapshot()
+    expect(hostSnapshot == hostOriginal, "Lifecycle capability reads use the injected owner's backend")
+    model.initializeMouseDraft(hostSnapshot)
+    expect(model.mouseTracking == 1.25 && model.mouseAcceleration, "Untouched draft initializes from actual current runtime settings")
+    model.mouseTracking = 2.5
+    model.initializeMouseDraft(hostSnapshot)
+    expect(model.mouseTracking == 2.5, "Routine capability notifications preserve unsaved proposed tracking")
+    model.initializeMouseDraft(hostSnapshot, force: true)
+    expect(model.mouseTracking == 1.25, "Explicit read or successful Restore refreshes the proposed controls")
     expect(hostBackend.value == hostOriginal && lifecycle.module == nil && !model.mouseRecoveryRequired,
            "Host startup restores a journal while Mouse is disabled and leaves the owner unloaded")
     expect(lifecycle.setEnabled(true) && settings.enabled.contains(.mouse), "Host enable persists the module choice")
+    hostBackend.failApply = true
+    hostBackend.failRestore = true
+    lifecycle.apply(acceleration: false, speed: 2)
+    expect(lifecycle.recoveryRequired && model.mouseRecoveryRequired && lifecycle.module?.hasSessionChanges == true && hostRecovery.pending != nil,
+           "UI-facing failed Apply rollback publishes recovery and exposes global Restore while retaining ownership")
+    hostBackend.failRestore = false
+    hostBackend.failApply = false
+    lifecycle.restore()
+    hostBackend.failApply = true
+    lifecycle.apply(acceleration: false, speed: 2)
+    expect(!lifecycle.recoveryRequired && lifecycle.module?.hasSessionChanges == false && hostRecovery.pending == nil,
+           "UI-facing Apply with successful rollback remains idle without false recovery")
+    hostBackend.failApply = false
     try lifecycle.module!.apply(acceleration: false, speed: 2)
     hostBackend.failRestore = true
     expect(!lifecycle.setEnabled(false) && settings.enabled.contains(.mouse) && lifecycle.module != nil && model.mouseRecoveryRequired,

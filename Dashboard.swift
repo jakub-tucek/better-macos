@@ -108,9 +108,11 @@ final class DashboardModel: ObservableObject {
     private var mouseErrorMessage: String?
     @Published var mouseCapabilityError: String?
     @Published var mouseAcceleration = true
-    @Published var mouseTracking = 0.6875
+    @Published var mouseTracking = 1.0
+    private var mouseDraftInitialized = false
     @Published var mouseOverrideActive = false
     var onApplyMouse: () -> Void = {}
+    var onRefreshMouse: () -> Void = {}
     var onRestoreMouse: () -> Void = {}
     var onKeepAwakeStart: () -> Void = {}
     var onKeepAwakeStop: () -> Void = {}
@@ -158,6 +160,15 @@ final class DashboardModel: ObservableObject {
         if let message { errorMessage = message }
         else if errorMessage == mouseErrorMessage { errorMessage = nil }
         mouseErrorMessage = message
+    }
+
+    func initializeMouseDraft(_ snapshot: MouseOriginalSettings, force: Bool = false) {
+        guard force || !mouseDraftInitialized,
+              case .number(let linear) = snapshot.acceleration,
+              case .number(let tracking) = snapshot.speed else { return }
+        mouseAcceleration = linear == 0
+        mouseTracking = tracking
+        mouseDraftInitialized = true
     }
 
     func autoReconnectBinding(for address: String) -> Binding<Bool> {
@@ -478,8 +489,10 @@ struct DashboardView: View {
                     Spacer()
                     BlueSwitch(label: "Mouse acceleration", isOn: $model.mouseAcceleration)
                 }
-                Slider(value: $model.mouseTracking, in: 0.1...3) { Text("Tracking") }
+                Slider(value: $model.mouseTracking, in: SystemMouseBackend.trackingRange) { Text("Tracking") }
                 Text(String(format: "Tracking: %.2f", model.mouseTracking)).font(.caption)
+                Text("Proposed settings — applied together only when you click Apply.").font(.caption)
+                Button("Read current settings", action: model.onRefreshMouse)
                 Button("Apply mouse settings", action: model.onApplyMouse).disabled(model.mouseCapabilityError != nil || model.mouseRecoveryRequired)
                 if model.mouseOverrideActive { Button("Restore original mouse settings", action: model.onRestoreMouse) }
                 Text("Nothing changes until Apply. These runtime settings are restored on disable or quit, not saved as system preferences.").font(.caption)

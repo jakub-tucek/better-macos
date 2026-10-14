@@ -70,7 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             model.updateMouseRecovery(required: mouseLifecycle.recoveryRequired, message: mouseLifecycle.errorMessage)
             model.mouseOverrideActive = mouseLifecycle.module?.active == true
-            model.mouseCapabilityError = mouseLifecycle.capability()
+            refreshMouseCapability()
         }
         mouseLifecycle.start()
         if menuBarSpacing.recoveryRequired {
@@ -151,7 +151,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             module.setRetentionDays(days)
         }
         model.onClipboardExclusions = { [weak self] in self?.clipboard?.setExclusions($0) }
-        model.onRestoreMouse = { [weak self] in self?.mouseLifecycle.restore() }
+        model.onRestoreMouse = { [weak self] in
+            guard let self else { return }
+            mouseLifecycle.restore()
+            if !mouseLifecycle.recoveryRequired { refreshMouseCapability(forceDraft: true) }
+        }
+        model.onRefreshMouse = { [weak self] in self?.refreshMouseCapability(forceDraft: true) }
         model.onApplyMouse = { [weak self] in
             guard let self else { return }
             mouseLifecycle.apply(acceleration: model.mouseAcceleration, speed: model.mouseTracking)
@@ -762,6 +767,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showError(_ error: Error) { model.errorMessage = error.localizedDescription }
+
+    private func refreshMouseCapability(forceDraft: Bool = false) {
+        do {
+            let snapshot = try mouseLifecycle.snapshot()
+            model.mouseCapabilityError = nil
+            model.initializeMouseDraft(snapshot, force: forceDraft)
+        } catch { model.mouseCapabilityError = error.localizedDescription }
+    }
 
     private func clearRollback() {
         rollbackTimer?.invalidate()

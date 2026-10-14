@@ -58,8 +58,10 @@ final class MouseModule {
     private enum State { case idle, active, recoveryRequired }
     private var state = State.idle
     var active: Bool { state == .active }
+    var requiresRecovery: Bool { state == .recoveryRequired }
     private(set) var hasSessionChanges = false
     var available: Bool { backend.available }
+    func snapshot() throws -> MouseOriginalSettings { try backend.read() }
 
     convenience init() {
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -73,7 +75,7 @@ final class MouseModule {
     }
 
     func apply(acceleration: Bool, speed: Double) throws {
-        guard available, speed.isFinite, (0.1...3).contains(speed) else { throw Self.unavailable }
+        guard available, speed.isFinite, SystemMouseBackend.trackingRange.contains(speed) else { throw Self.unavailable }
         guard state != .recoveryRequired else { throw Self.unavailable }
         let pending: MouseRecovery?
         do { pending = try recovery.load() }
@@ -84,10 +86,17 @@ final class MouseModule {
         }
         // A pending journal after relaunch is recovery-only, never a new baseline.
         guard pending == nil || active else {
+            state = .recoveryRequired
             throw NSError(domain: "MouseControls", code: 2, userInfo: [NSLocalizedDescriptionKey: "Restore the previous mouse settings before applying new changes."])
         }
         if pending == nil {
-            try recovery.save(MouseRecovery(backend: backend.identifier, original: backend.read()))
+            do { try recovery.save(MouseRecovery(backend: backend.identifier, original: backend.read())) }
+            catch {
+                // A store may have committed its journal before reporting an
+                // error. Expose Restore rather than assuming nothing remains.
+                state = .recoveryRequired
+                throw error
+            }
         }
         do {
             hasSessionChanges = true // A throwing backend may already have changed one key.
@@ -185,12 +194,12 @@ final class MouseLifecycle {
         guard let module else { return }
         do { try module.apply(acceleration: acceleration, speed: speed); errorMessage = nil }
         catch { errorMessage = error.localizedDescription }
+        recoveryRequired = module.requiresRecovery
         onChange()
     }
 
-    func capability() -> String? {
-        do { _ = try SystemMouseBackend().read(); return nil }
-        catch { return error.localizedDescription }
+    func snapshot() throws -> MouseOriginalSettings {
+        try (module ?? makeModule()).snapshot()
     }
 }
 
