@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBar: MenuBarModule?
     private var quitGuard: QuitGuard?
     private var keepAwake: KeepAwakeModule?
+    private var windowPositions: WindowPositions?
     private let sourceUpdater = SourceUpdater()
     private let animationQueue = DispatchQueue(label: "fix-mac-os.animation-preferences")
     private let modules = ModuleSettings()
@@ -299,6 +300,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateModules() {
         model.enabledModules = modules.enabled
+        if modules.enabled.contains(.windows) {
+            if windowPositions == nil {
+                let module = WindowPositions()
+                module.onWake = { [weak self] in self?.displayRefresh.requestRefresh() }
+                module.start()
+                windowPositions = module
+            }
+        } else {
+            windowPositions?.stop()
+            windowPositions = nil
+        }
+        model.windowPositions = windowPositions
         if modules.enabled.contains(.keepAwake) {
             if keepAwake == nil {
                 let module = KeepAwakeModule()
@@ -465,6 +478,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.pendingArrangement = controller.hasPendingArrangement
         model.currentLayout = modules.enabled.contains(.arrangement) ? (try? controller.currentLayout()) ?? [] : []
         layoutFresh = true
+        reconcileWindows()
         model.layoutPreviews = modules.enabled.contains(.arrangement) && modules.enabled.contains(.monitors) ? (try? controller.layoutPreviews()) ?? [:] : [:]
         updateScreenEdges()
         if openArrangementWhenReady, safety.isReady, !model.pendingArrangement, model.disabledMonitorCount == 0,
@@ -537,6 +551,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshPreferences() {
+        reconcileWindows()
         model.matchScreenEdges = UserDefaults.standard.bool(forKey: "arrangement.matchEdges")
         updateScreenEdges()
         model.displaySupported = controller?.supported == true && safety.isReady
@@ -565,6 +580,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do { try controlLifecycle.reconcile(controlState) }
         catch { showError(error) }
         model.screenEdgesActive = screenEdges?.isRunning == true
+    }
+
+    private func reconcileWindows() {
+        windowPositions?.reconcile(ready: controlState.inputReady && layoutFresh,
+                                   settled: !displayRefresh.isSettling && layoutFresh && !recovering)
     }
 
     private func setAnimations(_ enabled: Bool, preserveChoice: Bool = false, recoverOnly: Bool = false, completion: (() -> Void)? = nil) {
@@ -800,6 +820,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        windowPositions?.stop()
         try? keepAwake?.deactivate()
         quitGuard?.stop()
         menuBar?.stop()

@@ -1,7 +1,7 @@
 import Foundation
 
 enum AppModule: String, CaseIterable, Identifiable {
-    case monitors, arrangement, bluetooth, spaces, menuBar, quitGuard, keepAwake
+    case monitors, arrangement, bluetooth, spaces, menuBar, quitGuard, keepAwake, windows
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -12,6 +12,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .menuBar: return "Menu bar"
         case .quitGuard: return "Hold to quit"
         case .keepAwake: return "Keep awake"
+        case .windows: return "Window positions"
         }
     }
     var detail: String {
@@ -23,6 +24,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .menuBar: return "Compact spacing and hide less-used menu-bar icons."
         case .quitGuard: return "Hold ⌘Q before quitting, with the app name and a countdown."
         case .keepAwake: return "Timed and app-based awake sessions, with optional display wake."
+        case .windows: return "Named window layouts with optional reconnect and wake restoration."
         }
     }
 }
@@ -33,6 +35,6 @@ final class ModuleSettings {
     var enabled: Set<AppModule> {
         Set(AppModule.allCases.filter { defaults.object(forKey: "modules.\($0.rawValue)") == nil || defaults.bool(forKey: "modules.\($0.rawValue)") })
     }
-    var needsDisplays: Bool { !enabled.isDisjoint(with: [.monitors, .arrangement]) }
+    var needsDisplays: Bool { !enabled.isDisjoint(with: [.monitors, .arrangement, .windows]) }
     func set(_ module: AppModule, enabled: Bool) { defaults.set(enabled, forKey: "modules.\(module.rawValue)") }
 }

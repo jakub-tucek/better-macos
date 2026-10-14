@@ -77,6 +77,64 @@ func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
     print("PASS: \(message)")
 }
 
+final class FakeWindowBackend: WindowPositionBackend {
+    var permitted = true
+    var screens = [WindowDisplay(id: "A", bounds: CGRect(x: 0, y: 25, width: 1000, height: 700))]
+    var items = [PositionedWindow(token: "1", app: "test.editor", title: "Document", frame: CGRect(x: 800, y: 600, width: 500, height: 400), supported: true)]
+    var moves: [CGRect] = []
+    func requestPermission() {}
+    func displays() -> [WindowDisplay] { screens }
+    func windows() -> [PositionedWindow] { items }
+    func move(_ window: PositionedWindow, to frame: CGRect) -> Bool { moves.append(frame); return true }
+}
+let windowDomain = "test.windows.\(UUID().uuidString)"
+let windowDefaults = UserDefaults(suiteName: windowDomain)!
+let windowBackend = FakeWindowBackend()
+let windowModule = WindowPositions(backend: windowBackend, defaults: windowDefaults)
+windowModule.reconcile(ready: true, settled: true)
+windowModule.save("Desk")
+expect(windowModule.layouts.count == 1 && !windowModule.automatic, "window layout saves; automation defaults off")
+windowModule.restore(windowModule.selected)
+expect(windowBackend.moves == [CGRect(x: 500, y: 325, width: 500, height: 400)], "restore clamps to available bounds")
+windowBackend.items.append(windowBackend.items[0])
+windowModule.restore(windowModule.selected)
+expect(windowBackend.moves.count == 1 && windowModule.summary.contains("ambiguous 1"), "ambiguous current windows never move")
+windowBackend.items.removeLast()
+windowModule.exclusions = "test.editor"
+windowModule.restore(windowModule.selected)
+expect(windowBackend.moves.count == 1 && windowModule.summary.contains("excluded 1"), "excluded apps never move")
+windowModule.exclusions = ""
+windowBackend.permitted = false
+windowModule.restore(windowModule.selected)
+expect(windowBackend.moves.count == 1, "permission denial blocks writes")
+windowBackend.permitted = true
+windowModule.automatic = true
+windowModule.wake()
+windowModule.reconcile(ready: false, settled: false)
+expect(windowBackend.moves.count == 1, "wake waits for display settle")
+windowModule.reconcile(ready: false, settled: true)
+expect(windowBackend.moves.count == 1, "pending confirmation blocks automatic restoration")
+windowModule.reconcile(ready: true, settled: true)
+windowModule.reconcile(ready: true, settled: true)
+expect(windowBackend.moves.count == 2, "wake restores once after confirmation; repeated snapshots do not move")
+windowModule.wake()
+windowModule.paused = true
+windowModule.reconcile(ready: true, settled: true)
+expect(windowBackend.moves.count == 2, "pause cancels pending wake")
+windowModule.paused = false
+windowBackend.screens = []
+windowModule.reconcile(ready: true, settled: true)
+windowBackend.screens = windowModule.layouts[0].displays
+windowModule.reconcile(ready: true, settled: true)
+expect(windowBackend.moves.count == 3, "reconnected display set restores once")
+windowModule.wake()
+windowModule.stop()
+windowModule.reconcile(ready: true, settled: true)
+expect(windowBackend.moves.count == 3, "unload cancels pending work")
+let reloadedWindows = WindowPositions(backend: windowBackend, defaults: windowDefaults)
+expect(reloadedWindows.layouts.count == 1 && reloadedWindows.automatic, "layouts and automation survive unload")
+windowDefaults.removePersistentDomain(forName: windowDomain)
+
 final class FakeRunner: CommandRunning {
     var current: [BluetoothDevice] = [speaker]
     var audioOutputs = Set([speaker.name])
@@ -356,7 +414,9 @@ expect(modulePreferences.stringArray(forKey: "bluetooth.autoAddresses") == ["rem
 moduleSettings.set(.monitors, enabled: false)
 expect(moduleSettings.needsDisplays, "Arrangement alone keeps shared display discovery available")
 moduleSettings.set(.arrangement, enabled: false)
-expect(!moduleSettings.needsDisplays, "Shared display discovery can unload when both display modules are off")
+expect(moduleSettings.needsDisplays, "Window layouts retain display discovery")
+moduleSettings.set(.windows, enabled: false)
+expect(!moduleSettings.needsDisplays, "Shared display discovery unloads when all display consumers are off")
 moduleSettings.set(.monitors, enabled: true)
 expect(moduleSettings.needsDisplays && !moduleSettings.enabled.contains(.arrangement), "Monitor switching can run independently of arrangement")
 modulePreferences.removePersistentDomain(forName: moduleSettingsDomain)

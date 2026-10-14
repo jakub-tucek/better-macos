@@ -9,11 +9,13 @@ enum DashboardTab: String, CaseIterable {
     case menuBar = "Menu bar"
     case keyboard = "Keyboard"
     case keepAwake = "Keep awake"
+    case windows = "Windows"
 }
 
 /// The same state drives the persistent popover and its controls. Refreshes
 /// update values without destroying the UI or closing its containing popover.
 final class DashboardModel: ObservableObject {
+    @Published var windowPositions: WindowPositions?
     @Published var enabledModules = Set(AppModule.allCases)
     @Published var stoppingModules = Set<AppModule>()
     @Published var tab: DashboardTab = .monitors
@@ -260,6 +262,9 @@ struct DashboardView: View {
                         Button("Restore original menu-bar spacing", action: model.onRestoreMenuBarSpacing)
                     }
                     switch model.tab {
+                    case .windows:
+                        if let positions = model.windowPositions { WindowPositionsView(module: positions) }
+                        else { disabledModule("Window positions") }
                     case .modules: modules
                     case .monitors:
                         if !model.enabledModules.isDisjoint(with: [.monitors, .arrangement]) || model.pendingArrangement || model.disabledMonitorCount > 0 { monitors }

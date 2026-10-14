@@ -1,0 +1,9 @@
+# Window positions (roadmap 3A / 3B)
+
+Implemented named, persisted layouts per stable display UUID set; exact bundle-ID/title matching rejects duplicates and untitled windows. Restore reports missing, ambiguous, unsupported, excluded, and failed windows. Frames are display-relative and clamped to current visible bounds. AX permission is explicitly requested from the Windows dashboard.
+
+Automatic restoration defaults off. Wake and display-set changes restore once after the existing display quiet period, fresh snapshot, watchdog readiness, recovery, and confirmation gates. Saved selection resolves multiple layouts for a set; otherwise restoration requires a unique layout. Pause and comma-separated app bundle-ID exclusions persist across module unload, as do layouts and selection. No app launches or Space switching.
+
+Isolated evidence: `bash test.sh` builds the complete host/UI and runs injected backend tests for clamping, ambiguity, exclusions, permission denial, wake/confirmation gating, deduplication, reconnect, cancellation, and persistence. Tests never call the live AX backend or change displays. No live window-moving, app relaunch, or hardware validation was performed.
+
+Hardware validation still needed: multiple actual displays including rotation/scaling, Dock/menu-bar insets, wake/reconnect notification timing, TCC under signed app identity, and app-specific AX minimum sizes/refusals. Exact-title matching deliberately skips renamed documents and cannot identify a different document reusing the same unique title. Apps with unavailable full-screen metadata are conservatively unsupported. AX operations are synchronous with bounded per-app messaging timeout; large numbers of unresponsive apps may delay the UI. No cross-Space or full-screen restoration is promised. Window titles are stored locally in preferences with the layout.

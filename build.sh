@@ -21,7 +21,7 @@ for source in CStrafe IOHIDPayload; do
         -o "build/objects/$source.o"
 done
 xcrun swiftc -swift-version 5 -warnings-as-errors -O -target arm64-apple-macos15.0 \
-    -I Vendor/strafe/CStrafe/include \
+    -I Vendor/strafe/CStrafe/include WindowPositions.swift WindowPositionsView.swift \
     AppModules.swift DisplayController.swift DisplayTopology.swift DisplayArrangementEditor.swift DisplayRefreshGate.swift SafetyWatchdog.swift Dashboard.swift AppDelegate.swift CommandRunner.swift BluetoothModule.swift \
     KeepAwakeModule.swift QuitGuard.swift MenuBarModule.swift SourceUpdates.swift SystemControlLifecycle.swift ScreenEdges.swift AnimationPreferences.swift SpacesModule.swift Vendor/strafe/Swift/*.swift main.swift \
     build/objects/*.o -framework AppKit -framework ServiceManagement \
