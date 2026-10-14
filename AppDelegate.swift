@@ -51,7 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             refreshPreferences()
         }
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "Mac Utils")
+        item.button?.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "fix-mac-os")
         item.button?.target = self
         item.button?.action = #selector(toggleDashboard)
         popover.behavior = .transient
@@ -148,7 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func refreshDisplaySnapshot() {
         guard !recovering else { return }
         controller.refreshDisplays()
-        item.button?.toolTip = "Mac Utils\n" + controller.status()
+        item.button?.toolTip = "fix-mac-os\n" + controller.status()
         model.monitors = controller.monitors
         model.activeMonitorCount = (try? controller.activeIDs().count) ?? 0
         model.displaySupported = controller.supported && safety.isReady

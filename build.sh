@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")"
-APP="$PWD/build/Mac Utils.app"
+APP="$PWD/build/fix-mac-os.app"
 # Local repository configuration keeps permission identity stable across builds.
 # An unavailable configured certificate must fail signing, never fall back silently.
 SIGNING_IDENTITY="${MAC_UTILS_SIGNING_IDENTITY:-$(git config --local --get macutils.signingIdentity || true)}"
@@ -19,7 +19,7 @@ xcrun swiftc -swift-version 5 -warnings-as-errors -O -target arm64-apple-macos15
     SpacesModule.swift Vendor/strafe/Swift/*.swift main.swift \
     build/objects/*.o -framework AppKit -framework ServiceManagement \
     -framework SwiftUI -framework CoreBluetooth -framework ApplicationServices -framework CoreGraphics -framework CoreFoundation -framework IOKit \
-    -o "$APP/Contents/MacOS/MacUtils"
+    -o "$APP/Contents/MacOS/fix-mac-os"
 codesign --force --sign "${SIGNING_IDENTITY:--}" "$APP"
 codesign --verify --strict "$APP"
 if [[ -z "$SIGNING_IDENTITY" || "$SIGNING_IDENTITY" == "-" ]]; then
