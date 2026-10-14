@@ -58,6 +58,24 @@ without a new animation transaction. `bash test.sh`: **458 isolated checks and
 clipboard, routes, window movement, mouse settings, or app relaunch were used.
 Independent follow-up review remains the parent's responsibility.
 
+Review P2 follow-up: persistence backends explicitly allow commit-then-throw
+failures. Initial enable snapshots any existing archive before writing and tracks
+failed saves as pending rollback even while the in-memory persistence switch is
+Off. Reconciliation clears a newly created archive or restores preexisting disk
+work; failed restoration/cleanup vetoes unload and quit. Successful enable merges
+preexisting history rather than overwriting it unseen. Failed retention changes
+also remain pending. Explicit Clear supersedes rollback only when the user asks
+to discard history; startup recovery continues loading/pruning without silently
+deleting saved work.
+
+The commit-then-throw regression failed before the fix. Fake backend tests cover
+configuration/memory restoration, real host quit and module-unload vetoes,
+preexisting archive preservation, startup reconciliation, retention rollback, and
+failed/successful explicit Clear. Final `bash test.sh`: **472 isolated checks and
+7 installer scenarios passed** (`build/review-fix-p2-green.log`), with native
+SwiftUI built under warnings-as-errors. `git diff --check` passed. These are
+implementer-run regressions, not independent review or live acceptance.
+
 Combined integration: 443 isolated checks and 7 installer scenarios passed.
 Navigation/Windows policy: 451 isolated checks and 7 installer scenarios passed,
 including rename persistence/invalid input/identity preservation, readiness, complete

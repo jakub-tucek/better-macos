@@ -35,6 +35,8 @@ protocol ClipboardAccess: AnyObject {
 }
 
 protocol ClipboardPersistence {
+    // Mutating operations may commit and then throw. Callers must reconcile
+    // uncertain results before considering disk ownership/cleanup complete.
     func load() throws -> [ClipboardEntry]
     func save(_ entries: [ClipboardEntry]) throws
     func clear() throws
@@ -85,6 +87,7 @@ final class ClipboardHistory {
     private(set) var exclusions: Set<String> = []
     private(set) var storagePending = false
     private var pendingClear = false
+    private var archiveRollback: [ClipboardEntry]?
     private var startupRecovery: (enabled: Bool, days: Int)?
     var requestedPersistence: Bool { startupRecovery?.enabled ?? persistent }
     var onChange: () -> Void = {}
@@ -101,12 +104,21 @@ final class ClipboardHistory {
         if enabled, !load, let recovery = startupRecovery {
             try configurePersistence(recovery.enabled, ageDays: recovery.days, load: true)
         }
+        if enabled, archiveRollback != nil {
+            retryStorage()
+            guard archiveRollback == nil else { throw CocoaError(.fileWriteUnknown) }
+        }
+        // Before first enable, remember disk work we don't yet own. If load
+        // fails, do not write at all. A failed save must not silently delete an
+        // older archive when restoring the disabled configuration.
+        let originalArchive = enabled && !persistent && !load ? try archive.load() : nil
         let previousDays = self.ageDays
         let previousEntries = entries
         self.ageDays = min(365, max(1, ageDays))
         do {
         if enabled {
             if load { entries = try archive.load() }
+            else if let originalArchive { entries += originalArchive }
             prune()
             try archive.save(entries)
         } else {
@@ -116,14 +128,21 @@ final class ClipboardHistory {
             self.ageDays = previousDays; entries = previousEntries
             if load {
                 startupRecovery = (enabled, ageDays)
-                storagePending = true
-                onChange()
+            } else if let originalArchive {
+                archiveRollback = originalArchive
+            } else {
+                // Restore the old configuration conservatively, including
+                // failed retention saves or a disable that committed its clear.
+                pendingClear = !persistent
             }
+            storagePending = true
+            onChange()
             throw error
         }
         persistent = enabled
         storagePending = false; pendingClear = false
         startupRecovery = nil
+        archiveRollback = nil
         onChange()
     }
     func setExclusions(_ values: Set<String>) {
@@ -173,6 +192,7 @@ final class ClipboardHistory {
             ageDays = min(365, max(1, recovery.days))
         }
         startupRecovery = nil
+        archiveRollback = nil // Explicit Clear authorizes discarding old disk work.
         storagePending = true; pendingClear = true
         defer { onChange() }
         try archive.clear()
@@ -214,7 +234,11 @@ final class ClipboardHistory {
                 try configurePersistence(recovery.enabled, ageDays: recovery.days, load: true)
                 return
             }
-            if pendingClear { try archive.clear() }
+            if let rollback = archiveRollback {
+                if rollback.isEmpty { try archive.clear() }
+                else { try archive.save(rollback) }
+                archiveRollback = nil
+            } else if pendingClear { try archive.clear() }
             else { try archive.save(entries) }
             storagePending = false; pendingClear = false
         } catch { onError() }

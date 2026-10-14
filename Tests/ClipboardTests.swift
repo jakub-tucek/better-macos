@@ -17,6 +17,8 @@ private final class FailingClipboardArchive: ClipboardPersistence {
     var entries: [ClipboardEntry] = []
     var failing = false
     var failLoad = false
+    var commitThenThrow = false
+    var failClear = false
     func load() throws -> [ClipboardEntry] {
         if failLoad { throw CocoaError(.fileReadNoPermission) }
         return entries
@@ -24,9 +26,10 @@ private final class FailingClipboardArchive: ClipboardPersistence {
     func save(_ entries: [ClipboardEntry]) throws {
         if failing { throw CocoaError(.fileWriteNoPermission) }
         self.entries = entries
+        if commitThenThrow { throw CocoaError(.fileWriteNoPermission) }
     }
     func clear() throws {
-        if failing { throw CocoaError(.fileWriteNoPermission) }
+        if failing || failClear { throw CocoaError(.fileWriteNoPermission) }
         entries = []
     }
 }
@@ -158,6 +161,69 @@ func runClipboardTests() throws {
     expect(failing.entries.isEmpty && !recoverable.storagePending, "exclusion purge retries without a new capture")
 
     let savedEntry = ClipboardEntry(id: UUID(), created: date, source: "fixture", text: "preserved startup", image: nil, pinned: true)
+    let uncertainArchive = FailingClipboardArchive()
+    let uncertain = ClipboardHistory(board: board, archive: uncertainArchive, now: { date }, source: { app })
+    uncertain.setRecording(true); board.put("uncertain disk secret"); uncertain.poll()
+    let memoryBeforeEnable = uncertain.entries
+    uncertainArchive.commitThenThrow = true; uncertainArchive.failClear = true
+    do { try uncertain.configurePersistence(true, ageDays: 2); expect(false, "commit-then-throw enable must report failure") } catch {}
+    expect(uncertainArchive.entries == memoryBeforeEnable && !uncertain.persistent && uncertain.ageDays == 7 && uncertain.entries == memoryBeforeEnable,
+           "commit-then-throw fixture commits disk content but restores configuration and memory")
+    expect(uncertain.storagePending && !uncertain.flushPendingStorage(),
+           "failed initial enable tracks uncertain disk commit and blocks unload while cleanup fails")
+    let uncertainDomain = "clipboard-uncertain-tests.\(UUID())"
+    let uncertainDefaults = UserDefaults(suiteName: uncertainDomain)!
+    defer { uncertainDefaults.removePersistentDomain(forName: uncertainDomain) }
+    let uncertainModule = ClipboardModule(defaults: uncertainDefaults, history: uncertain)
+    let uncertainMouse = MouseLifecycle(settings: ModuleSettings(defaults: uncertainDefaults), makeModule: {
+        MouseModule(backend: FakeMouseBackend(), recovery: FakeMouseRecovery())
+    })
+    let uncertainModel = DashboardModel()
+    let uncertainHost = AppDelegate(clipboard: uncertainModule, mouseLifecycle: uncertainMouse, model: uncertainModel)
+    expect(uncertainHost.applicationShouldTerminate(NSApplication.shared) == .terminateCancel,
+           "actual host quit vetoes failed initial-enable archive cleanup")
+    uncertainModel.errorMessage = nil
+    uncertainModel.onModuleChanged(.clipboard, false)
+    expect(uncertainModel.errorMessage?.contains("cleanup is pending") == true && uncertain.entries == memoryBeforeEnable,
+           "actual module unload action refuses uncertain archive cleanup without dropping memory work")
+    uncertainArchive.failClear = false
+    expect(uncertain.flushPendingStorage() && uncertainArchive.entries.isEmpty && uncertain.entries == memoryBeforeEnable && !uncertain.persistent,
+           "initial enable rollback clears newly committed disk history without deleting memory work")
+    expect(uncertainHost.applicationShouldTerminate(NSApplication.shared) == .terminateNow,
+           "actual host quit approves only after uncertain initial archive cleanup completes")
+    uncertainArchive.entries = [savedEntry]
+    do { try uncertain.configurePersistence(true, ageDays: 2) } catch {}
+    expect(uncertain.storagePending && !uncertain.flushPendingStorage(),
+           "uncertain overwrite of an existing archive blocks unload until restoration succeeds")
+    uncertainArchive.commitThenThrow = false
+    expect(uncertain.flushPendingStorage() && uncertainArchive.entries == [savedEntry] && uncertain.entries == memoryBeforeEnable,
+           "failed enable restores preexisting disk work rather than silently deleting it")
+    let committedStartup = ClipboardHistory(board: board, archive: uncertainArchive, now: { date }, source: { app })
+    uncertainArchive.commitThenThrow = true
+    do { try committedStartup.configurePersistence(true, ageDays: 1, load: true) } catch {}
+    committedStartup.setRecording(true)
+    expect(committedStartup.storagePending && !committedStartup.recording && !committedStartup.flushPendingStorage(),
+           "commit-then-throw startup preserves requested recovery and blocks unload")
+    uncertainArchive.commitThenThrow = false
+    expect(committedStartup.flushPendingStorage() && committedStartup.entries == [savedEntry] && committedStartup.persistent,
+           "startup reconciliation retains saved user work and completes requested persistence")
+    uncertainArchive.commitThenThrow = true
+    do { try committedStartup.configurePersistence(true, ageDays: 3) } catch {}
+    expect(committedStartup.ageDays == 1 && committedStartup.storagePending && !committedStartup.flushPendingStorage(),
+           "commit-then-throw retention change restores configuration and tracks reconciliation")
+    uncertainArchive.commitThenThrow = false
+    expect(committedStartup.flushPendingStorage() && uncertainArchive.entries == [savedEntry],
+           "retention rollback preserves existing archive content")
+    uncertainArchive.commitThenThrow = true
+    do { try uncertain.configurePersistence(true, ageDays: 2) } catch {}
+    uncertainArchive.failClear = true
+    do { try uncertain.clear() } catch {}
+    expect(uncertain.storagePending && !uncertain.flushPendingStorage() && uncertain.entries.isEmpty,
+           "explicit Clear supersedes archive rollback but blocks unload until deletion succeeds")
+    uncertainArchive.failClear = false
+    expect(uncertain.flushPendingStorage() && uncertainArchive.entries.isEmpty,
+           "explicit Clear removes uncertain disk commits instead of restoring discarded work")
+    uncertainModule.stop()
     failing.entries = [savedEntry]; failing.failing = true
     let startup = ClipboardHistory(board: board, archive: failing, now: { date }, source: { app })
     do { try startup.configurePersistence(true, ageDays: 1, load: true); expect(false, "startup save must throw") } catch {}
