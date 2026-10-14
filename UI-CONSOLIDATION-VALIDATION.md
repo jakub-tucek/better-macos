@@ -41,6 +41,23 @@ reliable source attribution is unavailable; no scroll event tap is installed.
 
 ## Validation and review status
 
+Review P1 follow-up: a host-side termination barrier now rejects dashboard
+mutations (including animation/module transactions, Mouse Apply, Clipboard
+recording/configuration, routing, and update installation) during asynchronous
+quit. Display/input readiness also prevents queued window/cursor work from
+restarting. Existing module/animation/display transactions veto quit before
+cleanup starts; final approval checks those transactions again. Cleanup remains
+available internally. Cancellation reopens the barrier and requests saved Spaces
+restoration; approval keeps it closed through shutdown.
+
+The blocked fake-gesture regression failed before the fix, without releasing
+the drain or executing animation preference writes. Real host callbacks now
+reject late actions, canceled quit accepts actions again, and retry approves
+without a new animation transaction. `bash test.sh`: **458 isolated checks and
+7 installer scenarios passed** (`build/review-fix-p1-green.log`). No live
+clipboard, routes, window movement, mouse settings, or app relaunch were used.
+Independent follow-up review remains the parent's responsibility.
+
 Combined integration: 443 isolated checks and 7 installer scenarios passed.
 Navigation/Windows policy: 451 isolated checks and 7 installer scenarios passed,
 including rename persistence/invalid input/identity preservation, readiness, complete

@@ -232,7 +232,8 @@ func runClipboardTests() throws {
     var spaceNotifications = 0
     quitSpaces.onChange = { spaceNotifications += 1 }
     var quitReply: Bool?
-    let quitHost = AppDelegate(spaces: quitSpaces, clipboard: quitModule, mouseLifecycle: mouseLifecycle, terminationReply: { _, approved in quitReply = approved })
+    let quitModel = DashboardModel()
+    let quitHost = AppDelegate(spaces: quitSpaces, clipboard: quitModule, mouseLifecycle: mouseLifecycle, model: quitModel, terminationReply: { _, approved in quitReply = approved })
     mouseLifecycle.apply(acceleration: false, speed: 2)
     mouseBackend.failRestore = true
     quitHistory.setRecording(true)
@@ -244,7 +245,14 @@ func runClipboardTests() throws {
     expect(quitHost.applicationShouldTerminate(NSApplication.shared) == .terminateLater && quitSpaces.isDraining,
            "actual host quit path waits for reversible gesture drain")
     expect(!mouseLifecycle.recoveryRequired && mouseBackend.value.speed == .number(1.25),
-           "combined quit restores Mouse before quiescing Clipboard and draining Spaces")
+            "combined quit restores Mouse before quiescing Clipboard and draining Spaces")
+    let enabledBeforeQuit = quitModel.enabledModules
+    quitModel.onAnimationsChanged(true)
+    quitModel.onModuleChanged(.clipboard, false)
+    quitModel.onApplyMouse()
+    quitModel.onClipboardRecording(true)
+    expect(!quitModel.animationsBusy && quitModel.enabledModules == enabledBeforeQuit && !quitHistory.recording && !mouseLifecycle.recoveryRequired,
+           "real host actions reject new animation, module, Mouse and recording work during blocked quit drain")
     failing.failing = true; quitHistory.delete(savedEntry.id)
     quitPhases.release.signal()
     let quitDeadline = Date().addingTimeInterval(2)
@@ -253,8 +261,22 @@ func runClipboardTests() throws {
            "late clipboard failure vetoes actual host quit without unloading Spaces observer or callback")
     expect(quitSpaces.needsStartupRestore && quitSpaces.savedEnabled, "canceled quit requests restoration of saved gesture choice")
     expect(!mouseLifecycle.recoveryRequired && !quitHistory.recording,
-           "late Clipboard veto keeps restored Mouse idle and recording safely paused")
+            "late Clipboard veto keeps restored Mouse idle and recording safely paused")
+    quitModel.onClipboardRecording(true)
+    expect(quitHistory.recording, "canceled quit reopens the host mutation barrier")
     failing.failing = false; quitHistory.poll()
+    quitReply = nil
+    expect(quitHost.applicationShouldTerminate(NSApplication.shared) == .terminateLater,
+           "retry quit drains Spaces again after canceled quit")
+    quitModel.onRestoreAnimations()
+    quitModel.onSpacesChanged(true)
+    quitModel.onClipboardPersistence(false)
+    let retryDeadline = Date().addingTimeInterval(2)
+    while quitReply == nil && Date() < retryDeadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+    expect(quitReply == true && !quitModel.animationsBusy && quitHistory.persistent,
+           "final approval has no late animation transaction and retains the barrier through shutdown")
+    quitModel.onClipboardRecording(true)
+    expect(!quitHistory.recording, "approved quit keeps rejecting host mutations until shutdown")
     quitModule.stop(); quitSpaces.stop()
 
     var worstCase: [ClipboardEntry] = (0..<8).map { index in
