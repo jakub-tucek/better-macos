@@ -434,29 +434,12 @@ struct DashboardView: View {
                     Spacer()
                     Text("Auto-reconnect").font(.caption).foregroundStyle(.secondary)
                 }
-                ForEach(model.devices, id: \.address) { device in
-                    HStack(spacing: 10) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(device.name).font(.system(size: 13, weight: .medium)).lineLimit(2)
-                            HStack(spacing: 4) {
-                                Circle().fill(device.connected ? Color.green : Color.gray).frame(width: 5, height: 5)
-                                Text(device.connected ? "Connected" : "Disconnected").font(.caption).foregroundStyle(.secondary)
-                            }
-                            if let state = model.bluetoothDeviceStates[device.address], !state.isEmpty {
-                                Text(state).font(.caption2).foregroundStyle(.orange).lineLimit(3)
-                            }
-                        }
-                        Spacer(minLength: 4)
-                        Button(device.connected ? "Disconnect" : "Connect") {
-                            if device.connected {
-                                disconnectWarning = device
-                                showDisconnectWarning = true
-                            } else { model.onManualConnection(device.address) }
-                        }.controlSize(.small).frame(width: 78).disabled(model.bluetoothPermissionRequired || model.bluetoothManualBusy || model.bluetoothRadioOn == false)
-                        BlueSwitch(label: "Automatically reconnect \(device.name)", isOn: model.autoReconnectBinding(for: device.address))
-                            .disabled(!model.bluetoothAvailable || model.bluetoothPermissionRequired)
+                bluetoothRows(model.devices.filter(isUsedBluetoothDevice))
+                let otherDevices = model.devices.filter { !isUsedBluetoothDevice($0) }
+                if !otherDevices.isEmpty {
+                    DisclosureGroup("Other paired devices (\(otherDevices.count))") {
+                        VStack(spacing: 12) { bluetoothRows(otherDevices) }.padding(.top, 8)
                     }
-                    if device.address != model.devices.last?.address { Divider() }
                 }
                 if model.devices.isEmpty { Text(model.bluetoothPermissionRequired ? "Grant Bluetooth access to show your paired devices." : "No paired devices found yet.").font(.caption).foregroundStyle(.secondary) }
             }
@@ -489,6 +472,40 @@ struct DashboardView: View {
                     }.padding(.top, 8)
                 }.font(.caption)
             }
+        }
+    }
+
+    private func isUsedBluetoothDevice(_ device: BluetoothDevice) -> Bool {
+        device.connected || model.selectedAddresses.contains(device.address) ||
+        model.protectedAudioAddresses.contains(device.address) ||
+        !(model.bluetoothDeviceStates[device.address] ?? "").isEmpty
+    }
+
+    @ViewBuilder
+    private func bluetoothRows(_ devices: [BluetoothDevice]) -> some View {
+        ForEach(devices, id: \.address) { device in
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(device.name).font(.system(size: 13, weight: .medium)).lineLimit(2)
+                    HStack(spacing: 4) {
+                        Circle().fill(device.connected ? Color.green : Color.gray).frame(width: 5, height: 5)
+                        Text(device.connected ? "Connected" : "Disconnected").font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let state = model.bluetoothDeviceStates[device.address], !state.isEmpty {
+                        Text(state).font(.caption2).foregroundStyle(.orange).lineLimit(3)
+                    }
+                }
+                Spacer(minLength: 4)
+                Button(device.connected ? "Disconnect" : "Connect") {
+                    if device.connected {
+                        disconnectWarning = device
+                        showDisconnectWarning = true
+                    } else { model.onManualConnection(device.address) }
+                }.controlSize(.small).frame(width: 78).disabled(model.bluetoothPermissionRequired || model.bluetoothManualBusy || model.bluetoothRadioOn == false)
+                BlueSwitch(label: "Automatically reconnect \(device.name)", isOn: model.autoReconnectBinding(for: device.address))
+                    .disabled(!model.bluetoothAvailable || model.bluetoothPermissionRequired)
+            }
+            if device.address != devices.last?.address { Divider() }
         }
     }
 
