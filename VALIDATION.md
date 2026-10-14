@@ -17,6 +17,17 @@ Our integration differs from the standalone app: explicit activation each launch
 watchdog prerequisite, and interception pauses during display reconfiguration.
 Upstream hotkeys and menu implementation are not included.
 
+### Mission Control versus Space switching
+
+The reported “Cmd + Up is still animated” action opens Mission Control, not a
+horizontal Space transition. Upstream `SwipeInterceptor` filters for horizontal
+Dock swipes, excludes keyboard events from its tap mask, and passes gestures
+through while `strafe_is_expose_active()` is true. Its speed setting therefore
+does not accelerate opening the Mission Control overview. Upstream's separate
+hotkeys invoke the horizontal switching engine; they do not change this scope.
+The UI now distinguishes these actions and links to macOS Reduce motion settings
+for the overview. No global motion preference was changed by this investigation.
+
 ## Monitor management
 
 `DisplayController.swift` is custom code using SkyLight's undocumented

@@ -172,13 +172,26 @@ struct DashboardView: View {
                 Image(systemName: "slider.horizontal.3").foregroundStyle(.blue)
                 Text("Fix macOS").font(.headline)
                 Spacer()
+                Button { model.tab = model.tab == .modules ? .monitors : .modules } label: {
+                    Image(systemName: model.tab == .modules ? "gearshape.fill" : "gearshape")
+                }
+                .buttonStyle(.plain).help("Settings and modules")
+                .accessibilityLabel("Settings and modules")
                 Button(action: model.onClose) { Image(systemName: "xmark") }
                     .buttonStyle(.plain).help("Close dashboard")
             }.padding(16)
             Text(model.watchdogStatus).font(.caption2).foregroundStyle(.secondary).padding(.bottom, 8)
+            if model.tab != .modules {
             Picker("Controls", selection: $model.tab) {
-                ForEach(DashboardTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                ForEach(DashboardTab.allCases.filter { $0 != .modules }, id: \.self) { Text($0.rawValue).tag($0) }
             }.pickerStyle(.segmented).padding(.horizontal, 16).padding(.bottom, 12)
+            } else {
+                HStack {
+                    Text("Settings").font(.headline)
+                    Spacer()
+                    Button("Back to controls") { model.tab = .monitors }
+                }.padding(.horizontal, 16).padding(.bottom, 12)
+            }
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
@@ -351,7 +364,7 @@ struct DashboardView: View {
         card {
             Text("\(title) is off").font(.headline)
             Text("Its settings are saved. Enable it in Modules when you need it.").font(.caption).foregroundStyle(.secondary)
-            Button("Manage modules") { model.tab = .modules }
+                    Button("Open module settings") { model.tab = .modules }
         }
     }
 
@@ -478,16 +491,16 @@ struct DashboardView: View {
 
     private var spaces: some View {
         VStack(alignment: .leading, spacing: 14) {
-            heading("Desktop Spaces", detail: "Speed up trackpad swipes between desktops. This does not disable all macOS animations.")
+            heading("Desktop Spaces", detail: "Speed up horizontal trackpad swipes between desktops. Opening Mission Control and keyboard shortcuts are separate actions.")
             card {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Fast Space switching").font(.headline)
+                        Text("Fast trackpad switching").font(.headline)
                         Text(!model.spacesAvailable ? "Waiting for watchdog or display changes" : model.spacesPermission ? "Accessibility permission granted" : "Accessibility permission required")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    BlueSwitch(label: "Enable fast Space switching", isOn: Binding(
+                    BlueSwitch(label: "Enable fast horizontal trackpad Space switching", isOn: Binding(
                         get: { model.spacesEnabled }, set: model.onSpacesChanged))
                         .disabled(!model.spacesAvailable)
                 }
@@ -502,6 +515,16 @@ struct DashboardView: View {
                     }
                     Text("Grant permission to Fix macOS, then turn this switch on. Monitors and Bluetooth do not require it.")
                         .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            card {
+                Text("Mission Control overview").font(.headline)
+                Text("Opening the overview with your keyboard shortcut is not accelerated by strafe. For less overview motion, use macOS Accessibility → Display → Reduce motion. That changes motion throughout macOS, not only this app.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button("Open macOS motion settings") {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.universalaccess?Seeing_Display") {
+                        NSWorkspace.shared.open(url)
+                    }
                 }
             }
         }

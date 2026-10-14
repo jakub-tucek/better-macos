@@ -71,6 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if CommandLine.arguments.contains("--show-dashboard") {
             model.tab = CommandLine.arguments.contains("--show-monitors") ? .monitors : .bluetooth
             if CommandLine.arguments.contains("--show-modules") { model.tab = .modules }
+            if CommandLine.arguments.contains("--show-spaces") { model.tab = .spaces }
             DispatchQueue.main.async { [weak self] in self?.showDashboard() }
         }
     }

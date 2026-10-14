@@ -16,7 +16,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .monitors: return "Turn monitors on/off, with recovery and confirmation."
         case .arrangement: return "Drag-to-arrange editor and automatic gap closing."
         case .bluetooth: return "Paired devices, manual connections, and reconnect monitoring."
-        case .spaces: return "Fast trackpad Space transitions. Interception still starts off."
+        case .spaces: return "Fast horizontal trackpad Space transitions, not the Mission Control overview. Interception starts off."
         }
     }
 }

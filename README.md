@@ -20,8 +20,9 @@ bash build.sh
 open "build/Fix macOS.app"
 ```
 
-Click the sliders icon in the top menu bar. The dashboard has **Modules**, **Monitors**,
-**Bluetooth**, and **Spaces** tabs and stays open when you toggle controls.
+Click the sliders icon in the top menu bar. The dashboard has **Monitors**,
+**Bluetooth**, and **Spaces** tabs, with module settings behind the **gear icon**.
+It stays open when you toggle controls.
 Blue means on, gray means off, independent of your system accent color.
 Click the icon again, the close button, or outside the app to dismiss it.
 **Launch at login** is optional; keep the built app at a permanent location
@@ -29,7 +30,7 @@ before enabling it.
 
 ### Optional modules
 
-The **Modules** tab independently enables **Monitor switching**, **Display
+The **gear icon → Modules** settings independently enable **Monitor switching**, **Display
 arrangement**, **Bluetooth reconnect**, and **Space animations**. Existing
 installations start with all four enabled; choices persist across launches.
 
