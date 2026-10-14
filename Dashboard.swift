@@ -50,6 +50,9 @@ final class DashboardModel: ObservableObject {
     @Published var spacesAvailable = false
     @Published var spacesSpeed: TransitionSpeed = .instant
     @Published var launchAtLogin = false
+    @Published var updateStatus = "Not checked yet"
+    @Published var updateChecking = false
+    @Published var updateAvailable = false
     @Published var errorMessage: String?
 
     var onMonitorChanged: (String, Bool) -> Void = { _, _ in }
@@ -74,6 +77,8 @@ final class DashboardModel: ObservableObject {
     var onRestoreAnimations: () -> Void = {}
     var onSpeedChanged: (TransitionSpeed) -> Void = { _ in }
     var onLoginChanged: (Bool) -> Void = { _ in }
+    var onCheckUpdates: () -> Void = {}
+    var onInstallUpdate: () -> Void = {}
     var onClose: () -> Void = {}
     var onQuit: () -> Void = {}
 
@@ -402,6 +407,14 @@ struct DashboardView: View {
             DisclosureGroup("Diagnostics") {
                 Text(model.watchdogStatus).font(.caption).foregroundStyle(.secondary)
             }.font(.caption)
+            card {
+                Text("Updates").font(.headline)
+                Text(model.updateStatus).font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Button("Check for updates", action: model.onCheckUpdates).disabled(model.updateChecking)
+                    if model.updateAvailable { Button("Install update…", action: model.onInstallUpdate) }
+                }
+            }
         }
     }
 

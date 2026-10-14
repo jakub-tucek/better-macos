@@ -756,4 +756,88 @@ expect(unloadCompleted && unloadPhases.recorded.last == strafe_gesture_phase_end
        "Module shutdown completes after one terminal event with queued work canceled")
 unloadDefaults.removePersistentDomain(forName: unloadDomain)
 
+let sourceRevision = String(repeating: "a", count: 40)
+let newerRevision = String(repeating: "b", count: 40)
+func comparisonJSON(_ status: String) -> Data {
+    Data("{\"status\":\"\(status)\"}".utf8)
+}
+if case .available(let sha) = try SourceUpdateComparison.parse(comparisonJSON("ahead"), headRevision: newerRevision) {
+    expect(sha == newerRevision, "Source update detection offers a newer descendant revision")
+} else { expect(false, "Expected newer source revision") }
+for status in ["identical", "behind"] {
+    if case .current = try SourceUpdateComparison.parse(comparisonJSON(status), headRevision: newerRevision) {
+        expect(true, "Source comparison \(status) does not offer a downgrade")
+    } else { expect(false, "Unexpected source update") }
+}
+if case .diverged = try SourceUpdateComparison.parse(comparisonJSON("diverged"), headRevision: newerRevision) {
+    expect(true, "Diverged source history is not treated as a normal update")
+}
+do { _ = try SourceUpdateComparison.parse(comparisonJSON("ahead"), headRevision: "bad;command"); expect(false, "Invalid revisions must fail") }
+catch { expect(true, "Updater rejects malformed revisions before constructing an install URL") }
+let managedInstallation = SourceInstallation(revision: sourceRevision,
+    sourceDirectory: "/Users/test/Library/Application Support/Fix macOS/source",
+    destination: "/Users/test/Applications/Fix macOS.app")
+let installScript = try managedInstallation.updateScript(revision: newerRevision)
+expect(installScript.contains("/\(newerRevision)/install.sh") && installScript.contains("set -euo pipefail"),
+       "Update launcher pins the downloaded installer and preserves pipeline failures")
+let quoteFixture = "path with spaces and 'quotes'; $(echo unsafe)"
+let quotedResult = try CommandRunner().run("/bin/bash", ["-c", "printf %s \(SourceInstallation.shellQuote(quoteFixture))"])
+expect(quotedResult == quoteFixture, "Installer path quoting cannot execute shell fragments")
+do { _ = try SourceInstallation(revision: sourceRevision).updateScript(revision: newerRevision); expect(false, "Unmanaged build must not silently install elsewhere") }
+catch { expect(true, "Unmanaged builds cannot invoke managed installation") }
+
+final class UpdateURLProtocol: URLProtocol {
+    private static let lock = NSLock()
+    private static var body = Data()
+    private static var code = 200
+    private static var requests = 0
+    static func configure(body: Data, code: Int = 200) {
+        lock.lock(); self.body = body; self.code = code; lock.unlock()
+    }
+    static var requestCount: Int { lock.lock(); defer { lock.unlock() }; return requests }
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.lock.lock()
+        let body = Self.body, code = Self.code
+        Self.requests += 1
+        Self.lock.unlock()
+        let response = HTTPURLResponse(url: request.url!, statusCode: code, httpVersion: "HTTP/1.1", headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        let payload = request.url!.path.hasSuffix("/commits/main") ? Data("{\"sha\":\"\(String(repeating: "b", count: 40))\"}".utf8) : body
+        client?.urlProtocol(self, didLoad: payload)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+let updateDomain = "fix-macos.updates-test.\(UUID().uuidString)"
+let updateDefaults = UserDefaults(suiteName: updateDomain)!
+let updateConfiguration = URLSessionConfiguration.ephemeral
+updateConfiguration.protocolClasses = [UpdateURLProtocol.self]
+let updateSession = URLSession(configuration: updateConfiguration)
+let updater = SourceUpdater(installation: managedInstallation, defaults: updateDefaults, session: updateSession)
+func finishUpdateCheck() {
+    let deadline = Date().addingTimeInterval(2)
+    while updater.isChecking && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+    expect(!updater.isChecking, "Source update request completes without blocking the UI")
+}
+UpdateURLProtocol.configure(body: comparisonJSON("ahead"))
+updater.check(force: true)
+finishUpdateCheck()
+expect(updater.availableRevision == newerRevision && updater.canInstall, "Source-managed install exposes an available update")
+let requestsBeforeCache = UpdateURLProtocol.requestCount
+updater.check()
+expect(UpdateURLProtocol.requestCount == requestsBeforeCache && updater.canInstall, "Daily update throttle preserves the cached available revision")
+UpdateURLProtocol.configure(body: comparisonJSON("identical"))
+updater.check(force: true)
+finishUpdateCheck()
+expect(updater.availableRevision == nil && !updater.canInstall, "Current source clears a previously available update")
+UpdateURLProtocol.configure(body: Data(), code: 404)
+updater.check(force: true)
+finishUpdateCheck()
+expect(updater.status.contains("not published") && !updater.canInstall, "Unpublished development builds report status rather than offering a downgrade")
+updater.stop()
+updateSession.invalidateAndCancel()
+updateDefaults.removePersistentDomain(forName: updateDomain)
+
 print("\(checks) isolated checks passed; no Bluetooth, display, or real Space changes.")

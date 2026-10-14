@@ -11,9 +11,29 @@ A macOS menu-bar app for managing monitors, Bluetooth connections, and desktop s
 
 Enable or disable each module from the **gear icon**. Disabled modules stop background work and release their state; your settings stay saved.
 
-## Build and run
+## Install from source
 
-Requires Apple Silicon, macOS 15+, Xcode Command Line Tools, and Homebrew.
+Requires Apple Silicon, macOS 15+, Xcode Command Line Tools (`xcode-select --install`), and [Homebrew](https://brew.sh).
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/jakub-tucek/fix-mac-os/main/install.sh | bash
+```
+
+The installer installs the Bluetooth dependencies, keeps its source checkout in
+`~/Library/Application Support/Fix macOS/source`, and installs to
+`~/Applications/Fix macOS.app`. Rerun the command to update; unchanged revisions
+skip rebuilding. Add `| bash -s -- --force` instead of `| bash` to force a rebuild.
+Local checkout changes are preserved: the installer stops rather than overwriting them.
+
+The app checks GitHub for source changes daily. **Settings → Updates** offers a
+manual check and, for installer-managed copies, **Install update…**. Updates build
+from source in Terminal and quit the old app normally before replacing it.
+
+Without a signing certificate, builds use ad-hoc signing and macOS may ask you to
+grant permissions again after updates. Set `MAC_UTILS_SIGNING_IDENTITY` when running
+the installer to retain your signing identity in its local Git configuration.
+
+## Build manually
 
 ```sh
 brew install blueutil switchaudio-osx

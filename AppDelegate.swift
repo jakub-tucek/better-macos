@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         try screenEdges?.start(layout: layout)
     }, stopCursor: { [weak self] in self?.screenEdges?.stop() })
     private let animations = AnimationPreferences()
+    private let sourceUpdater = SourceUpdater()
     private let animationQueue = DispatchQueue(label: "fix-mac-os.animation-preferences")
     private let modules = ModuleSettings()
     private let model = DashboardModel()
@@ -51,6 +52,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guiTestOriginalOutput = CommandLine.arguments[index + 1]
         }
         configureActions()
+        sourceUpdater.onChange = { [weak self] in
+            guard let self else { return }
+            model.updateStatus = sourceUpdater.status
+            model.updateChecking = sourceUpdater.isChecking
+            model.updateAvailable = sourceUpdater.canInstall
+        }
+        sourceUpdater.start()
         safety.onStatusChanged = { [weak self] status in
             guard let self else { return }
             if model.watchdogStatus != status { logger.notice("Watchdog status: \(status, privacy: .public)") }
@@ -148,6 +156,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model.onAnimationsChanged = { [weak self] enabled in self?.setAnimations(enabled) }
         model.onRestoreAnimations = { [weak self] in self?.setAnimations(false, recoverOnly: true) }
+        model.onCheckUpdates = { [weak self] in self?.sourceUpdater.check(force: true) }
+        model.onInstallUpdate = { [weak self] in
+            do { try self?.sourceUpdater.install() } catch { self?.showError(error) }
+        }
         model.onSpeedChanged = { [weak self] speed in self?.spaces?.speed = speed; self?.refreshPreferences() }
         model.onLoginChanged = { [weak self] enabled in
             guard let self else { return }
@@ -636,6 +648,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        sourceUpdater.stop()
         spaces?.onChange = nil
         screenEdges?.stop()
         bluetooth?.stop()
