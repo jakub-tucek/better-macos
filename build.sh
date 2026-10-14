@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")"
-APP="$PWD/build/fix-mac-os.app"
+APP="$PWD/build/Fix macOS.app"
 # Local repository configuration keeps permission identity stable across builds.
 # An unavailable configured certificate must fail signing, never fall back silently.
 SIGNING_IDENTITY="${MAC_UTILS_SIGNING_IDENTITY:-$(git config --local --get macutils.signingIdentity || true)}"

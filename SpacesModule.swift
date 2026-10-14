@@ -39,7 +39,7 @@ final class SpacesModule {
         guard hasPermission else {
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
             _ = AXIsProcessTrustedWithOptions(options)
-            throw ToggleError(message: "Enable fix-mac-os in System Settings → Privacy & Security → Accessibility, then try this switch again. Monitors and Bluetooth work without it.")
+            throw ToggleError(message: "Enable Fix macOS in System Settings → Privacy & Security → Accessibility, then try this switch again. Monitors and Bluetooth work without it.")
         }
         guard !NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == "com.rileycx.strafe" }) else {
             throw ToggleError(message: "Quit the standalone strafe app first, so two gesture interceptors do not compete.")

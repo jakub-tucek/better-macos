@@ -1,4 +1,4 @@
-# fix-mac-os
+# Fix macOS
 
 One personal macOS menu-bar app for **monitors, Bluetooth, and fast desktop Space
 switching**. SwiftUI dashboard in an AppKit menu-bar popover, with blue on/off switches.
@@ -17,7 +17,7 @@ original auto-connect scripts:
 ```sh
 brew install blueutil switchaudio-osx
 bash build.sh
-open "build/fix-mac-os.app"
+open "build/Fix macOS.app"
 ```
 
 Click the sliders icon in the top menu bar. The dashboard has **Monitors**,
@@ -73,7 +73,7 @@ Unplugging or restarting WindowServer while screens are off can prevent recovery
 
 ## Bluetooth
 
-**First grant macOS Bluetooth access to fix-mac-os.** Use **Allow Bluetooth
+**First grant macOS Bluetooth access to Fix macOS.** Use **Allow Bluetooth
 access…** in the dashboard, or **System Settings → Privacy & Security → Bluetooth**.
 Terminal permission is not app permission: terminal diagnostics can succeed while
 the GUI is denied. The app now distinguishes permission denial from radio power.
@@ -97,10 +97,10 @@ bash build.sh
 This setting stays in local Git configuration. A configured signing failure stops
 the build rather than silently switching back to ad-hoc signing. When migrating
 from ad-hoc signing, remove the old app entry from **Privacy & Security →
-Accessibility**, then add `build/fix-mac-os.app` again and enable it. Merely toggling
+Accessibility**, then add `build/Fix macOS.app` again and enable it. Merely toggling
 an old entry may retain its stale code requirement. Restart the app afterward.
 
-Signing keys remain in Keychain and are not exported or committed. fix-mac-os
+Signing keys remain in Keychain and are not exported or committed. Fix macOS
 does not edit the TCC database or grant itself permissions.
 
 - Open the **Bluetooth** tab and turn on the switch beside each device you want
@@ -132,7 +132,7 @@ does not edit the TCC database or grant itself permissions.
 - Keyboards do not block reconnecting audio when audio-output discovery is
   available. Without that discovery, any other connected Bluetooth device blocks
   automatic reconnection conservatively.
-- Auto-connect runs only while fix-mac-os is running, checking every five seconds.
+- Auto-connect runs only while Fix macOS is running, checking every five seconds.
 - Device addresses and preferences stay in local UserDefaults. No telemetry.
 
 ### Migrating the previous Bluetooth tool
@@ -140,9 +140,9 @@ does not edit the TCC database or grant itself permissions.
 The app can import the speaker selection from the old `smart-connect.sh` under
 `~/Projects/others/bluetooth-connect/bluetooth-connect/`. It never edits that script.
 
-If `com.user.bluetooth-autoconnect` is installed, fix-mac-os leaves its reconnect
+If `com.user.bluetooth-autoconnect` is installed, Fix macOS leaves its reconnect
 loop in charge until **Bluetooth → Take over existing service…** is
-confirmed. This stops/disables the old LaunchAgent and enables fix-mac-os's loop.
+confirmed. This stops/disables the old LaunchAgent and enables Fix macOS's loop.
 Its script and plist remain intact. Enable **Launch at login** if wanted.
 
 ## Desktop Spaces
@@ -154,7 +154,7 @@ transitions, **not all macOS animations**. It does not include strafe's keyboard
 shortcuts or standalone CLI.
 
 Accessibility permission is required **only** for this feature. Turn its switch
-on, grant **fix-mac-os** permission in **System Settings → Privacy & Security →
+on, grant **Fix macOS** permission in **System Settings → Privacy & Security →
 Accessibility**, then retry the switch. Quit standalone strafe first if running.
 Monitors and Bluetooth remain usable without this permission.
 
@@ -166,7 +166,7 @@ under [`Vendor/strafe`](Vendor/strafe).
 
 ```sh
 bash test.sh                         # isolated tests; no hardware changes
-APP="build/fix-mac-os.app/Contents/MacOS/fix-mac-os"
+APP="build/Fix macOS.app/Contents/MacOS/fix-mac-os"
 "$APP" --status                      # monitors
 "$APP" --bluetooth-status            # paired devices; observation only
 "$APP" --bluetooth-app-status        # actual running GUI snapshot and errors

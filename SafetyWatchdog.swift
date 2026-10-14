@@ -38,7 +38,7 @@ enum SafetyWatchdog {
                 let heartbeat = text.flatMap(Double.init) ?? 0
                 if WatchdogPolicy.shouldStop(parentIsAlive: true, now: ProcessInfo.processInfo.systemUptime,
                                              heartbeat: heartbeat, timeout: session.timeout) {
-                    defaults.set("UI heartbeat stopped; the watchdog terminated fix-mac-os.", forKey: "safety.lastIncident")
+                    defaults.set("UI heartbeat stopped; the watchdog terminated Fix macOS.", forKey: "safety.lastIncident")
                     defaults.set(false, forKey: "spaces.enabled")
                     try Data("UI heartbeat expired".utf8).write(to: directory.appendingPathComponent("tripped"), options: .atomic)
                     // Re-check parentage immediately before signaling. PID reuse

@@ -230,7 +230,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     var reconnectSummary: String {
-        if permissionRequired { return "Bluetooth access required — allow fix-mac-os in Privacy & Security → Bluetooth" }
+        if permissionRequired { return "Bluetooth access required — allow Fix macOS in Privacy & Security → Bluetooth" }
         if radioPoweredOn == false { return "Bluetooth is off — turn the radio on first" }
         if pendingManual != nil { return "Manual request queued; waiting for the current attempt" }
         if busy, let activity { return activity }

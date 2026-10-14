@@ -106,7 +106,7 @@ struct DashboardView: View {
         VStack(spacing: 0) {
             HStack {
                 Image(systemName: "slider.horizontal.3").foregroundStyle(.blue)
-                Text("fix-mac-os").font(.headline)
+                Text("Fix macOS").font(.headline)
                 Spacer()
                 Button(action: model.onClose) { Image(systemName: "xmark") }
                     .buttonStyle(.plain).help("Close dashboard")
@@ -159,7 +159,7 @@ struct DashboardView: View {
         } message: {
             Text("Disconnect \(disconnectWarning?.name ?? "this device")? \(disconnectDisablesRule ? "Its auto-reconnect rule will be turned off; other rules are unchanged. " : "")If this is your keyboard or mouse, make sure you have another usable input device first.")
         }
-        .alert("Move auto-connect into fix-mac-os?", isPresented: $showLegacyWarning) {
+        .alert("Move auto-connect into Fix macOS?", isPresented: $showLegacyWarning) {
             Button("Take over", action: model.onTakeOverLegacy)
             Button("Cancel", role: .cancel) {}
         } message: { Text("The existing LaunchAgent will be stopped and disabled. Its source files are preserved.") }
@@ -331,7 +331,7 @@ struct DashboardView: View {
                             NSWorkspace.shared.open(url)
                         }
                     }
-                    Text("Grant permission to fix-mac-os, then turn this switch on. Monitors and Bluetooth do not require it.")
+                    Text("Grant permission to Fix macOS, then turn this switch on. Monitors and Bluetooth do not require it.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

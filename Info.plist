@@ -3,13 +3,13 @@
 <plist version="1.0"><dict>
     <key>CFBundleExecutable</key><string>fix-mac-os</string>
     <key>CFBundleIdentifier</key><string>io.github.jakub-tucek.mac-utils</string>
-    <key>CFBundleName</key><string>fix-mac-os</string>
-    <key>CFBundleDisplayName</key><string>fix-mac-os</string>
+    <key>CFBundleName</key><string>Fix macOS</string>
+    <key>CFBundleDisplayName</key><string>Fix macOS</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.4</string>
     <key>CFBundleVersion</key><string>4</string>
     <key>LSMinimumSystemVersion</key><string>15.0</string>
-    <key>NSBluetoothAlwaysUsageDescription</key><string>fix-mac-os lists paired Bluetooth devices and reconnects only the devices you choose.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key><string>Fix macOS lists paired Bluetooth devices and reconnects only the devices you choose.</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
