@@ -43,9 +43,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var guiTestOriginalOutput: String?
     private let commandRunner: CommandRunning
 
-    init(commandRunner: CommandRunning = CommandRunner(), spaces: SpacesModule? = nil) {
+    init(commandRunner: CommandRunning = CommandRunner(), spaces: SpacesModule? = nil, windowPositions: WindowPositions? = nil) {
         self.commandRunner = commandRunner
         self.spaces = spaces
+        self.windowPositions = windowPositions
         super.init()
     }
 
@@ -583,8 +584,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func reconcileWindows() {
-        windowPositions?.reconcile(ready: controlState.inputReady && layoutFresh,
-                                   settled: !displayRefresh.isSettling && layoutFresh && !recovering)
+        reconcileWindows(state: controlState)
+    }
+
+    func reconcileWindows(state: SystemControlLifecycle.State) {
+        windowPositions?.reconcile(ready: state.inputReady && state.layoutFresh,
+                                   settled: !state.displaySettling && state.layoutFresh && !state.displayOperation)
     }
 
     private func setAnimations(_ enabled: Bool, preserveChoice: Bool = false, recoverOnly: Bool = false, completion: (() -> Void)? = nil) {

@@ -82,15 +82,16 @@ final class FakeWindowBackend: WindowPositionBackend {
     var screens = [WindowDisplay(id: "A", bounds: CGRect(x: 0, y: 25, width: 1000, height: 700))]
     var items = [PositionedWindow(token: "1", app: "test.editor", title: "Document", frame: CGRect(x: 800, y: 600, width: 500, height: 400), supported: true)]
     var moves: [CGRect] = []
+    var succeeds = true
     func requestPermission() {}
     func displays() -> [WindowDisplay] { screens }
     func windows() -> [PositionedWindow] { items }
-    func move(_ window: PositionedWindow, to frame: CGRect) -> Bool { moves.append(frame); return true }
+    func move(_ window: PositionedWindow, to frame: CGRect) -> Bool { moves.append(frame); return succeeds }
 }
 let windowDomain = "test.windows.\(UUID().uuidString)"
 let windowDefaults = UserDefaults(suiteName: windowDomain)!
 let windowBackend = FakeWindowBackend()
-let windowModule = WindowPositions(backend: windowBackend, defaults: windowDefaults)
+let windowModule = WindowPositions(backend: windowBackend, defaults: windowDefaults, schedule: { $0() })
 windowModule.reconcile(ready: true, settled: true)
 windowModule.save("Desk")
 expect(windowModule.layouts.count == 1 && !windowModule.automatic, "window layout saves; automation defaults off")
@@ -134,6 +135,74 @@ expect(windowBackend.moves.count == 3, "unload cancels pending work")
 let reloadedWindows = WindowPositions(backend: windowBackend, defaults: windowDefaults)
 expect(reloadedWindows.layouts.count == 1 && reloadedWindows.automatic, "layouts and automation survive unload")
 windowDefaults.removePersistentDomain(forName: windowDomain)
+
+let matchingDomain = "test.windows.matching.\(UUID().uuidString)"
+let matchingDefaults = UserDefaults(suiteName: matchingDomain)!
+let matchingBackend = FakeWindowBackend()
+let matchingModule = WindowPositions(backend: matchingBackend, defaults: matchingDefaults, schedule: { $0() })
+matchingModule.reconcile(ready: true, settled: true)
+matchingModule.save("Matching")
+matchingBackend.items[0].title = "Different document"
+matchingModule.restore(matchingModule.selected)
+expect(matchingBackend.moves.isEmpty && matchingModule.summary.contains("missing 1"), "changed title does not guess another document")
+matchingBackend.items[0].title = "Document"
+matchingBackend.items[0].supported = false
+matchingModule.restore(matchingModule.selected)
+expect(matchingBackend.moves.isEmpty && matchingModule.summary.contains("unsupported 1"), "unsupported current windows are reported without writes")
+matchingBackend.items[0].supported = true
+matchingBackend.succeeds = false
+matchingModule.restore(matchingModule.selected)
+expect(matchingModule.summary.contains("failed 1"), "backend refusal is reported as failure")
+matchingBackend.moves = []
+matchingBackend.succeeds = true
+matchingBackend.items.append(matchingBackend.items[0])
+matchingModule.save("Duplicate saved titles")
+matchingBackend.items.removeLast()
+matchingModule.restore(matchingModule.selected)
+expect(matchingBackend.moves.isEmpty && matchingModule.summary.contains("ambiguous 2"), "saved duplicates cannot both target one current window")
+matchingDefaults.removePersistentDomain(forName: matchingDomain)
+
+let queuedDomain = "test.windows.queued.\(UUID().uuidString)"
+let queuedDefaults = UserDefaults(suiteName: queuedDomain)!
+let queuedBackend = FakeWindowBackend()
+queuedBackend.items.append(PositionedWindow(token: "2", app: "test.browser", title: "Page", frame: CGRect(x: 10, y: 30, width: 200, height: 200), supported: true))
+var windowTasks: [() -> Void] = []
+let queuedWindows = WindowPositions(backend: queuedBackend, defaults: queuedDefaults, schedule: { windowTasks.append($0) })
+let windowHost = AppDelegate(windowPositions: queuedWindows)
+var windowState = SystemControlLifecycle.State(watchdogReady: true, displaySettling: false, displayOperation: false,
+    pendingConfirmation: false, layoutFresh: true, cursorRequested: false, arrangementEnabled: false, layout: [])
+windowHost.reconcileWindows(state: windowState)
+queuedWindows.save("Two apps")
+queuedWindows.restore(queuedWindows.selected)
+expect(queuedBackend.moves.isEmpty, "host restore yields before its first write")
+windowTasks.removeFirst()()
+expect(queuedBackend.moves.count == 1, "restore writes only one window per scheduled step")
+windowState.pendingConfirmation = true
+windowHost.reconcileWindows(state: windowState)
+windowTasks.removeFirst()()
+expect(queuedBackend.moves.count == 1, "host confirmation cancels remaining queued writes")
+windowState.pendingConfirmation = false
+windowHost.reconcileWindows(state: windowState)
+queuedWindows.automatic = true
+queuedWindows.connectionChanged()
+queuedWindows.connectionChanged()
+windowState.displaySettling = true
+windowHost.reconcileWindows(state: windowState)
+expect(windowTasks.isEmpty, "connection callback storm does not restore during host settling")
+windowState.displaySettling = false
+windowHost.reconcileWindows(state: windowState)
+while !windowTasks.isEmpty { windowTasks.removeFirst()() }
+expect(queuedBackend.moves.count == 3, "same-final-set rapid reconnect restores both apps exactly once")
+windowHost.reconcileWindows(state: windowState)
+expect(windowTasks.isEmpty, "settled host refresh does not repeat reconnect restore")
+queuedWindows.restore(queuedWindows.selected)
+queuedBackend.screens[0].bounds.size.width = 900
+windowTasks.removeFirst()()
+expect(queuedBackend.moves.count == 3, "queued write rejects changed display bounds without waiting for notifications")
+let identicalFrame = CGRect(x: 0, y: 0, width: 100, height: 100)
+expect(!AXWindowPositionBackend.hasUniqueGeometry(identicalFrame, in: [identicalFrame, identicalFrame]), "same-geometry off-Space sibling makes visibility correlation ambiguous")
+queuedWindows.stop()
+queuedDefaults.removePersistentDomain(forName: queuedDomain)
 
 final class FakeRunner: CommandRunning {
     var current: [BluetoothDevice] = [speaker]

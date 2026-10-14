@@ -94,6 +94,10 @@ switching. Keep Bluetooth reconnect rules separate from audio-routing preference
 
 ### 3. Restore window positions
 
+The **Windows** dashboard implements both iterations below with opt-in automation.
+See [window-position validation](WINDOW-POSITIONS-VALIDATION.md) for isolated evidence
+and remaining live/hardware acceptance checks; roadmap boxes remain open until those checks pass.
+
 - [ ] **3A · Save and restore on demand.** Add a **Window positions** module using
   Accessibility APIs. Save a named layout for the current display set, with display
   identities, window frames, and app/window matching information. Provide **Restore
