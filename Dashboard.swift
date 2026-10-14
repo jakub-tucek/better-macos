@@ -13,6 +13,23 @@ enum DashboardTab: String, CaseIterable {
     case windows = "Windows"
     case clipboard = "Clipboard"
     case mouse = "Mouse"
+
+    static var features: [DashboardTab] { allCases.filter { $0 != .modules } }
+    var symbol: String {
+        switch self {
+        case .modules: return "gearshape"
+        case .monitors: return "display"
+        case .bluetooth: return "antenna.radiowaves.left.and.right"
+        case .audio: return "speaker.wave.2"
+        case .spaces: return "rectangle.3.group"
+        case .menuBar: return "menubar.rectangle"
+        case .keyboard: return "keyboard"
+        case .keepAwake: return "pill.fill"
+        case .windows: return "macwindow.on.rectangle"
+        case .clipboard: return "clipboard"
+        case .mouse: return "computermouse"
+        }
+    }
 }
 
 /// The same state drives the persistent popover and its controls. Refreshes
@@ -266,6 +283,7 @@ struct DashboardView: View {
     @State private var previewMonitor: String?
     @State private var customAwakeDuration = false
     @State private var clipboardExclusionsDraft = ClipboardExclusionsDraft()
+    @State private var lastFeature: DashboardTab = .monitors
 
     private var disconnectDisablesRule: Bool {
         guard let device = disconnectWarning else { return false }
@@ -278,7 +296,10 @@ struct DashboardView: View {
                 Image(systemName: "slider.horizontal.3").foregroundStyle(.blue)
                 Text("Fix macOS").font(.headline)
                 Spacer()
-                Button { model.tab = model.tab == .modules ? .monitors : .modules } label: {
+                Button {
+                    if model.tab == .modules { model.tab = lastFeature }
+                    else { lastFeature = model.tab; model.tab = .modules }
+                } label: {
                     Image(systemName: model.tab == .modules ? "gearshape.fill" : "gearshape")
                 }
                 .buttonStyle(.plain).help("Settings and modules")
@@ -287,14 +308,24 @@ struct DashboardView: View {
                     .buttonStyle(.plain).help("Close dashboard")
             }.padding(16)
             if model.tab != .modules {
-            Picker("Controls", selection: $model.tab) {
-                ForEach(DashboardTab.allCases.filter { $0 != .modules }, id: \.self) { Text($0.rawValue).tag($0) }
-            }.pickerStyle(.menu).labelsHidden().padding(.horizontal, 16).padding(.bottom, 12)
+                Menu {
+                    ForEach(DashboardTab.features, id: \.self) { feature in
+                        Button { model.tab = feature } label: {
+                            Label(feature.rawValue, systemImage: feature.symbol)
+                        }
+                    }
+                } label: {
+                    Label(model.tab.rawValue, systemImage: model.tab.symbol)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .help("Choose a feature")
+                .accessibilityLabel("Choose a feature: \(model.tab.rawValue)")
+                .padding(.horizontal, 16).padding(.bottom, 12)
             } else {
                 HStack {
                     Text("Settings").font(.headline)
                     Spacer()
-                    Button("Back") { model.tab = .monitors }
+                    Button("Back") { model.tab = lastFeature }
                 }.padding(.horizontal, 16).padding(.bottom, 12)
             }
             Divider()
@@ -520,7 +551,7 @@ struct DashboardView: View {
         return VStack(alignment: .leading, spacing: 14) {
             card {
                 HStack {
-                    Label("Keep awake", systemImage: "cup.and.saucer.fill").font(.headline)
+                    Label("Keep awake", systemImage: DashboardTab.keepAwake.symbol).font(.headline)
                     Spacer()
                     Text(model.keepAwakeProtectionFailed ? "Needs retry" : (model.keepAwakeActive ? "Active" : "Off"))
                         .foregroundStyle(model.keepAwakeActive ? .blue : .secondary)

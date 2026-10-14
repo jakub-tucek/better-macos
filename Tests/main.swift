@@ -113,6 +113,25 @@ let windowModule = WindowPositions(backend: windowBackend, defaults: windowDefau
 windowModule.reconcile(ready: true, settled: true)
 windowModule.save("Desk")
 expect(windowModule.layouts.count == 1 && !windowModule.automatic, "window layout saves; automation defaults off")
+let savedWindowID = windowModule.selected
+let savedWindowFrame = windowModule.layouts[0].windows[0].frame
+expect(windowModule.rename(savedWindowID, to: "  Renamed desk  ") && windowModule.layouts[0].name == "Renamed desk",
+       "layout rename trims and updates the saved name")
+expect(windowModule.selected == savedWindowID && windowModule.layouts[0].windows[0].frame == savedWindowFrame && windowBackend.moves.isEmpty,
+       "rename preserves identity, automatic selection and geometry without moving windows")
+expect(!windowModule.rename(savedWindowID, to: " \n ") && !windowModule.rename("missing", to: "Other"),
+       "empty and missing layout renames leave saved data unchanged")
+let renamedWindows = WindowPositions(backend: windowBackend, defaults: windowDefaults)
+expect(renamedWindows.layouts[0].name == "Renamed desk" && renamedWindows.selected == savedWindowID,
+       "layout rename persists across recreation")
+expect(windowModule.canCapture, "window actions become ready with isolated backend permission")
+windowBackend.permitted = false
+expect(!windowModule.canCapture, "revoked window permission disables primary actions")
+windowBackend.permitted = true
+expect(Set(DashboardTab.features) == Set(DashboardTab.allCases.filter { $0 != .modules }) && DashboardTab.features.contains(.mouse),
+       "feature chooser includes every feature including Mouse, with Settings separate")
+expect(DashboardTab.features.allSatisfy { !$0.symbol.isEmpty } && DashboardTab.keepAwake.symbol == "pill.fill",
+       "feature navigation provides icons and Keep awake shares the pill symbol")
 windowModule.restore(windowModule.selected)
 expect(windowBackend.moves == [CGRect(x: 500, y: 325, width: 500, height: 400)], "restore clamps to available bounds")
 windowBackend.items.append(windowBackend.items[0])

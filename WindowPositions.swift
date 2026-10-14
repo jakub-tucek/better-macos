@@ -143,9 +143,18 @@ final class WindowPositions: ObservableObject {
         } else { summary = "No unique saved layout for this display set; select one." }
     }
     func requestPermission() { backend.requestPermission() }
+    var permitted: Bool { backend.permitted }
+    var canCapture: Bool { ready && !stopped && permitted }
     private var excluded: Set<String> { Set(exclusions.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }) }
     private func persist() { if let data = try? JSONEncoder().encode(layouts) { defaults.set(data, forKey: "windows.layouts") } }
     func delete(_ id: String) { generation += 1; layouts.removeAll { $0.id == id }; persist(); if selected == id { selected = "" } }
+    @discardableResult func rename(_ id: String, to name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let index = layouts.firstIndex(where: { $0.id == id }) else { return false }
+        layouts[index].name = trimmed
+        persist()
+        return true
+    }
     func save(_ name: String) {
         guard ready, backend.permitted else { summary = "Wait for stable displays and grant Accessibility access."; return }
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -330,7 +330,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.keepAwakeAppsPaused = keepAwake?.appsPaused ?? false
         model.keepAwakeProtectionFailed = keepAwake?.protectionFailed ?? false
         model.keepDisplayAwake = keepAwake?.keepDisplayAwake ?? false
-        item?.button?.image = NSImage(systemSymbolName: model.keepAwakeActive ? "cup.and.saucer.fill" : "slider.horizontal.3", accessibilityDescription: "Fix macOS")
+        item?.button?.image = NSImage(systemSymbolName: model.keepAwakeActive ? DashboardTab.keepAwake.symbol : "slider.horizontal.3", accessibilityDescription: model.keepAwakeActive ? "Fix macOS — Keep awake active" : "Fix macOS")
         item?.button?.toolTip = model.keepAwakeProtectionFailed ? "Fix macOS — keep awake needs retry" : (model.keepAwakeActive ? "Fix macOS — keeping awake" : "Fix macOS")
         publishModuleStatus()
     }
