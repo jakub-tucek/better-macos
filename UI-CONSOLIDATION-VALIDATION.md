@@ -76,6 +76,24 @@ failed/successful explicit Clear. Final `bash test.sh`: **472 isolated checks an
 SwiftUI built under warnings-as-errors. `git diff --check` passed. These are
 implementer-run regressions, not independent review or live acceptance.
 
+Independent follow-up identified a further privacy defect: enable could reload
+discarded disk history after a failed Clear. Clear now takes priority before
+any enable load/merge, including startup-style loads; failed deletion rejects
+enable without reading/saving the archive or changing retention. Metadata
+mutations and failed disable cannot replace pending deletion with a save retry.
+Only after deletion succeeds may newly captured work be persisted.
+
+The exact commit-then-throw enable → failed Clear → recovered storage → enable
+sequence failed before the fix (`build/review-fix-clear-red.log`) and passes
+afterward. Regressions cover still-failing deletion, both enable load modes,
+ordinary/pinned text and bounded pinned images, repeated disable, metadata
+changes, and preserving only post-Clear captures. Previous archive rollback,
+startup, and quit/unload regressions remain passing. Latest `bash test.sh`:
+**517 isolated checks and 7 installer scenarios passed**
+(`build/review-fix-clear-green.log`); `git diff --check` passed. No live clipboard,
+app launch/relaunch, device mutation, or push was performed. Parent-arranged
+independent rereview is still pending; this is not a self-certified verdict.
+
 Combined integration: 443 isolated checks and 7 installer scenarios passed.
 Navigation/Windows policy: 451 isolated checks and 7 installer scenarios passed,
 including rename persistence/invalid input/identity preservation, readiness, complete

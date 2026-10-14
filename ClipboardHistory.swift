@@ -99,6 +99,12 @@ final class ClipboardHistory {
         lastChange = board.changeCount // Never capture the clipboard present at startup/resume.
     }
     func configurePersistence(_ enabled: Bool, ageDays: Int, load: Bool = false) throws {
+        // Clear is authoritative over every recovery/merge path. Never read
+        // an archive containing discarded history until its deletion succeeds.
+        if enabled, pendingClear {
+            retryStorage()
+            guard !pendingClear else { throw CocoaError(.fileWriteUnknown) }
+        }
         // Never replace an archive that startup has not successfully loaded and pruned.
         // An explicit disable/Clear may discard it; enabling must recover it first.
         if enabled, !load, let recovery = startupRecovery {
@@ -133,7 +139,7 @@ final class ClipboardHistory {
             } else {
                 // Restore the old configuration conservatively, including
                 // failed retention saves or a disable that committed its clear.
-                pendingClear = !persistent
+                pendingClear = pendingClear || !persistent
             }
             storagePending = true
             onChange()
@@ -223,13 +229,23 @@ final class ClipboardHistory {
     }
     private func changed() {
         if persistent {
-            storagePending = true; pendingClear = false
+            storagePending = true
             retryStorage()
         }
         onChange()
     }
     private func retryStorage() {
         do {
+            if pendingClear {
+                try archive.clear()
+                pendingClear = false
+                // Copies made after Clear are new work, not permission to
+                // resurrect the discarded archive or bypass its deletion.
+                if persistent && !entries.isEmpty { try archive.save(entries) }
+                storagePending = false
+                onChange()
+                return
+            }
             if let recovery = startupRecovery {
                 try configurePersistence(recovery.enabled, ageDays: recovery.days, load: true)
                 return
@@ -238,8 +254,7 @@ final class ClipboardHistory {
                 if rollback.isEmpty { try archive.clear() }
                 else { try archive.save(rollback) }
                 archiveRollback = nil
-            } else if pendingClear { try archive.clear() }
-            else { try archive.save(entries) }
+            } else { try archive.save(entries) }
             storagePending = false; pendingClear = false
         } catch { onError() }
         onChange()

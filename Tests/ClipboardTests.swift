@@ -19,11 +19,15 @@ private final class FailingClipboardArchive: ClipboardPersistence {
     var failLoad = false
     var commitThenThrow = false
     var failClear = false
+    var loads = 0
+    var saves = 0
     func load() throws -> [ClipboardEntry] {
+        loads += 1
         if failLoad { throw CocoaError(.fileReadNoPermission) }
         return entries
     }
     func save(_ entries: [ClipboardEntry]) throws {
+        saves += 1
         if failing { throw CocoaError(.fileWriteNoPermission) }
         self.entries = entries
         if commitThenThrow { throw CocoaError(.fileWriteNoPermission) }
@@ -161,6 +165,79 @@ func runClipboardTests() throws {
     expect(failing.entries.isEmpty && !recoverable.storagePending, "exclusion purge retries without a new capture")
 
     let savedEntry = ClipboardEntry(id: UUID(), created: date, source: "fixture", text: "preserved startup", image: nil, pinned: true)
+    for kind in ["text", "pinned text", "pinned image"] {
+        for loadOnEnable in [false, true] {
+            let clearBoard = FakeClipboard()
+            let clearArchive = FailingClipboardArchive()
+            let cleared = ClipboardHistory(board: clearBoard, archive: clearArchive, now: { date }, source: { "fixture" })
+            cleared.setRecording(true)
+            if kind == "pinned image" { clearBoard.put(nil, image: Data(repeating: 7, count: ClipboardHistory.imageLimit)) }
+            else { clearBoard.put("discarded secret") }
+            cleared.poll()
+            if kind != "text" { cleared.pin(cleared.entries[0].id) }
+            clearArchive.commitThenThrow = true
+            do { try cleared.configurePersistence(true, ageDays: 2) } catch {}
+            clearArchive.failClear = true
+            do { try cleared.clear() } catch {}
+            expect(cleared.entries.isEmpty && clearArchive.entries.count == 1 && cleared.storagePending,
+                   "failed Clear after uncertain enable discards \(kind) from memory")
+            clearArchive.commitThenThrow = false
+            let initialLoads = clearArchive.loads
+            let initialSaves = clearArchive.saves
+            do {
+                try cleared.configurePersistence(true, ageDays: 3, load: loadOnEnable)
+                expect(false, "initial enable must throw while Clear still fails")
+            } catch {}
+            expect(!cleared.persistent && cleared.entries.isEmpty && cleared.storagePending &&
+                   clearArchive.loads == initialLoads && clearArchive.saves == initialSaves && !cleared.flushPendingStorage(),
+                   "failed initial deletion blocks enable and keeps discarded \(kind) absent")
+            // No idle cleanup after storage recovers: enable must perform it.
+            clearArchive.failClear = false
+            try cleared.configurePersistence(true, ageDays: 2, load: loadOnEnable)
+            expect(cleared.entries.isEmpty && clearArchive.entries.isEmpty && !cleared.storagePending && cleared.flushPendingStorage(),
+                   "enable reconciles pending Clear before loading discarded \(kind), load=\(loadOnEnable)")
+
+            clearBoard.put("discard again"); cleared.poll()
+            clearArchive.failClear = true
+            do { try cleared.clear() } catch {}
+            let loadsBefore = clearArchive.loads
+            let savesBefore = clearArchive.saves
+            do {
+                try cleared.configurePersistence(true, ageDays: 3, load: loadOnEnable)
+                expect(false, "enable must throw while authoritative Clear still fails")
+            } catch {}
+            expect(cleared.entries.isEmpty && cleared.storagePending && cleared.ageDays == 2 &&
+                   clearArchive.loads == loadsBefore && clearArchive.saves == savesBefore && !cleared.flushPendingStorage(),
+                   "failed deletion blocks enable without loading or saving discarded history")
+            cleared.setExclusions(["unrelated"])
+            expect(cleared.storagePending && clearArchive.saves == savesBefore,
+                   "persistent metadata mutation cannot supersede failed Clear")
+            do { try cleared.configurePersistence(false, ageDays: 2) } catch {}
+            expect(!cleared.flushPendingStorage() && cleared.storagePending && clearArchive.saves == savesBefore,
+                   "failed disable cannot replace pending Clear with a save retry")
+            clearArchive.failClear = false
+            expect(cleared.flushPendingStorage() && clearArchive.entries.isEmpty,
+                   "Clear remains authoritative through later mutation and storage recovery")
+        }
+    }
+    let newWorkBoard = FakeClipboard()
+    let newWorkArchive = FailingClipboardArchive()
+    let newWork = ClipboardHistory(board: newWorkBoard, archive: newWorkArchive, now: { date }, source: { "fixture" })
+    try newWork.configurePersistence(true, ageDays: 7)
+    newWork.setRecording(true); newWorkBoard.put("discard old work"); newWork.poll()
+    newWorkArchive.failClear = true
+    do { try newWork.clear() } catch {}
+    let savesBeforeNewWork = newWorkArchive.saves
+    newWorkBoard.put(nil, image: Data(repeating: 8, count: ClipboardHistory.imageLimit)); newWork.poll()
+    newWork.pin(newWork.entries[0].id)
+    expect(newWork.storagePending && newWorkArchive.saves == savesBeforeNewWork && !newWork.flushPendingStorage(),
+           "new bounded pinned image capture cannot bypass failed Clear")
+    newWorkArchive.failClear = false
+    expect(newWork.flushPendingStorage() && newWorkArchive.entries == newWork.entries &&
+           newWorkArchive.entries.count == 1 && newWorkArchive.entries[0].text == nil && newWorkArchive.entries[0].pinned,
+           "successful Clear reconciliation persists only newly captured image work")
+    expect(newWorkArchive.entries[0].image?.count == ClipboardHistory.imageLimit,
+           "Clear reconciliation retains the bounded image bytes without restoring old text")
     let uncertainArchive = FailingClipboardArchive()
     let uncertain = ClipboardHistory(board: board, archive: uncertainArchive, now: { date }, source: { app })
     uncertain.setRecording(true); board.put("uncertain disk secret"); uncertain.poll()
