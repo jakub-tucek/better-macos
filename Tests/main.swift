@@ -305,6 +305,7 @@ final class FakeRunner: CommandRunning {
     var failedAddresses = Set<String>()
     var powerOn = true
     var failAudioObservation = false
+    var failPostConnectAudioObservation = false
     var failDeviceObservation = false
 
     func run(_ executable: String, _ arguments: [String]) throws -> String {
@@ -327,6 +328,9 @@ final class FakeRunner: CommandRunning {
             return ""
         case "-a":
             if failAudioObservation { throw ToggleError(message: "Audio observation failed") }
+            if failPostConnectAudioObservation && current.contains(where: { $0.address == speaker.address && $0.connected }) {
+                throw ToggleError(message: "Post-connect audio observation failed")
+            }
             return audioOutputs.sorted().joined(separator: "\n")
         case "-t": return ""
         default: throw ToggleError(message: "Unexpected command")

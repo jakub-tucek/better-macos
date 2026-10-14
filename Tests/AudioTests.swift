@@ -172,8 +172,50 @@ private func runBluetoothAudioIntegrationTests() {
     audio.select("builtin", direction: .output)
     audio.automatic = false
     expect(audio.isOverridden(.output), "Turning automatic routing off preserves manual override")
+    bluetooth.switchAudioOutput = true; bluetooth.poll()
+    let policyDeadline = Date().addingTimeInterval(2)
+    while bluetooth.isBusy && Date() < policyDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+    expect(bluetooth.audioRequestIsCurrent(name: speaker.name), "Retained-owner override regression has an eligible Bluetooth routing request")
+    audio.automaticAllowed = false; audio.poll()
+    audio.bluetoothConnected(name: speaker.name)
+    expect(audio.isOverridden(.output) && fake.routes[.output] == "builtin", "Audio disable with retained owner preserves manual output across Bluetooth requests")
+    audio.automaticAllowed = true; audio.poll()
+    expect(audio.isOverridden(.output), "Re-enable schedules rules without clearing manual overrides")
     bluetooth.stop(); audio.stop()
     defaults.set(true, forKey: "bluetooth.switchAudio")
+
+    let discoveryRunner = FakeRunner()
+    discoveryRunner.failPostConnectAudioObservation = true
+    let discoveryBluetooth = BluetoothModule(defaults: defaults, backend: backend(discoveryRunner), importLegacyConfiguration: false,
+                                              authorizationProvider: { .allowedAlways })
+    let discoveryAudio = AudioModule(backend: fake, defaults: defaults)
+    discoveryAudio.bluetoothProtection = { discoveryBluetooth.audioProtection }
+    discoveryAudio.bluetoothRequestIsCurrent = { discoveryBluetooth.audioRequestIsCurrent(name: $0) }
+    discoveryAudio.start()
+    var discoveryCallbacks = 0
+    discoveryBluetooth.onAudioOutputRequested = { name in
+        discoveryCallbacks += 1
+        discoveryAudio.bluetoothConnected(name: name)
+    }
+    discoveryBluetooth.start()
+    let discoveryDeadline = Date().addingTimeInterval(2)
+    while discoveryBluetooth.isBusy && Date() < discoveryDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+    expect(discoveryRunner.current.first?.connected == true && discoveryCallbacks == 0 && discoveryBluetooth.lastError != nil,
+           "Post-connect discovery failure retains successful connection and performs no unsafe routing")
+    discoveryRunner.failPostConnectAudioObservation = false
+    discoveryRunner.current.append(headphones)
+    discoveryRunner.audioOutputs.insert(headphones.name)
+    discoveryBluetooth.poll()
+    let discoveryRetryDeadline = Date().addingTimeInterval(2)
+    while discoveryBluetooth.isBusy && Date() < discoveryRetryDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+    expect(discoveryCallbacks == 0 && fake.routes[.output] == "builtin", "Deferred post-connect routing rechecks arriving headphones before forwarding")
+    discoveryRunner.current.removeAll { $0.address == headphones.address }
+    discoveryBluetooth.poll()
+    let unprotectedDeadline = Date().addingTimeInterval(2)
+    while discoveryBluetooth.isBusy && Date() < unprotectedDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+    expect(discoveryCallbacks == 1 && fake.routes[.output] == "speaker" && discoveryRunner.connections.count == 1,
+           "Recovered post-connect discovery forwards retained intent without reconnecting")
+    discoveryBluetooth.stop(); discoveryAudio.stop()
 
     let entered = DispatchSemaphore(value: 0)
     let release = DispatchSemaphore(value: 0)

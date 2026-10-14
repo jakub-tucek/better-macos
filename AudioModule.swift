@@ -103,7 +103,13 @@ final class AudioModule {
     private(set) var status = "Automatic routing is off"
     var onChange: (() -> Void)?
     var automaticAllowed = false {
-        didSet { if automaticAllowed != oldValue { pending.removeAll(); observed = false } }
+        didSet {
+            guard automaticAllowed != oldValue else { return }
+            // Module visibility is not a device change or explicit Resume.
+            // Re-enable schedules rules only for directions without manual intent.
+            if automaticAllowed { pending.formUnion(AudioDirection.allCases) }
+            else { pending.removeAll() }
+        }
     }
     var suspendRouting = false
     // Fail closed while Bluetooth is connecting or its protection state is unknown.

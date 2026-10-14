@@ -56,6 +56,7 @@ struct BluetoothBackend {
     var waitForConnection: () -> Void = { Thread.sleep(forTimeInterval: 1) }
     var audioOutputs: (() throws -> Set<String>)?
     var routeOutput: ((String) -> Void)?
+    var pendingAudioAddresses = Set<String>()
 
     func isPoweredOn() throws -> Bool {
         let value = try runner.run(blueutil, ["--power"]).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -97,6 +98,13 @@ struct BluetoothBackend {
         progress?(.radio(poweredOn))
         var current = try devices()
         guard configuration.enabled, poweredOn else { return current }
+        // A connection may succeed before post-connect discovery fails. Retry
+        // that routing intent on fresh observations without reconnecting it.
+        for address in pendingAudioAddresses.sorted() where shouldContinue() {
+            guard configuration.autoAddresses.contains(address),
+                  let target = current.first(where: { $0.address == address }), target.connected else { continue }
+            try requestOutput(target, devices: current, configuration: configuration)
+        }
         var firstFailure: Error?
         var successes = 0
         for address in configuration.autoAddresses.sorted() {
@@ -123,16 +131,21 @@ struct BluetoothBackend {
             successes += 1
             progress?(.connected(target))
             guard shouldContinue() else { break }
-            guard configuration.switchAudioOutput,
-                  let refreshed = current.first(where: { $0.address == address }) else { continue }
-            let audioOutputs = try outputs()
-            // Recheck AFTER connecting: headphones may have arrived meanwhile.
-            guard audioOutputs?.contains(refreshed.name) == true,
-                  !BluetoothPolicy.shouldPause(target: refreshed, devices: current, audioOutputs: audioOutputs, knownAudioAddresses: configuration.protectedAudioAddresses) else { continue }
-            routeOutput?(refreshed.name)
+            guard let refreshed = current.first(where: { $0.address == address }) else { continue }
+            try requestOutput(refreshed, devices: current, configuration: configuration)
         }
         if successes == 0, let firstFailure, shouldContinue() { throw firstFailure }
         return current
+    }
+
+    private func requestOutput(_ target: BluetoothDevice, devices: [BluetoothDevice], configuration: BluetoothConfiguration) throws {
+        guard configuration.switchAudioOutput else { return }
+        let available = try outputs()
+        // Recheck AFTER connecting or before retrying: never bypass headphone protection.
+        guard available?.contains(target.name) == true,
+              !BluetoothPolicy.shouldPause(target: target, devices: devices, audioOutputs: available,
+                                           knownAudioAddresses: configuration.protectedAudioAddresses) else { return }
+        routeOutput?(target.name)
     }
 }
 
@@ -149,6 +162,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     private var manualAddress: String?
     private var cycleCancellation: BluetoothCycleCancellation?
     private var pendingAudioName: String?
+    private var pendingAudioAddresses = Set<String>()
     private var lastObservation: Date?
     private var retryAfter: [String: Date] = [:]
     private var activity: String?
@@ -291,6 +305,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         timer = nil
         cycleCancellation?.cancel()
         pendingAudioName = nil
+        pendingAudioAddresses.removeAll()
         pendingManual = nil
         permissionManager = nil
         onStopped = completion
@@ -319,6 +334,9 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         activity = "Checking Bluetooth devices…"
         let cancellation = BluetoothCycleCancellation()
         cycleCancellation = cancellation
+        if !config.enabled || !config.switchAudioOutput { pendingAudioAddresses.removeAll() }
+        pendingAudioAddresses.formIntersection(config.autoAddresses)
+        backend.pendingAudioAddresses = pendingAudioAddresses
         backend.routeOutput = { [weak self] name in
             DispatchQueue.main.async {
                 guard !cancellation.isCanceled else { return }
@@ -396,7 +414,9 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         case .connecting(let device):
             activity = "Connecting to \(device.name)…"
             deviceStates[device.address] = "Connecting…"
-        case .connected(let device): deviceStates.removeValue(forKey: device.address); retryAfter.removeValue(forKey: device.address)
+        case .connected(let device):
+            deviceStates.removeValue(forKey: device.address); retryAfter.removeValue(forKey: device.address)
+            if autoEnabled && switchAudioOutput { pendingAudioAddresses.insert(device.address) }
         case .waiting(let device, let reason): deviceStates[device.address] = reason
         case .failed(let device, let reason):
             deviceStates[device.address] = "\(reason) · will retry after 30s"
@@ -414,6 +434,9 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         case .success(let updated):
             lastObservation = Date()
             devices = updated
+            pendingAudioAddresses = pendingAudioAddresses.filter { address in
+                updated.contains { $0.address == address && $0.connected } && autoAddresses.contains(address)
+            }
             lastError = nil
             if let manualAddress { deviceStates.removeValue(forKey: manualAddress); retryAfter.removeValue(forKey: manualAddress) }
             for device in updated where device.connected { deviceStates.removeValue(forKey: device.address); retryAfter.removeValue(forKey: device.address) }
@@ -438,6 +461,9 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         onChange?()
         if let name = pendingAudioName, cycleCancellation?.isCanceled == false, lastError == nil {
             pendingAudioName = nil
+            pendingAudioAddresses = pendingAudioAddresses.filter { address in
+                devices.first(where: { $0.address == address })?.name != name
+            }
             onAudioOutputRequested?(name)
         } else { pendingAudioName = nil }
         startPendingManual()
