@@ -102,3 +102,21 @@ Compact spacing writes the undocumented global `NSStatusItemSpacing` and
 verified; affected processes may cache them until relaunch or logout. No process
 is killed to apply spacing. Isolated tests cover restoring original values and
 absent keys, repeated enable, failed rollback, and recovery by a new owner.
+# Hold to quit
+
+The keyboard module intercepts plain Command-Q using a session event tap and
+recognizes Q through the event's current keyboard layout. Its nonactivating HUD
+names the captured foreground app. A monotonic countdown checks physical key
+state and foreground identity before requesting normal application termination.
+It never force-quits or replays a shortcut into a different app. Key repeats and
+the matching key-up remain consumed after cancellation or completion.
+
+Isolated state-machine checks cover short presses, repeats, early release,
+foreground changes, cancellation, one quit per press, and both hold durations.
+The Pac-Man countdown uses a display-driven SwiftUI timeline and the hold's
+monotonic start time; input polling does not publish progress or restart animation.
+Frame checks cover movement between 30 Hz input polls (including 120 Hz samples),
+dot consumption, bounds, and the three-second default.
+Actual keyboard-layout behavior, secure-input contexts, full-screen HUD placement,
+and application-specific quit/save prompts require hands-on validation. When macOS
+does not deliver events (for example, secure input), interception is not guaranteed.

@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let animations = AnimationPreferences()
     private let menuBarSpacing = MenuBarSpacing()
     private var menuBar: MenuBarModule?
+    private var quitGuard: QuitGuard?
     private let sourceUpdater = SourceUpdater()
     private let animationQueue = DispatchQueue(label: "fix-mac-os.animation-preferences")
     private let modules = ModuleSettings()
@@ -110,11 +111,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if CommandLine.arguments.contains("--show-modules") { model.tab = .modules }
             if CommandLine.arguments.contains("--show-spaces") { model.tab = .spaces }
             if CommandLine.arguments.contains("--show-menu-bar") { model.tab = .menuBar }
+            if CommandLine.arguments.contains("--show-keyboard") { model.tab = .keyboard }
             DispatchQueue.main.async { [weak self] in self?.showDashboard() }
         }
     }
 
     private func configureActions() {
+        model.onQuitGuardChanged = { [weak self] enabled in
+            guard let self else { return }
+            do { try quitGuard?.setEnabled(enabled) } catch { showError(error) }
+            refreshQuitGuard()
+        }
+        model.onQuitGuardDurationChanged = { [weak self] in self?.quitGuard?.duration = $0 }
+        model.onRetryQuitGuard = { [weak self] in
+            guard let self else { return }
+            do { try quitGuard?.startIfEnabled() } catch { showError(error) }
+            refreshQuitGuard()
+        }
         model.onCompactMenuBarChanged = { [weak self] enabled in
             guard let self else { return }
             do { try menuBarSpacing.setEnabled(enabled) } catch { showError(error) }
@@ -224,6 +237,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateModules()
     }
 
+    private func refreshQuitGuard() {
+        model.quitGuardEnabled = quitGuard?.enabled ?? false
+        model.quitGuardActive = quitGuard?.isRunning ?? false
+        model.quitGuardDuration = quitGuard?.duration ?? 3
+        publishModuleStatus()
+    }
+
     private func refreshMenuBar() {
         model.compactMenuBar = menuBarSpacing.enabled
         model.menuBarRecoveryRequired = menuBarSpacing.recoveryRequired
@@ -234,6 +254,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateModules() {
         model.enabledModules = modules.enabled
+        if modules.enabled.contains(.quitGuard) {
+            if quitGuard == nil {
+                let module = QuitGuard()
+                quitGuard = module
+                module.onChange = { [weak self] in self?.refreshQuitGuard() }
+                module.onError = { [weak self] error in
+                    self?.showError(error)
+                    self?.model.tab = .keyboard
+                    self?.showDashboard()
+                }
+                do { try module.startIfEnabled() } catch { showError(error) }
+            }
+        } else {
+            quitGuard?.onChange = nil
+            quitGuard?.stop()
+            quitGuard = nil
+        }
+        refreshQuitGuard()
         if modules.enabled.contains(.menuBar) {
             if menuBar == nil {
                 let module = MenuBarModule()
@@ -528,6 +566,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "bluetoothLoaded": bluetooth != nil, "spacesLoaded": spaces != nil,
             "menuBarLoaded": menuBar != nil, "menuBarHidden": menuBar?.hidden == true,
             "compactMenuBar": menuBarSpacing.enabled,
+            "quitGuardLoaded": quitGuard != nil, "quitGuardActive": quitGuard?.isRunning == true,
             "animationsEnabled": animations.enabled, "animationsBusy": model.animationsBusy,
             "screenEdgesActive": screenEdges?.isRunning == true,
             "displayDiscoveryLoaded": controller != nil, "screenObserverInstalled": screenObserver != nil,
@@ -702,6 +741,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        quitGuard?.stop()
         menuBar?.stop()
         sourceUpdater.stop()
         spaces?.onChange = nil

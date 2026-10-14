@@ -9,6 +9,7 @@ A macOS menu-bar app for managing monitors, Bluetooth connections, and desktop s
 - **Bluetooth reconnect:** choose devices to reconnect, connect or disconnect on demand, and protect other audio connections.
 - **Animations:** limit Dock, Finder, window, and scrolling effects; replace Genie minimization with Scale and try experimental tiling-animation suppression. Fast desktop switching lives under Advanced. Turning the preset off restores your previous settings. Effects vary by app; Mission Control and Control Center may still animate.
 - **Menu bar:** experimental compact spacing and a movable divider for hiding extra icons. Both controls start off. ⌘-drag the divider left of the chevron, and less-used icons left of the divider. Click the chevron to hide/reveal them; quitting reveals them. Spacing changes may require restarting apps or logging out; turning spacing or the module off restores original values. This is not a separate overflow panel for icons behind the notch.
+- **Hold to quit:** under **Keyboard**, hold ⌘Q for 3 seconds (or choose 2). A popup names the app while Pac-Man eats dots across the countdown. Releasing early, switching apps, or clicking cancels. Uses normal quit requests, preserving save prompts. Requires Accessibility access; starts off. Menu commands and other quit shortcuts are unaffected.
 
 Enable or disable each module from the **gear icon**. Disabled modules stop background work and release their state; your settings stay saved.
 

@@ -1,7 +1,7 @@
 import Foundation
 
 enum AppModule: String, CaseIterable, Identifiable {
-    case monitors, arrangement, bluetooth, spaces, menuBar
+    case monitors, arrangement, bluetooth, spaces, menuBar, quitGuard
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -10,6 +10,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .bluetooth: return "Bluetooth reconnect"
         case .spaces: return "Animations"
         case .menuBar: return "Menu bar"
+        case .quitGuard: return "Hold to quit"
         }
     }
     var detail: String {
@@ -19,6 +20,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .bluetooth: return "Paired devices, manual connections, and reconnect monitoring."
         case .spaces: return "Limit Dock, window, and scrolling animations, with fast desktop switching."
         case .menuBar: return "Compact spacing and hide less-used menu-bar icons."
+        case .quitGuard: return "Hold ⌘Q before quitting, with the app name and a countdown."
         }
     }
 }

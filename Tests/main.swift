@@ -874,4 +874,74 @@ failSpacingWrites = false
 try spacing.restore()
 spacingDefaults.removePersistentDomain(forName: spacingDomain)
 
+var quitHold = QuitHoldState()
+expect(quitHold.duration == 3, "Quit hold defaults to three seconds")
+quitHold.duration = 2
+expect(!quitHold.keyDown(12, quitChord: false, repeated: false, target: 101, now: 0),
+       "Typing Q or using another modifier combination passes through")
+expect(!quitHold.keyDown(12, quitChord: true, repeated: true, target: 101, now: 0),
+       "A repeat already in flight when interception starts cannot initiate a quit")
+expect(quitHold.keyDown(12, quitChord: true, repeated: false, target: 101, now: 1),
+       "Initial Command Q is consumed rather than delivered to the app")
+expect(quitHold.advance(now: 2.99, frontmost: 101, keysHeld: true) == nil,
+       "Quit does not occur before the full hold duration")
+expect(quitHold.keyDown(12, quitChord: true, repeated: true, target: 101, now: 2),
+       "Autorepeat is consumed without restarting the countdown")
+expect(quitHold.advance(now: 3, frontmost: 101, keysHeld: true) == 101,
+       "A continuous two-second hold requests quit for the captured app")
+expect(quitHold.advance(now: 4, frontmost: 101, keysHeld: true) == nil &&
+       quitHold.keyDown(12, quitChord: true, repeated: true, target: 202, now: 4),
+       "Completed hold cannot quit twice or leak repeats into the next app")
+expect(quitHold.keyUp(12) && quitHold.key == nil, "Matching key-up is consumed and rearms the shortcut")
+_ = quitHold.keyDown(12, quitChord: true, repeated: false, target: 101, now: 10)
+_ = quitHold.keyUp(12)
+expect(quitHold.advance(now: 13, frontmost: 101, keysHeld: false) == nil,
+       "Releasing Q early cancels the quit")
+_ = quitHold.keyDown(12, quitChord: true, repeated: false, target: 101, now: 20)
+expect(quitHold.advance(now: 21, frontmost: 101, keysHeld: false) == nil && quitHold.target == nil,
+       "Releasing Command or losing physical key state cancels the hold")
+expect(quitHold.keyDown(12, quitChord: true, repeated: true, target: 101, now: 23) &&
+       quitHold.advance(now: 24, frontmost: 101, keysHeld: true) == nil,
+       "Re-pressing Command while Q remains held cannot resurrect a canceled quit")
+quitHold.reset()
+_ = quitHold.keyDown(12, quitChord: true, repeated: false, target: 101, now: 30)
+expect(quitHold.advance(now: 32, frontmost: 202, keysHeld: true) == nil && quitHold.target == nil,
+       "Switching foreground apps cancels rather than quitting either app")
+quitHold.reset()
+_ = quitHold.keyDown(12, quitChord: true, repeated: false, target: 101, now: 40)
+expect(!quitHold.keyDown(53, quitChord: false, repeated: false, target: 101, now: 41) && quitHold.target == nil,
+       "Another key cancels while passing that key through")
+expect(quitHold.keyUp(12), "Canceled shortcut still consumes its matching release")
+quitHold.duration = 3
+_ = quitHold.keyDown(0, quitChord: true, repeated: false, target: 101, now: 50)
+expect(quitHold.advance(now: 52, frontmost: 101, keysHeld: true) == nil &&
+       quitHold.advance(now: 53, frontmost: 101, keysHeld: true) == 101,
+       "Three-second option and layout-translated Q keycodes use the same hold contract")
+quitHold.reset()
+_ = quitHold.keyDown(12, quitChord: true, repeated: false, target: 101, now: 60)
+quitHold.cancel()
+expect(quitHold.advance(now: 64, frontmost: 101, keysHeld: true) == nil && quitHold.keyUp(12),
+       "Sleep, clicks, tap interruption, and configuration changes can cancel without leaking Q")
+
+let quitDefaultsDomain = "fix-macos.quit-default-test.\(UUID().uuidString)"
+let quitDefaults = UserDefaults(suiteName: quitDefaultsDomain)!
+let guardDefaults = QuitGuard(defaults: quitDefaults)
+expect(guardDefaults.duration == 3, "Fresh installations use a three-second quit hold")
+guardDefaults.duration = 2
+expect(QuitGuard(defaults: quitDefaults).duration == 2, "Explicit two-second preference survives recreation")
+quitDefaults.removePersistentDomain(forName: quitDefaultsDomain)
+let initialQuitFrame = QuitProgressFrame(startedAt: 10, duration: 3, now: 10)
+let lastQuitFrame = QuitProgressFrame(startedAt: 10, duration: 3, now: 13)
+expect(initialQuitFrame.remainingDots(width: 272).count == 10 && lastQuitFrame.remainingDots(width: 272).isEmpty,
+       "Pac-Man starts with ten dots and eats them all at the quit deadline")
+let quitFrames = (0...360).map { QuitProgressFrame(startedAt: 10, duration: 3, now: 10 + Double($0) / 120) }
+expect(zip(quitFrames, quitFrames.dropFirst()).allSatisfy { $0.centerX(width: 272) < $1.centerX(width: 272) },
+       "Animation advances between input timer ticks, including 120 Hz display frames")
+expect(zip(quitFrames, quitFrames.dropFirst()).allSatisfy { $1.remainingDots(width: 272).count <= $0.remainingDots(width: 272).count },
+       "Eaten dots never reappear during a hold")
+let beforeQuitFrame = QuitProgressFrame(startedAt: 10, duration: 3, now: 9)
+let afterQuitFrame = QuitProgressFrame(startedAt: 10, duration: 3, now: 14)
+expect(beforeQuitFrame.progress == 0 && afterQuitFrame.progress == 1,
+       "Countdown drawing remains within its track before and after the hold")
+
 print("\(checks) isolated checks passed; no Bluetooth, display, or real Space changes.")

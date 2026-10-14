@@ -7,6 +7,7 @@ enum DashboardTab: String, CaseIterable {
     case bluetooth = "Bluetooth"
     case spaces = "Animations"
     case menuBar = "Menu bar"
+    case keyboard = "Keyboard"
 }
 
 /// The same state drives the persistent popover and its controls. Refreshes
@@ -58,6 +59,12 @@ final class DashboardModel: ObservableObject {
     @Published var menuBarHiding = false
     @Published var menuBarHidden = false
     @Published var menuBarRecoveryRequired = false
+    @Published var quitGuardEnabled = false
+    @Published var quitGuardActive = false
+    @Published var quitGuardDuration = 3.0
+    var onQuitGuardChanged: (Bool) -> Void = { _ in }
+    var onQuitGuardDurationChanged: (Double) -> Void = { _ in }
+    var onRetryQuitGuard: () -> Void = {}
     var onCompactMenuBarChanged: (Bool) -> Void = { _ in }
     var onMenuBarHidingChanged: (Bool) -> Void = { _ in }
     var onToggleMenuBar: () -> Void = {}
@@ -247,6 +254,9 @@ struct DashboardView: View {
                     case .menuBar:
                         if model.enabledModules.contains(.menuBar) { menuBar }
                         else { disabledModule("Menu bar") }
+                    case .keyboard:
+                        if model.enabledModules.contains(.quitGuard) { keyboard }
+                        else { disabledModule("Hold to quit") }
                     }
                 }.padding(16)
             }
@@ -282,6 +292,36 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 12, content: content)
             .padding(12).frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var keyboard: some View {
+        card {
+            HStack {
+                Text("Hold ⌘Q to quit")
+                Spacer()
+                BlueSwitch(label: "Hold Command Q to quit", isOn: Binding(get: { model.quitGuardEnabled }, set: model.onQuitGuardChanged))
+            }
+            Picker("Hold for", selection: Binding(get: { model.quitGuardDuration }, set: model.onQuitGuardDurationChanged)) {
+                Text("2 seconds").tag(2.0)
+                Text("3 seconds").tag(3.0)
+            }.pickerStyle(.segmented)
+            Text("A popup names the app while you hold. Release early to cancel. Switching apps or clicking also cancels. Normal save prompts still appear.")
+                .font(.caption).foregroundStyle(.secondary)
+            if !model.quitGuardActive {
+                Text(model.quitGuardEnabled ? "Inactive — check Accessibility access, then retry." : "Requires Accessibility access.")
+                    .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Button("Accessibility settings…") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    if model.quitGuardEnabled { Button("Retry", action: model.onRetryQuitGuard) }
+                }
+            }
+            Text("Applies to plain ⌘Q. Menu commands and other quit shortcuts stay unchanged.")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
     }
 
     private var menuBar: some View {
