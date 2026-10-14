@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let menuBarSpacing = MenuBarSpacing()
     private var menuBar: MenuBarModule?
     private var quitGuard: QuitGuard?
+    private var keepAwake: KeepAwakeModule?
     private let sourceUpdater = SourceUpdater()
     private let animationQueue = DispatchQueue(label: "fix-mac-os.animation-preferences")
     private let modules = ModuleSettings()
@@ -112,11 +113,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if CommandLine.arguments.contains("--show-spaces") { model.tab = .spaces }
             if CommandLine.arguments.contains("--show-menu-bar") { model.tab = .menuBar }
             if CommandLine.arguments.contains("--show-keyboard") { model.tab = .keyboard }
+            if CommandLine.arguments.contains("--show-keep-awake") { model.tab = .keepAwake }
             DispatchQueue.main.async { [weak self] in self?.showDashboard() }
         }
     }
 
     private func configureActions() {
+        model.onKeepAwakeStart = { [weak self] in self?.performKeepAwake { try $0.start() } }
+        model.onKeepAwakeStop = { [weak self] in self?.performKeepAwake { try $0.stop() } }
+        model.onKeepAwakeExtend = { [weak self] in self?.performKeepAwake { try $0.extend() } }
+        model.onKeepAwakeMinutesChanged = { [weak self] in self?.keepAwake?.selectedMinutes = $0 }
+        model.onKeepDisplayAwakeChanged = { [weak self] enabled in self?.performKeepAwake { try $0.setKeepDisplayAwake(enabled) } }
         model.onQuitGuardChanged = { [weak self] enabled in
             guard let self else { return }
             do { try quitGuard?.setEnabled(enabled) } catch { showError(error) }
@@ -208,6 +215,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setModule(_ module: AppModule, enabled: Bool) {
         guard !model.stoppingModules.contains(module) else { return }
+        if module == .keepAwake && !enabled {
+            do { try keepAwake?.stop() } catch { showError(error); return }
+        }
         if module == .menuBar && !enabled {
             do { try menuBarSpacing.restore(preserveChoice: true) }
             catch { refreshMenuBar(); showError(error); return }
@@ -237,6 +247,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateModules()
     }
 
+    private func performKeepAwake(_ action: (KeepAwakeModule) throws -> Void) {
+        guard let keepAwake else { return }
+        do { try action(keepAwake) } catch { showError(error) }
+        refreshKeepAwake()
+    }
+
+    private func refreshKeepAwake() {
+        model.keepAwakeActive = keepAwake?.active ?? false
+        model.keepAwakeRemaining = keepAwake?.remaining ?? 0
+        model.keepAwakeMinutes = keepAwake?.selectedMinutes ?? 30
+        model.keepDisplayAwake = keepAwake?.keepDisplayAwake ?? false
+        item?.button?.image = NSImage(systemSymbolName: model.keepAwakeActive ? "cup.and.saucer.fill" : "slider.horizontal.3", accessibilityDescription: "Fix macOS")
+        item?.button?.toolTip = model.keepAwakeActive ? "Fix macOS — keeping awake" : "Fix macOS"
+        publishModuleStatus()
+    }
+
     private func refreshQuitGuard() {
         model.quitGuardEnabled = quitGuard?.enabled ?? false
         model.quitGuardActive = quitGuard?.isRunning ?? false
@@ -254,6 +280,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateModules() {
         model.enabledModules = modules.enabled
+        if modules.enabled.contains(.keepAwake) {
+            if keepAwake == nil {
+                let module = KeepAwakeModule()
+                keepAwake = module
+                module.onChange = { [weak self] in self?.refreshKeepAwake() }
+                module.onError = { [weak self] in self?.showError($0) }
+            }
+        } else {
+            keepAwake?.onChange = nil
+            keepAwake = nil
+        }
+        refreshKeepAwake()
         if modules.enabled.contains(.quitGuard) {
             if quitGuard == nil {
                 let module = QuitGuard()
@@ -567,6 +605,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "menuBarLoaded": menuBar != nil, "menuBarHidden": menuBar?.hidden == true,
             "compactMenuBar": menuBarSpacing.enabled,
             "quitGuardLoaded": quitGuard != nil, "quitGuardActive": quitGuard?.isRunning == true,
+            "keepAwakeLoaded": keepAwake != nil, "keepAwakeActive": keepAwake?.active == true,
             "animationsEnabled": animations.enabled, "animationsBusy": model.animationsBusy,
             "screenEdgesActive": screenEdges?.isRunning == true,
             "displayDiscoveryLoaded": controller != nil, "screenObserverInstalled": screenObserver != nil,
@@ -741,6 +780,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        try? keepAwake?.stop()
         quitGuard?.stop()
         menuBar?.stop()
         sourceUpdater.stop()

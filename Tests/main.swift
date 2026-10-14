@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import CStrafe
 import CoreBluetooth
+import IOKit.pwr_mgt
 
 if let index = CommandLine.arguments.firstIndex(of: "--watchdog"), index + 1 < CommandLine.arguments.count {
     exit(SafetyWatchdog.run(directory: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true)))
@@ -943,5 +944,91 @@ let beforeQuitFrame = QuitProgressFrame(startedAt: 10, duration: 3, now: 9)
 let afterQuitFrame = QuitProgressFrame(startedAt: 10, duration: 3, now: 14)
 expect(beforeQuitFrame.progress == 0 && afterQuitFrame.progress == 1,
        "Countdown drawing remains within its track before and after the hold")
+
+final class FakePowerAssertions: PowerAssertionBackend {
+    var entries: [IOPMAssertionID: (display: Bool, timeout: TimeInterval)] = [:]
+    var nextID: IOPMAssertionID = 1
+    var failCreate = false
+    var failDisplayCreate = false
+    var failTimeout = false
+    var failRelease: IOPMAssertionID?
+    func create(display: Bool, timeout: TimeInterval) throws -> IOPMAssertionID {
+        if failCreate || (display && failDisplayCreate) { throw ToggleError(message: "Injected power creation failure") }
+        let id = nextID
+        nextID += 1
+        entries[id] = (display, timeout)
+        return id
+    }
+    func setTimeout(_ id: IOPMAssertionID, seconds: TimeInterval) throws {
+        if failTimeout { throw ToggleError(message: "Injected timeout failure") }
+        guard let entry = entries[id] else { throw ToggleError(message: "Unknown assertion") }
+        entries[id] = (entry.display, seconds)
+    }
+    func release(_ id: IOPMAssertionID) throws {
+        if id == failRelease { throw ToggleError(message: "Injected release failure") }
+        entries.removeValue(forKey: id)
+    }
+}
+let awakeDomain = "fix-macos.keep-awake-test.\(UUID().uuidString)"
+let awakeDefaults = UserDefaults(suiteName: awakeDomain)!
+let power = FakePowerAssertions()
+var awakeTime: TimeInterval = 1000
+let awake = KeepAwakeModule(defaults: awakeDefaults, backend: power, now: { awakeTime }, automaticUpdates: false)
+expect(!awake.active && awake.selectedMinutes == 30 && !awake.keepDisplayAwake,
+       "Keep awake starts idle with a thirty-minute choice and display sleep allowed")
+try awake.start()
+expect(awake.active && awake.remaining == 1800 && power.entries.count == 1 && power.entries.values.first?.display == false,
+       "Timed session acquires only the requested system-idle assertion")
+try awake.start()
+expect(power.entries.count == 1, "Repeated Start cannot leak power assertions")
+awakeTime += 120
+try awake.extend()
+expect(awake.remaining == 2580 && power.entries.values.first?.timeout == 2580,
+       "Extend adds fifteen minutes to remaining time and updates the OS timeout")
+try awake.setKeepDisplayAwake(true)
+expect(power.entries.count == 2 && power.entries.values.contains { $0.display && $0.timeout == 2580 },
+       "Display wake can join an active session with the same deadline")
+try awake.setKeepDisplayAwake(false)
+expect(power.entries.count == 1 && awake.active && !awake.keepDisplayAwake,
+       "Turning display wake off retains the computer's awake session")
+awakeTime += 2581
+awake.tick()
+expect(!awake.active && power.entries.isEmpty && awake.remaining == 0,
+       "Deadline expiry after a sleep-sized clock jump releases the session")
+try awake.extend()
+expect(!awake.active && power.entries.isEmpty, "Extend cannot revive an expired session")
+awake.selectedMinutes = 45
+try awake.setKeepDisplayAwake(true)
+let recreatedAwake = KeepAwakeModule(defaults: awakeDefaults, backend: power, now: { awakeTime }, automaticUpdates: false)
+expect(!recreatedAwake.active && recreatedAwake.selectedMinutes == 45 && recreatedAwake.keepDisplayAwake,
+       "Recreation preserves choices but does not resume an old awake session")
+power.failDisplayCreate = true
+do { try awake.start(); expect(false, "Display assertion creation should fail") }
+catch { expect(!awake.active && power.entries.isEmpty, "Partial session creation releases its system assertion") }
+power.failDisplayCreate = false
+try awake.start()
+let oldRemaining = awake.remaining
+power.failTimeout = true
+do { try awake.extend(); expect(false, "Timeout update should fail") }
+catch { expect(awake.remaining == oldRemaining, "Failed extension does not claim a later deadline") }
+power.failTimeout = false
+let failingPowerID = power.entries.first { $0.value.display }!.key
+power.failRelease = failingPowerID
+do { try awake.stop(); expect(false, "Release should fail") }
+catch { expect(awake.active && power.entries.count == 1 && power.entries[failingPowerID] != nil,
+               "Stop releases other assertions and retains failed ownership for retry") }
+power.failRelease = nil
+try awake.stop()
+expect(!awake.active && power.entries.isEmpty, "Retrying Stop releases the remaining assertion")
+var disposableAwake: KeepAwakeModule? = KeepAwakeModule(defaults: awakeDefaults, backend: power, now: { awakeTime }, automaticUpdates: false)
+try disposableAwake?.start()
+disposableAwake = nil
+expect(power.entries.isEmpty, "Unloading an active owner releases both power assertions")
+awake.selectedMinutes = 1440
+try awake.start()
+try awake.extend()
+expect(awake.remaining == 86400, "Session extensions stay bounded at twenty-four hours")
+try awake.stop()
+awakeDefaults.removePersistentDomain(forName: awakeDomain)
 
 print("\(checks) isolated checks passed; no Bluetooth, display, or real Space changes.")

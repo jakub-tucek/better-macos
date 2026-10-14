@@ -1,7 +1,7 @@
 import Foundation
 
 enum AppModule: String, CaseIterable, Identifiable {
-    case monitors, arrangement, bluetooth, spaces, menuBar, quitGuard
+    case monitors, arrangement, bluetooth, spaces, menuBar, quitGuard, keepAwake
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -11,6 +11,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .spaces: return "Animations"
         case .menuBar: return "Menu bar"
         case .quitGuard: return "Hold to quit"
+        case .keepAwake: return "Keep awake"
         }
     }
     var detail: String {
@@ -21,6 +22,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .spaces: return "Limit Dock, window, and scrolling animations, with fast desktop switching."
         case .menuBar: return "Compact spacing and hide less-used menu-bar icons."
         case .quitGuard: return "Hold ⌘Q before quitting, with the app name and a countdown."
+        case .keepAwake: return "Timed awake sessions, with optional display wake."
         }
     }
 }

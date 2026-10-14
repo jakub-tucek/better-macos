@@ -8,6 +8,7 @@ enum DashboardTab: String, CaseIterable {
     case spaces = "Animations"
     case menuBar = "Menu bar"
     case keyboard = "Keyboard"
+    case keepAwake = "Keep awake"
 }
 
 /// The same state drives the persistent popover and its controls. Refreshes
@@ -62,6 +63,15 @@ final class DashboardModel: ObservableObject {
     @Published var quitGuardEnabled = false
     @Published var quitGuardActive = false
     @Published var quitGuardDuration = 3.0
+    @Published var keepAwakeActive = false
+    @Published var keepAwakeRemaining: TimeInterval = 0
+    @Published var keepAwakeMinutes = 30
+    @Published var keepDisplayAwake = false
+    var onKeepAwakeStart: () -> Void = {}
+    var onKeepAwakeStop: () -> Void = {}
+    var onKeepAwakeExtend: () -> Void = {}
+    var onKeepAwakeMinutesChanged: (Int) -> Void = { _ in }
+    var onKeepDisplayAwakeChanged: (Bool) -> Void = { _ in }
     var onQuitGuardChanged: (Bool) -> Void = { _ in }
     var onQuitGuardDurationChanged: (Double) -> Void = { _ in }
     var onRetryQuitGuard: () -> Void = {}
@@ -191,6 +201,7 @@ struct DashboardView: View {
     @State private var showDisconnectWarning = false
     @State private var showLegacyWarning = false
     @State private var previewMonitor: String?
+    @State private var customAwakeDuration = false
 
     private var disconnectDisablesRule: Bool {
         guard let device = disconnectWarning else { return false }
@@ -214,7 +225,7 @@ struct DashboardView: View {
             if model.tab != .modules {
             Picker("Controls", selection: $model.tab) {
                 ForEach(DashboardTab.allCases.filter { $0 != .modules }, id: \.self) { Text($0.rawValue).tag($0) }
-            }.pickerStyle(.segmented).labelsHidden().padding(.horizontal, 16).padding(.bottom, 12)
+            }.pickerStyle(.menu).labelsHidden().padding(.horizontal, 16).padding(.bottom, 12)
             } else {
                 HStack {
                     Text("Settings").font(.headline)
@@ -257,6 +268,9 @@ struct DashboardView: View {
                     case .keyboard:
                         if model.enabledModules.contains(.quitGuard) { keyboard }
                         else { disabledModule("Hold to quit") }
+                    case .keepAwake:
+                        if model.enabledModules.contains(.keepAwake) { keepAwake }
+                        else { disabledModule("Keep awake") }
                     }
                 }.padding(16)
             }
@@ -292,6 +306,63 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 12, content: content)
             .padding(12).frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var keepAwake: some View {
+        let presets = [15, 30, 45, 60, 120]
+        let seconds = Int(ceil(model.keepAwakeRemaining))
+        let countdown = seconds >= 3600
+            ? String(format: "%d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60)
+            : String(format: "%d:%02d", seconds / 60, seconds % 60)
+        return VStack(alignment: .leading, spacing: 14) {
+            card {
+                HStack {
+                    Label("Keep awake", systemImage: "cup.and.saucer.fill").font(.headline)
+                    Spacer()
+                    Text(model.keepAwakeActive ? "Active" : "Off").foregroundStyle(model.keepAwakeActive ? .blue : .secondary)
+                }
+                if model.keepAwakeActive {
+                    Text(countdown).font(.system(size: 36, weight: .medium, design: .rounded)).monospacedDigit()
+                        .accessibilityLabel("Time remaining: \(countdown)")
+                    HStack {
+                        Button("+15 min", action: model.onKeepAwakeExtend)
+                            .disabled(model.keepAwakeRemaining >= 24 * 3600)
+                        Spacer()
+                        Button("Stop", action: model.onKeepAwakeStop)
+                    }
+                } else {
+                    Picker("Duration", selection: Binding(get: {
+                        customAwakeDuration || !presets.contains(model.keepAwakeMinutes) ? 0 : model.keepAwakeMinutes
+                    }, set: { value in
+                        customAwakeDuration = value == 0
+                        if value != 0 { model.onKeepAwakeMinutesChanged(value) }
+                    })) {
+                        Text("15 minutes").tag(15)
+                        Text("30 minutes").tag(30)
+                        Text("45 minutes").tag(45)
+                        Text("1 hour").tag(60)
+                        Text("2 hours").tag(120)
+                        Text("Custom…").tag(0)
+                    }
+                    if customAwakeDuration || !presets.contains(model.keepAwakeMinutes) {
+                        Stepper("\(model.keepAwakeMinutes) minutes", value: Binding(get: { model.keepAwakeMinutes },
+                            set: model.onKeepAwakeMinutesChanged), in: 5...1440, step: 5)
+                    }
+                    Button("Start session", action: model.onKeepAwakeStart).buttonStyle(.borderedProminent)
+                }
+            }
+            card {
+                HStack {
+                    Text("Keep display awake")
+                    Spacer()
+                    BlueSwitch(label: "Keep display awake", isOn: Binding(get: { model.keepDisplayAwake }, set: model.onKeepDisplayAwakeChanged))
+                }
+                Text(model.keepDisplayAwake ? "Keep the computer and display awake until the session ends." : "Keep the computer awake while letting the display sleep.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text("Sleep from the Apple menu and closing the lid still work. Quitting Fix macOS ends the session.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
     }
 
     private var keyboard: some View {
