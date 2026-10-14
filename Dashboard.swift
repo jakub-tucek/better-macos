@@ -12,6 +12,7 @@ enum DashboardTab: String, CaseIterable {
     case keepAwake = "Keep awake"
     case windows = "Windows"
     case clipboard = "Clipboard"
+    case mouse = "Mouse"
 }
 
 /// The same state drives the persistent popover and its controls. Refreshes
@@ -103,6 +104,8 @@ final class DashboardModel: ObservableObject {
     var onClipboardExclusions: (String) -> Void = { _ in }
     var onClipboardOpen: () -> Void = {}
     var onClipboardClear: () -> Void = {}
+    @Published var mouseRecoveryRequired = false
+    var onRestoreMouse: () -> Void = {}
     var onKeepAwakeStart: () -> Void = {}
     var onKeepAwakeStop: () -> Void = {}
     var onKeepAwakeExtend: () -> Void = {}
@@ -288,6 +291,9 @@ struct DashboardView: View {
                     if model.menuBarRecoveryRequired {
                         Button("Restore original menu-bar spacing", action: model.onRestoreMenuBarSpacing)
                     }
+                    if model.mouseRecoveryRequired {
+                        Button("Retry restoring original mouse settings", action: model.onRestoreMouse)
+                    }
                     switch model.tab {
                     case .windows:
                         if let positions = model.windowPositions { WindowPositionsView(module: positions) }
@@ -317,6 +323,9 @@ struct DashboardView: View {
                     case .clipboard:
                         if model.enabledModules.contains(.clipboard) { clipboard }
                         else { disabledModule("Clipboard") }
+                    case .mouse:
+                        if model.enabledModules.contains(.mouse) { mouse }
+                        else { disabledModule("Mouse") }
                     }
                 }.padding(16)
             }
@@ -442,6 +451,33 @@ struct DashboardView: View {
 
     private func applyClipboardExclusions() {
         clipboardExclusionsDraft.apply(current: model.clipboardExclusions, save: model.onClipboardExclusions)
+    }
+
+    private var mouse: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            card {
+                Label("Acceleration and tracking", systemImage: "computermouse").font(.headline)
+                Text(MouseModule.pointerLimitation).font(.caption).foregroundStyle(.secondary)
+                Text("All-mice controls · no per-device support").font(.caption)
+                HStack {
+                    Text("Override mouse acceleration")
+                    Spacer()
+                    BlueSwitch(label: "Override mouse acceleration unavailable", isOn: .constant(false)).disabled(true)
+                }
+                Text("Tracking speed: unavailable").foregroundStyle(.secondary)
+            }
+            card {
+                Text("Separate wheel scrolling").font(.headline)
+                Text(MouseModule.scrollLimitation).font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Text("Reverse mouse wheel direction")
+                    Spacer()
+                    BlueSwitch(label: "Reverse mouse wheel direction unavailable", isOn: .constant(false)).disabled(true)
+                }
+                Text("Wheel speed: unavailable").foregroundStyle(.secondary)
+                Text("Trackpad, momentum, horizontal and modifier-assisted scrolling retain their existing behavior.").font(.caption)
+            }
+        }
     }
 
     private var keepAwake: some View {

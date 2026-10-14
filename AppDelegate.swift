@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var keepAwake: KeepAwakeModule?
     private var windowPositions: WindowPositions?
     private var clipboard: ClipboardModule?
+    private var mouse: MouseModule?
     private let sourceUpdater = SourceUpdater()
     private let animationQueue = DispatchQueue(label: "fix-mac-os.animation-preferences")
     private let modules = ModuleSettings()
@@ -65,6 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guiTestOriginalOutput = CommandLine.arguments[index + 1]
         }
         configureActions()
+        restoreMouse()
         if menuBarSpacing.recoveryRequired {
             do { try menuBarSpacing.restore() } catch { showError(error) }
         } else if !modules.enabled.contains(.menuBar) {
@@ -123,6 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if CommandLine.arguments.contains("--show-menu-bar") { model.tab = .menuBar }
             if CommandLine.arguments.contains("--show-keyboard") { model.tab = .keyboard }
             if CommandLine.arguments.contains("--show-keep-awake") { model.tab = .keepAwake }
+            if CommandLine.arguments.contains("--show-mouse") { model.tab = .mouse }
             DispatchQueue.main.async { [weak self] in self?.showDashboard() }
         }
     }
@@ -142,6 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             module.setRetentionDays(days)
         }
         model.onClipboardExclusions = { [weak self] in self?.clipboard?.setExclusions($0) }
+        model.onRestoreMouse = { [weak self] in self?.restoreMouse() }
         model.onKeepAwakeStart = { [weak self] in self?.performKeepAwake { try $0.start() } }
         model.onKeepAwakeStop = { [weak self] in self?.performKeepAwake { try $0.stop() } }
         model.onKeepAwakeExtend = { [weak self] in self?.performKeepAwake { try $0.extend() } }
@@ -256,6 +260,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model.errorMessage = "Clipboard disk cleanup is pending. Retry after storage becomes available."
             return
         }
+        if module == .mouse && !enabled {
+            restoreMouse()
+            guard !model.mouseRecoveryRequired else { return }
+        }
         if module == .keepAwake && !enabled {
             do { try keepAwake?.deactivate() } catch { keepAwake?.activate(); showError(error); return }
         }
@@ -369,6 +377,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             clipboard = nil
         }
         refreshClipboard()
+        if modules.enabled.contains(.mouse) {
+            if mouse == nil { mouse = MouseModule() }
+        } else if !model.mouseRecoveryRequired { mouse = nil }
         if modules.enabled.contains(.keepAwake) {
             if keepAwake == nil {
                 let module = KeepAwakeModule()
@@ -729,6 +740,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "compactMenuBar": menuBarSpacing.enabled,
             "quitGuardLoaded": quitGuard != nil, "quitGuardActive": quitGuard?.isRunning == true,
             "keepAwakeLoaded": keepAwake != nil, "keepAwakeActive": keepAwake?.active == true,
+            "mouseLoaded": mouse != nil, "mouseActive": mouse?.active == true,
+            "mouseRecoveryRequired": model.mouseRecoveryRequired,
             "animationsEnabled": animations.enabled, "animationsBusy": model.animationsBusy,
             "screenEdgesActive": screenEdges?.isRunning == true,
             "displayDiscoveryLoaded": controller != nil, "screenObserverInstalled": screenObserver != nil,
@@ -736,6 +749,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ]
         if let data = try? JSONSerialization.data(withJSONObject: status, options: [.prettyPrinted, .sortedKeys]) {
             UserDefaults.standard.set(data, forKey: "modules.runtimeStatus")
+        }
+    }
+
+    private func restoreMouse() {
+        do {
+            try (mouse ?? MouseModule()).stop()
+            model.mouseRecoveryRequired = false
+        } catch {
+            model.mouseRecoveryRequired = true
+            showError(error)
         }
     }
 
@@ -889,6 +912,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        restoreMouse()
+        guard !model.mouseRecoveryRequired else { return .terminateCancel }
         terminationPending = true
         if !prepareClipboardTermination() {
             terminationPending = false

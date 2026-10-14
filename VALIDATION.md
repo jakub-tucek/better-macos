@@ -151,3 +151,43 @@ The archive embeds image bytes in one bounded JSON file, so deletion and expiry 
 Native panel/shortcut compile validation passed; interactive focus preservation, keyboard navigation, and shortcut conflict behavior still require a manual check. The app was not launched for this change and recording was not enabled against the user's clipboard.
 
 Independent adversarial review of the initial clipboard commit identified archive encoding expansion, nontransactional persistence configuration, missing disk-failure retries, exclusion draft loss, and selection redirection. Regression checks now exercise an over-64-MiB valid archive across restart, injected enable/delete/Clear/expiry/exclusion failures with idle retry, draft preservation, stable UUID selection, and synthetic Return/keypad Enter/Escape events delivered directly to the table (never posted to the OS). The archive has a matching 96-MiB encoded read/write ceiling and rejects oversized files without deleting them. Pending writes/cleanup are visible; orderly module unload and quit wait for successful retry. Force quit/crash during an actual filesystem failure can still leave the last successfully written archive. Right-click an entry for Pin/Delete, or navigate from search with arrow keys and use the buttons. Full suite: 239 isolated checks plus installer checks passed.
+# Mouse controls 4A/4B qualification gates
+
+Read-only inspection on macOS **26.6.2 (25G83)**, 2026-10-14:
+
+- `defaults read -g com.apple.mouse.scaling` and `com.apple.mouse.linear` both
+  reported absent keys. Absence is not an explicit default and must be restored
+  by deletion, not by writing a guessed value.
+- The installed SDK exposes `IOHIDGet/SetMouseAcceleration` and
+  `IOHIDGet/SetAccelerationWithKey` in `IOKit/hidsystem/IOHIDLib.h`, deprecated
+  since 10.12. These declarations alone do not verify effective mouse-only
+  tracking, independent acceleration control, persistence or reconnect behavior
+  on Tahoe. No live writer is included until those properties are established.
+- Public `CGEventTypes.h` provides continuous scrolling and phase metadata and
+  process/user source fields, but no documented physical-device identifier for
+  scroll events. A discrete event is not proof of a physical wheel mouse.
+  Device enumeration or timestamp matching does not establish event attribution.
+  All production scroll events therefore pass through; no tap is installed.
+
+The Mouse panel is integrated into module settings and the host lifecycle. It
+shows disabled controls with scope and reasons. The injected pointer transaction
+captures original absent/value states before writes; repeated changes retain the
+first baseline; partial failures roll back; failed rollback or journal deletion
+retains recovery. Startup/disable/quit attempt restoration and report failure.
+The production backend deliberately refuses all writes, including recovery from
+an unrecognized backend. No current production operation creates a journal.
+
+Policy tests use only fake backends and temporary files. Wheel policy transforms
+only an explicitly verified wheel source, and passes unknown/trackpad, momentum,
+gesture, horizontal/diagonal and modifier-assisted samples through unchanged.
+That policy seam is not a device classifier or an installed interceptor.
+
+**Remaining qualification:** physical mouse alongside trackpad, pointer speed and
+acceleration independence, absent-key restoration effectiveness, mouse reconnect,
+crash recovery with real settings, real wheel attribution, natural-trackpad
+direction, momentum, horizontal/modifier scrolling and event-count preservation.
+No actual pointer settings were changed, no synthetic input was posted, and no
+user app was launched/relaunched or quit for this increment. The existing suite
+launches disposable watchdog fixtures. `bash test.sh` passed: **230 isolated
+checks** (31 new Mouse assertions) and **7 installer scenarios**; the signed app
+build compiles the host UI. 4A and 4B remain incomplete.

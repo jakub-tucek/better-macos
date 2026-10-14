@@ -1,7 +1,7 @@
 import Foundation
 
 enum AppModule: String, CaseIterable, Identifiable {
-    case monitors, arrangement, bluetooth, audio, spaces, menuBar, quitGuard, keepAwake, windows, clipboard
+    case monitors, arrangement, bluetooth, audio, spaces, menuBar, quitGuard, keepAwake, windows, clipboard, mouse
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -15,6 +15,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .keepAwake: return "Keep awake"
         case .windows: return "Window positions"
         case .clipboard: return "Clipboard"
+        case .mouse: return "Mouse"
         }
     }
     var detail: String {
@@ -29,6 +30,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .keepAwake: return "Timed and app-based awake sessions, with optional display wake."
         case .windows: return "Named window layouts with optional reconnect and wake restoration."
         case .clipboard: return "Local history, search, pins, and optional disk retention. Recording starts paused."
+        case .mouse: return "Mouse control availability and recovery; live controls await hardware verification."
         }
     }
 }

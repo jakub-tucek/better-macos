@@ -1428,4 +1428,5 @@ expect(!failedRuleAwake.active && !failedRuleAwake.canStop && failedRuleAwake.ap
 try failedRuleAwake.deactivate()
 retryAwakeDefaults.removePersistentDomain(forName: retryAwakeDomain)
 
+try testMouseControls()
 print("\(checks) isolated checks passed; no Bluetooth, display, or real Space changes.")
