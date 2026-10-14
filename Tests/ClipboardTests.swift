@@ -188,7 +188,12 @@ func runClipboardTests() throws {
     expect(failing.entries == [savedEntry] && failedLoad.storagePending, "native module retention action preserves archive during failed startup")
     failing.failLoad = false; failedLoad.poll()
     expect(failedLoad.entries == [savedEntry], "actual load failure recovers on idle retry")
-    let host = AppDelegate(clipboard: module)
+    let mouseBackend = FakeMouseBackend()
+    let mouseLifecycle = MouseLifecycle(settings: ModuleSettings(defaults: defaults), makeModule: {
+        MouseModule(backend: mouseBackend, recovery: FakeMouseRecovery())
+    })
+    mouseLifecycle.reconcile()
+    let host = AppDelegate(clipboard: module, mouseLifecycle: mouseLifecycle)
     failedLoad.setRecording(true)
     expect(host.prepareClipboardTermination() && !failedLoad.recording, "host quit preparation quiesces clipboard recording")
     failing.failing = true; failedLoad.delete(savedEntry.id)
@@ -220,11 +225,19 @@ func runClipboardTests() throws {
     var spaceNotifications = 0
     quitSpaces.onChange = { spaceNotifications += 1 }
     var quitReply: Bool?
-    let quitHost = AppDelegate(spaces: quitSpaces, clipboard: quitModule, terminationReply: { _, approved in quitReply = approved })
+    let quitHost = AppDelegate(spaces: quitSpaces, clipboard: quitModule, mouseLifecycle: mouseLifecycle, terminationReply: { _, approved in quitReply = approved })
+    mouseLifecycle.apply(acceleration: false, speed: 2)
+    mouseBackend.failRestore = true
+    quitHistory.setRecording(true)
+    expect(quitHost.applicationShouldTerminate(NSApplication.shared) == .terminateCancel && quitHistory.recording && !quitSpaces.isDraining,
+           "mouse restoration veto leaves Clipboard monitoring and Spaces lifecycle untouched")
+    mouseBackend.failRestore = false
     try quitEngine.switchSpace(.right)
     expect(quitPhases.began.wait(timeout: .now() + 1) == .success, "host quit fixture has an in-flight fake gesture")
     expect(quitHost.applicationShouldTerminate(NSApplication.shared) == .terminateLater && quitSpaces.isDraining,
            "actual host quit path waits for reversible gesture drain")
+    expect(!mouseLifecycle.recoveryRequired && mouseBackend.value.speed == .number(1.25),
+           "combined quit restores Mouse before quiescing Clipboard and draining Spaces")
     failing.failing = true; quitHistory.delete(savedEntry.id)
     quitPhases.release.signal()
     let quitDeadline = Date().addingTimeInterval(2)
@@ -232,6 +245,8 @@ func runClipboardTests() throws {
     expect(quitReply == false && quitSpaces.observesSpaceChanges && quitSpaces.onChange != nil && spaceNotifications > 0,
            "late clipboard failure vetoes actual host quit without unloading Spaces observer or callback")
     expect(quitSpaces.needsStartupRestore && quitSpaces.savedEnabled, "canceled quit requests restoration of saved gesture choice")
+    expect(!mouseLifecycle.recoveryRequired && !quitHistory.recording,
+           "late Clipboard veto keeps restored Mouse idle and recording safely paused")
     failing.failing = false; quitHistory.poll()
     quitModule.stop(); quitSpaces.stop()
 

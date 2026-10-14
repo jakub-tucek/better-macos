@@ -22,7 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var keepAwake: KeepAwakeModule?
     private var windowPositions: WindowPositions?
     private var clipboard: ClipboardModule?
-    private lazy var mouseLifecycle = MouseLifecycle(settings: modules)
+    private let injectedMouseLifecycle: MouseLifecycle?
+    private lazy var mouseLifecycle = injectedMouseLifecycle ?? MouseLifecycle(settings: modules)
     private let sourceUpdater = SourceUpdater()
     private let animationQueue = DispatchQueue(label: "fix-mac-os.animation-preferences")
     private let modules = ModuleSettings()
@@ -48,12 +49,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var terminationPending = false
     private let terminationReply: (NSApplication, Bool) -> Void
 
-    init(commandRunner: CommandRunning = CommandRunner(), spaces: SpacesModule? = nil, windowPositions: WindowPositions? = nil, clipboard: ClipboardModule? = nil,
+    init(commandRunner: CommandRunning = CommandRunner(), spaces: SpacesModule? = nil, windowPositions: WindowPositions? = nil, clipboard: ClipboardModule? = nil, mouseLifecycle: MouseLifecycle? = nil,
          terminationReply: @escaping (NSApplication, Bool) -> Void = { $0.reply(toApplicationShouldTerminate: $1) }) {
         self.commandRunner = commandRunner
         self.spaces = spaces
         self.windowPositions = windowPositions
         self.clipboard = clipboard
+        self.injectedMouseLifecycle = mouseLifecycle
         self.terminationReply = terminationReply
         super.init()
     }

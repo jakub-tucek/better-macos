@@ -1,6 +1,6 @@
 import Foundation
 
-private final class FakeMouseBackend: MouseSettingsBackend {
+final class FakeMouseBackend: MouseSettingsBackend {
     let identifier = "test-mouse-only"
     var available = true
     var value = MouseOriginalSettings(acceleration: .absent, speed: .number(1.25))
@@ -27,7 +27,7 @@ private final class FakeMouseBackend: MouseSettingsBackend {
     }
 }
 
-private final class FakeMouseRecovery: MouseRecoveryStore {
+final class FakeMouseRecovery: MouseRecoveryStore {
     var pending: MouseRecovery?
     var failSave = false
     var failClear = false
