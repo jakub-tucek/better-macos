@@ -153,6 +153,23 @@ func runClipboardTests() throws {
     failing.failing = false; recoverable.poll()
     expect(failing.entries.isEmpty && !recoverable.storagePending, "exclusion purge retries without a new capture")
 
+    let savedEntry = ClipboardEntry(id: UUID(), created: date, source: "fixture", text: "preserved startup", image: nil, pinned: true)
+    failing.entries = [savedEntry]; failing.failing = true
+    let startup = ClipboardHistory(board: board, archive: failing, now: { date }, source: { app })
+    do { try startup.configurePersistence(true, ageDays: 1, load: true); expect(false, "startup save must throw") } catch {}
+    startup.setRecording(true)
+    expect(startup.storagePending && !startup.recording, "failed startup remains pending and prevents recording before recovery")
+    do { try startup.configurePersistence(true, ageDays: 1); expect(false, "enable must not bypass failed startup") } catch {}
+    expect(failing.entries == [savedEntry], "enable cannot overwrite an unrecovered archive")
+    failing.failing = false
+    try startup.configurePersistence(true, ageDays: 1)
+    expect(startup.entries == [savedEntry] && failing.entries == [savedEntry], "enable recovers startup archive before saving")
+    failing.failing = true
+    let idleStartup = ClipboardHistory(board: board, archive: failing, now: { date }, source: { app })
+    do { try idleStartup.configurePersistence(true, ageDays: 1, load: true) } catch {}
+    failing.failing = false; idleStartup.poll()
+    expect(idleStartup.entries == [savedEntry] && !idleStartup.storagePending, "idle poll retries startup load and cleanup")
+
     var worstCase: [ClipboardEntry] = (0..<8).map { index in
         ClipboardEntry(id: UUID(), created: date, source: "fixture", text: nil,
                        image: Data(repeating: UInt8(index), count: ClipboardHistory.imageLimit), pinned: true)

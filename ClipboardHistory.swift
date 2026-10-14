@@ -85,6 +85,7 @@ final class ClipboardHistory {
     private(set) var exclusions: Set<String> = []
     private(set) var storagePending = false
     private var pendingClear = false
+    private var startupRecovery: (enabled: Bool, days: Int)?
     var onChange: () -> Void = {}
     var onError: () -> Void = {}
 
@@ -94,6 +95,11 @@ final class ClipboardHistory {
         lastChange = board.changeCount // Never capture the clipboard present at startup/resume.
     }
     func configurePersistence(_ enabled: Bool, ageDays: Int, load: Bool = false) throws {
+        // Never replace an archive that startup has not successfully loaded and pruned.
+        // An explicit disable/Clear may discard it; enabling must recover it first.
+        if enabled, !load, let recovery = startupRecovery {
+            try configurePersistence(recovery.enabled, ageDays: recovery.days, load: true)
+        }
         let previousDays = self.ageDays
         let previousEntries = entries
         self.ageDays = min(365, max(1, ageDays))
@@ -107,10 +113,16 @@ final class ClipboardHistory {
         }
         } catch {
             self.ageDays = previousDays; entries = previousEntries
+            if load {
+                startupRecovery = (enabled, ageDays)
+                storagePending = true
+                onChange()
+            }
             throw error
         }
         persistent = enabled
         storagePending = false; pendingClear = false
+        startupRecovery = nil
         onChange()
     }
     func setExclusions(_ values: Set<String>) {
@@ -120,7 +132,7 @@ final class ClipboardHistory {
     }
     func setRecording(_ value: Bool) {
         lastChange = board.changeCount
-        recording = value
+        recording = value && startupRecovery == nil
         onChange()
     }
     func poll() {
@@ -155,6 +167,11 @@ final class ClipboardHistory {
     }
     func clear() throws {
         entries = []; lastChange = board.changeCount
+        if let recovery = startupRecovery {
+            persistent = recovery.enabled
+            ageDays = min(365, max(1, recovery.days))
+        }
+        startupRecovery = nil
         storagePending = true; pendingClear = true
         defer { onChange() }
         try archive.clear()
@@ -192,6 +209,10 @@ final class ClipboardHistory {
     }
     private func retryStorage() {
         do {
+            if let recovery = startupRecovery {
+                try configurePersistence(recovery.enabled, ageDays: recovery.days, load: true)
+                return
+            }
             if pendingClear { try archive.clear() }
             else { try archive.save(entries) }
             storagePending = false; pendingClear = false
