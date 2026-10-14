@@ -1031,4 +1031,48 @@ expect(awake.remaining == 86400, "Session extensions stay bounded at twenty-four
 try awake.stop()
 awakeDefaults.removePersistentDomain(forName: awakeDomain)
 
+let appAwakeDomain = "fix-macos.app-awake-test.\(UUID().uuidString)"
+let appAwakeDefaults = UserDefaults(suiteName: appAwakeDomain)!
+let appPower = FakePowerAssertions()
+var runningAwakeApps = ["test.one": "One"]
+var appAwakeTime: TimeInterval = 0
+let appAwake = KeepAwakeModule(defaults: appAwakeDefaults, backend: appPower,
+    now: { appAwakeTime }, automaticUpdates: false, runningApps: { runningAwakeApps })
+try appAwake.setApp("test.one", name: "One", selected: true)
+try appAwake.setApp("test.two", name: "Two", selected: true)
+expect(!appAwake.active, "App rules wait for module activation")
+appAwake.activate()
+expect(appAwake.active && appAwake.activeAppNames == ["One"], "Activation discovers already-running selected apps")
+try appAwake.start()
+runningAwakeApps = [:]
+appAwake.tick()
+expect(appAwake.active && appAwake.remaining == 1800, "App exit preserves overlapping timed reason")
+runningAwakeApps = ["test.two": "Two"]
+appAwakeTime = 1801
+appAwake.tick()
+expect(appAwake.active && appAwake.remaining == 0 && appAwake.activeAppNames == ["Two"], "Timer expiry preserves background app reason")
+try appAwake.stop()
+appAwake.tick()
+expect(!appAwake.active && appAwake.appsPaused, "Stop pauses running app across subsequent reconciliation")
+try appAwake.resumeApps()
+expect(appAwake.active && !appAwake.appsPaused, "Resume restores running app reason")
+try appAwake.stop()
+runningAwakeApps = [:]
+appAwake.tick()
+runningAwakeApps = ["test.two": "Two relaunched"]
+appAwake.tick()
+expect(appAwake.active && !appAwake.appsPaused, "Exit clears pause and bundle identity matches next launch")
+let failingAppID = appPower.entries.keys.first!
+appPower.failRelease = failingAppID
+do { try appAwake.stop(); expect(false, "Injected app Stop failure must throw") }
+catch { expect(appAwake.active, "Failed app release retains assertion ownership") }
+appPower.failRelease = nil
+appAwake.tick()
+expect(!appAwake.active && appPower.entries.isEmpty, "Timer retries failed Stop without recreating paused app assertions")
+try appAwake.resumeApps()
+try appAwake.deactivate()
+appAwake.tick()
+expect(!appAwake.active && appPower.entries.isEmpty && appAwake.selectedApps.count == 2, "Disable releases assertions and keeps rules without reactivation")
+appAwakeDefaults.removePersistentDomain(forName: appAwakeDomain)
+
 print("\(checks) isolated checks passed; no Bluetooth, display, or real Space changes.")

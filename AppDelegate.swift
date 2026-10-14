@@ -122,6 +122,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onKeepAwakeStart = { [weak self] in self?.performKeepAwake { try $0.start() } }
         model.onKeepAwakeStop = { [weak self] in self?.performKeepAwake { try $0.stop() } }
         model.onKeepAwakeExtend = { [weak self] in self?.performKeepAwake { try $0.extend() } }
+        model.onKeepAwakeResume = { [weak self] in self?.performKeepAwake { try $0.resumeApps() } }
+        model.onKeepAwakeRemoveApp = { [weak self] id in self?.performKeepAwake { try $0.setApp(id, name: id, selected: false) } }
+        model.onKeepAwakeAddApp = { [weak self] in
+            let panel = NSOpenPanel()
+            panel.title = "Choose apps that keep the Mac awake"
+            panel.allowedContentTypes = [.applicationBundle]
+            panel.allowsMultipleSelection = true
+            panel.canChooseDirectories = false
+            guard panel.runModal() == .OK else { return }
+            for url in panel.urls {
+                guard let bundle = Bundle(url: url), let id = bundle.bundleIdentifier else { continue }
+                self?.performKeepAwake { try $0.setApp(id, name: url.deletingPathExtension().lastPathComponent, selected: true) }
+            }
+        }
         model.onKeepAwakeMinutesChanged = { [weak self] in self?.keepAwake?.selectedMinutes = $0 }
         model.onKeepDisplayAwakeChanged = { [weak self] enabled in self?.performKeepAwake { try $0.setKeepDisplayAwake(enabled) } }
         model.onQuitGuardChanged = { [weak self] enabled in
@@ -257,6 +271,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.keepAwakeActive = keepAwake?.active ?? false
         model.keepAwakeRemaining = keepAwake?.remaining ?? 0
         model.keepAwakeMinutes = keepAwake?.selectedMinutes ?? 30
+        model.keepAwakeApps = keepAwake?.selectedApps ?? [:]
+        model.keepAwakeAppNames = keepAwake?.activeAppNames ?? []
+        model.keepAwakeAppsPaused = keepAwake?.appsPaused ?? false
         model.keepDisplayAwake = keepAwake?.keepDisplayAwake ?? false
         item?.button?.image = NSImage(systemSymbolName: model.keepAwakeActive ? "cup.and.saucer.fill" : "slider.horizontal.3", accessibilityDescription: "Fix macOS")
         item?.button?.toolTip = model.keepAwakeActive ? "Fix macOS — keeping awake" : "Fix macOS"
@@ -286,6 +303,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 keepAwake = module
                 module.onChange = { [weak self] in self?.refreshKeepAwake() }
                 module.onError = { [weak self] in self?.showError($0) }
+                module.activate()
             }
         } else {
             keepAwake?.onChange = nil

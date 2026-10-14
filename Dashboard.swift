@@ -66,6 +66,12 @@ final class DashboardModel: ObservableObject {
     @Published var keepAwakeActive = false
     @Published var keepAwakeRemaining: TimeInterval = 0
     @Published var keepAwakeMinutes = 30
+    @Published var keepAwakeApps: [String: String] = [:]
+    @Published var keepAwakeAppNames: [String] = []
+    @Published var keepAwakeAppsPaused = false
+    var onKeepAwakeAddApp: () -> Void = {}
+    var onKeepAwakeRemoveApp: (String) -> Void = { _ in }
+    var onKeepAwakeResume: () -> Void = {}
     @Published var keepDisplayAwake = false
     var onKeepAwakeStart: () -> Void = {}
     var onKeepAwakeStop: () -> Void = {}
@@ -321,7 +327,7 @@ struct DashboardView: View {
                     Spacer()
                     Text(model.keepAwakeActive ? "Active" : "Off").foregroundStyle(model.keepAwakeActive ? .blue : .secondary)
                 }
-                if model.keepAwakeActive {
+                if model.keepAwakeRemaining > 0 {
                     Text(countdown).font(.system(size: 36, weight: .medium, design: .rounded)).monospacedDigit()
                         .accessibilityLabel("Time remaining: \(countdown)")
                     HStack {
@@ -349,6 +355,29 @@ struct DashboardView: View {
                             set: model.onKeepAwakeMinutesChanged), in: 5...1440, step: 5)
                     }
                     Button("Start session", action: model.onKeepAwakeStart).buttonStyle(.borderedProminent)
+                    if model.keepAwakeActive { Button("Stop", action: model.onKeepAwakeStop) }
+                }
+            }
+            card {
+                Text("While apps are running").font(.headline)
+                Text("Includes apps running in the background.").font(.caption).foregroundStyle(.secondary)
+                ForEach(model.keepAwakeApps.keys.sorted(), id: \.self) { id in
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(model.keepAwakeApps[id] ?? id)
+                            Text(id).font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Remove") { model.onKeepAwakeRemoveApp(id) }
+                    }
+                }
+                Button("Add apps…", action: model.onKeepAwakeAddApp)
+                if !model.keepAwakeAppNames.isEmpty {
+                    Text("Keeping awake: " + model.keepAwakeAppNames.joined(separator: ", ")).font(.caption)
+                }
+                if model.keepAwakeAppsPaused {
+                    Text("Stopped apps stay paused until they exit.").font(.caption)
+                    Button("Resume", action: model.onKeepAwakeResume)
                 }
             }
             card {
