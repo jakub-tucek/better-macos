@@ -52,18 +52,19 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
     var onChange: () -> Void = {}
     var onError: (String) -> Void = { _ in }
     var persistence: Bool { history.persistent }
+    var requestedPersistence: Bool { history.requestedPersistence }
     var days: Int { history.ageDays }
     var exclusions: String { history.exclusions.sorted().joined(separator: ", ") }
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, history: ClipboardHistory? = nil) {
         self.defaults = defaults
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Fix macOS/Clipboard", isDirectory: true)
-        history = ClipboardHistory(board: SystemClipboard(), archive: ClipboardArchive(directory: directory),
+        self.history = history ?? ClipboardHistory(board: SystemClipboard(), archive: ClipboardArchive(directory: directory),
                                    source: { NSWorkspace.shared.frontmostApplication?.bundleIdentifier })
         super.init()
-        history.onChange = { [weak self] in self?.reload(); self?.onChange() }
-        history.onError = { [weak self] in self?.onError("Clipboard history could not be saved.") }
+        self.history.onChange = { [weak self] in self?.reload(); self?.onChange() }
+        self.history.onError = { [weak self] in self?.onError("Clipboard history could not be saved.") }
     }
     func start() {
         setExclusions(defaults.string(forKey: "clipboard.exclusions") ?? "")
@@ -72,7 +73,7 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
                 ageDays: defaults.object(forKey: "clipboard.days") as? Int ?? 7, load: true)
         } catch { onError("Clipboard archive could not be loaded or cleaned up.") }
         // Recording is an explicit per-launch opt-in, never restored from defaults.
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.history.poll() }
+        resumeMonitoring()
         var type = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let status = InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
             guard let event, let context else { return OSStatus(eventNotHandledErr) }
@@ -98,6 +99,15 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
         panel?.orderOut(nil); panel = nil
         history.stop()
     }
+    func resumeMonitoring() {
+        guard timer == nil else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.history.poll() }
+    }
+    func prepareTermination() -> Bool {
+        timer?.invalidate(); timer = nil
+        history.setRecording(false)
+        return history.flushPendingStorage()
+    }
     func setPersistence(_ enabled: Bool, days: Int? = nil) {
         do {
             try history.configurePersistence(enabled, ageDays: days ?? history.ageDays)
@@ -106,6 +116,7 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
         } catch { onError("Clipboard archive could not be saved or removed.") }
         onChange()
     }
+    func setRetentionDays(_ days: Int) { setPersistence(requestedPersistence, days: days) }
     func setExclusions(_ value: String) {
         let values = Set(value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
         defaults.set(value, forKey: "clipboard.exclusions")

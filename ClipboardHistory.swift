@@ -86,6 +86,7 @@ final class ClipboardHistory {
     private(set) var storagePending = false
     private var pendingClear = false
     private var startupRecovery: (enabled: Bool, days: Int)?
+    var requestedPersistence: Bool { startupRecovery?.enabled ?? persistent }
     var onChange: () -> Void = {}
     var onError: () -> Void = {}
 

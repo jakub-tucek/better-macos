@@ -45,10 +45,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var guiTestOriginalOutput: String?
     private let commandRunner: CommandRunning
 
-    init(commandRunner: CommandRunning = CommandRunner(), spaces: SpacesModule? = nil, windowPositions: WindowPositions? = nil) {
+    init(commandRunner: CommandRunning = CommandRunner(), spaces: SpacesModule? = nil, windowPositions: WindowPositions? = nil, clipboard: ClipboardModule? = nil) {
         self.commandRunner = commandRunner
         self.spaces = spaces
         self.windowPositions = windowPositions
+        self.clipboard = clipboard
         super.init()
     }
 
@@ -134,7 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onClipboardPersistence = { [weak self] in self?.clipboard?.setPersistence($0) }
         model.onClipboardDays = { [weak self] days in
             guard let module = self?.clipboard else { return }
-            module.setPersistence(module.persistence, days: days)
+            module.setRetentionDays(days)
         }
         model.onClipboardExclusions = { [weak self] in self?.clipboard?.setExclusions($0) }
         model.onKeepAwakeStart = { [weak self] in self?.performKeepAwake { try $0.start() } }
@@ -884,21 +885,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if clipboard?.history.flushPendingStorage() == false {
+        if !prepareClipboardTermination() {
+            clipboard?.resumeMonitoring()
             model.errorMessage = "Clipboard disk cleanup is pending. Retry quitting after storage becomes available."
             return .terminateCancel
         }
-        guard !model.animationsBusy else { showError(ToggleError(message: "Wait for animation settings to finish saving.")); return .terminateCancel }
-        guard !recovering else { showError(ToggleError(message: "Wait for the current display operation before quitting.")); return .terminateCancel }
+        guard !model.animationsBusy else { clipboard?.resumeMonitoring(); showError(ToggleError(message: "Wait for animation settings to finish saving.")); return .terminateCancel }
+        guard !recovering else { clipboard?.resumeMonitoring(); showError(ToggleError(message: "Wait for the current display operation before quitting.")); return .terminateCancel }
         guard model.disabledMonitorCount > 0 || rollbackUUID != nil || model.pendingArrangement else {
             guard let spaces else { return .terminateNow }
             spaces.onChange = nil
             // Always reply asynchronously: an idle engine can drain immediately.
-            spaces.stop { DispatchQueue.main.async { sender.reply(toApplicationShouldTerminate: true) } }
+            spaces.stop { DispatchQueue.main.async { self.finishTermination(sender, approved: true) } }
             return .terminateLater
         }
-        restoreAll { restored in sender.reply(toApplicationShouldTerminate: restored) }
+        restoreAll { restored in self.finishTermination(sender, approved: restored) }
         return .terminateLater
+    }
+
+    private func finishTermination(_ sender: NSApplication, approved: Bool) {
+        sender.reply(toApplicationShouldTerminate: finishClipboardTermination(approved: approved))
+    }
+
+    func prepareClipboardTermination() -> Bool { clipboard?.prepareTermination() != false }
+
+    func finishClipboardTermination(approved: Bool) -> Bool {
+        let clean = prepareClipboardTermination()
+        if !approved || !clean { clipboard?.resumeMonitoring() }
+        if !clean { model.errorMessage = "Clipboard disk cleanup is pending. Retry quitting after storage becomes available." }
+        return approved && clean
     }
 
     func applicationWillTerminate(_ notification: Notification) {

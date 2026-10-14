@@ -16,7 +16,11 @@ private final class FakeClipboard: ClipboardAccess {
 private final class FailingClipboardArchive: ClipboardPersistence {
     var entries: [ClipboardEntry] = []
     var failing = false
-    func load() throws -> [ClipboardEntry] { entries }
+    var failLoad = false
+    func load() throws -> [ClipboardEntry] {
+        if failLoad { throw CocoaError(.fileReadNoPermission) }
+        return entries
+    }
     func save(_ entries: [ClipboardEntry]) throws {
         if failing { throw CocoaError(.fileWriteNoPermission) }
         self.entries = entries
@@ -169,6 +173,28 @@ func runClipboardTests() throws {
     do { try idleStartup.configurePersistence(true, ageDays: 1, load: true) } catch {}
     failing.failing = false; idleStartup.poll()
     expect(idleStartup.entries == [savedEntry] && !idleStartup.storagePending, "idle poll retries startup load and cleanup")
+    failing.failLoad = true
+    let failedLoad = ClipboardHistory(board: board, archive: failing, now: { date }, source: { app })
+    do { try failedLoad.configurePersistence(true, ageDays: 1, load: true) } catch {}
+    expect(failedLoad.requestedPersistence && !failedLoad.persistent, "failed load preserves requested disk persistence")
+    do { try failedLoad.configurePersistence(failedLoad.requestedPersistence, ageDays: 2) } catch {}
+    expect(failing.entries == [savedEntry] && failedLoad.storagePending, "retention change cannot discard an archive after load failure")
+    let domain = "clipboard-tests.\(UUID())"
+    let defaults = UserDefaults(suiteName: domain)!
+    defer { defaults.removePersistentDomain(forName: domain) }
+    let module = ClipboardModule(defaults: defaults, history: failedLoad)
+    module.setRetentionDays(3)
+    expect(failing.entries == [savedEntry] && failedLoad.storagePending, "native module retention action preserves archive during failed startup")
+    failing.failLoad = false; failedLoad.poll()
+    expect(failedLoad.entries == [savedEntry], "actual load failure recovers on idle retry")
+    let host = AppDelegate(clipboard: module)
+    failedLoad.setRecording(true)
+    expect(host.prepareClipboardTermination() && !failedLoad.recording, "host quit preparation quiesces clipboard recording")
+    failing.failing = true; failedLoad.delete(savedEntry.id)
+    expect(!host.finishClipboardTermination(approved: true), "host async quit completion rechecks cleanup and refuses pending deletion")
+    failing.failing = false
+    expect(host.finishClipboardTermination(approved: true) && failing.entries.isEmpty, "host quit approves only after late cleanup succeeds")
+    module.stop()
 
     var worstCase: [ClipboardEntry] = (0..<8).map { index in
         ClipboardEntry(id: UUID(), created: date, source: "fixture", text: nil,
