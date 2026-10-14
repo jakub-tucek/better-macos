@@ -242,11 +242,20 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     var isManualBusy: Bool { manualBusy || pendingManual != nil }
     var autoEnabled: Bool {
         get { defaults.bool(forKey: "bluetooth.autoEnabled") }
-        set { cycleCancellation?.cancel(); defaults.set(newValue, forKey: "bluetooth.autoEnabled"); onChange?(); poll() }
+        set {
+            cycleCancellation?.cancel()
+            if !newValue { clearAudioIntent() }
+            defaults.set(newValue, forKey: "bluetooth.autoEnabled"); onChange?(); poll()
+        }
     }
     var autoAddresses: Set<String> {
         get { Set(defaults.stringArray(forKey: "bluetooth.autoAddresses") ?? []) }
-        set { cycleCancellation?.cancel(); defaults.set(newValue.sorted(), forKey: "bluetooth.autoAddresses"); onChange?() }
+        set {
+            cycleCancellation?.cancel()
+            pendingAudioAddresses.formIntersection(newValue)
+            pendingAudioName = nil
+            defaults.set(newValue.sorted(), forKey: "bluetooth.autoAddresses"); onChange?()
+        }
     }
     var protectOtherAudio: Bool {
         get { defaults.bool(forKey: "bluetooth.protectAudio") }
@@ -258,7 +267,16 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
     var switchAudioOutput: Bool {
         get { defaults.bool(forKey: "bluetooth.switchAudio") }
-        set { cycleCancellation?.cancel(); defaults.set(newValue, forKey: "bluetooth.switchAudio") }
+        set {
+            cycleCancellation?.cancel()
+            if !newValue { clearAudioIntent() }
+            defaults.set(newValue, forKey: "bluetooth.switchAudio")
+        }
+    }
+
+    private func clearAudioIntent() {
+        pendingAudioName = nil
+        pendingAudioAddresses.removeAll()
     }
 
     var legacyPlist: URL {
@@ -347,7 +365,10 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         queue.async { [weak self] in
             let result = Result {
                 try backend.reconcile(config, progress: { progress in
-                    DispatchQueue.main.async { self?.applyProgress(progress) }
+                    DispatchQueue.main.async {
+                        guard !cancellation.isCanceled else { return }
+                        self?.applyProgress(progress)
+                    }
                 }, shouldContinue: { !cancellation.isCanceled })
             }
             DispatchQueue.main.async { self?.complete(result, reportError: false) }

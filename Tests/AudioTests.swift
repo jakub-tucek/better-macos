@@ -215,6 +215,18 @@ private func runBluetoothAudioIntegrationTests() {
     while discoveryBluetooth.isBusy && Date() < unprotectedDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
     expect(discoveryCallbacks == 1 && fake.routes[.output] == "speaker" && discoveryRunner.connections.count == 1,
            "Recovered post-connect discovery forwards retained intent without reconnecting")
+    fake.routes[.output] = "builtin"; discoveryAudio.resume()
+    discoveryRunner.current = [speaker]; discoveryRunner.failPostConnectAudioObservation = true
+    discoveryBluetooth.poll()
+    let failureAgainDeadline = Date().addingTimeInterval(2)
+    while discoveryBluetooth.isBusy && Date() < failureAgainDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+    discoveryBluetooth.switchAudioOutput = false
+    discoveryBluetooth.switchAudioOutput = true
+    discoveryRunner.failPostConnectAudioObservation = false
+    discoveryBluetooth.poll()
+    let toggleDeadline = Date().addingTimeInterval(2)
+    while discoveryBluetooth.isBusy && Date() < toggleDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+    expect(discoveryCallbacks == 1 && fake.routes[.output] == "builtin", "Output policy off/on before polling cannot resurrect deferred routing intent")
     discoveryBluetooth.stop(); discoveryAudio.stop()
 
     let entered = DispatchSemaphore(value: 0)
@@ -233,4 +245,25 @@ private func runBluetoothAudioIntegrationTests() {
     let cancelDeadline = Date().addingTimeInterval(2)
     while !drained && Date() < cancelDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
     expect(drained && canceledCallbacks == 0, "Bluetooth unload cancels routing callbacks before delivery")
+
+    let policyEntered = DispatchSemaphore(value: 0)
+    let policyRelease = DispatchSemaphore(value: 0)
+    let policyRunner = FakeRunner()
+    var policyBackend = backend(policyRunner)
+    policyBackend.waitForConnection = { policyEntered.signal(); _ = policyRelease.wait(timeout: .now() + 2) }
+    let policyModule = BluetoothModule(defaults: defaults, backend: policyBackend, importLegacyConfiguration: false,
+                                      authorizationProvider: { .allowedAlways })
+    var policyCallbacks = 0
+    policyModule.onAudioOutputRequested = { _ in policyCallbacks += 1 }
+    policyModule.start()
+    expect(policyEntered.wait(timeout: .now() + 2) == .success, "Policy cancellation fixture blocks before connected progress delivery")
+    policyModule.switchAudioOutput = false; policyModule.switchAudioOutput = true
+    policyRelease.signal()
+    let staleProgressDeadline = Date().addingTimeInterval(2)
+    while policyModule.isBusy && Date() < staleProgressDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+    policyModule.poll()
+    let afterProgressDeadline = Date().addingTimeInterval(2)
+    while policyModule.isBusy && Date() < afterProgressDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+    expect(policyCallbacks == 0 && policyRunner.connections.count == 1, "Canceled-cycle connected progress cannot recreate cleared routing intent")
+    policyModule.stop()
 }
