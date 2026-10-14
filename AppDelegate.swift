@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var quitGuard: QuitGuard?
     private var keepAwake: KeepAwakeModule?
     private var windowPositions: WindowPositions?
+    private var clipboard: ClipboardModule?
     private let sourceUpdater = SourceUpdater()
     private let animationQueue = DispatchQueue(label: "fix-mac-os.animation-preferences")
     private let modules = ModuleSettings()
@@ -127,6 +128,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onAudioResume = { [weak self] in self?.audio?.resume() }
         model.onAudioPreferences = { [weak self] values, direction in self?.audio?.setPreferences(values, direction: direction) }
         model.onAudioFallback = { [weak self] uid, direction in self?.audio?.setFallback(uid, direction: direction) }
+        model.onClipboardRecording = { [weak self] in self?.clipboard?.history.setRecording($0) }
+        model.onClipboardOpen = { [weak self] in self?.popover.performClose(nil); self?.clipboard?.show() }
+        model.onClipboardClear = { [weak self] in self?.clipboard?.clear() }
+        model.onClipboardPersistence = { [weak self] in self?.clipboard?.setPersistence($0) }
+        model.onClipboardDays = { [weak self] days in
+            guard let module = self?.clipboard else { return }
+            module.setPersistence(module.persistence, days: days)
+        }
+        model.onClipboardExclusions = { [weak self] in self?.clipboard?.setExclusions($0) }
         model.onKeepAwakeStart = { [weak self] in self?.performKeepAwake { try $0.start() } }
         model.onKeepAwakeStop = { [weak self] in self?.performKeepAwake { try $0.stop() } }
         model.onKeepAwakeExtend = { [weak self] in self?.performKeepAwake { try $0.extend() } }
@@ -337,6 +347,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             audio?.automaticAllowed = modules.enabled.contains(.audio)
         } else { audio?.stop(); audio = nil }
         refreshAudio()
+        if modules.enabled.contains(.clipboard) {
+            if clipboard == nil {
+                let module = ClipboardModule()
+                clipboard = module
+                module.onChange = { [weak self] in self?.refreshClipboard() }
+                module.onError = { [weak self] in self?.model.errorMessage = $0 }
+                module.start()
+            }
+        } else {
+            clipboard?.stop()
+            clipboard = nil
+        }
+        refreshClipboard()
         if modules.enabled.contains(.keepAwake) {
             if keepAwake == nil {
                 let module = KeepAwakeModule()
@@ -471,6 +494,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         refreshBluetooth()
         refreshPreferences()
+    }
+
+    private func refreshClipboard() {
+        model.clipboardRecording = clipboard?.history.recording ?? false
+        model.clipboardCount = clipboard?.history.entries.count ?? 0
+        model.clipboardPersistence = clipboard?.persistence ?? false
+        model.clipboardDays = clipboard?.days ?? 7
+        model.clipboardExclusions = clipboard?.exclusions ?? ""
     }
 
     @objc private func toggleDashboard() {
@@ -865,6 +896,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windowPositions?.stop()
         try? keepAwake?.deactivate()
         audio?.stop()
+        clipboard?.stop()
         quitGuard?.stop()
         menuBar?.stop()
         sourceUpdater.stop()

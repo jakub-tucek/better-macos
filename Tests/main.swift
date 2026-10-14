@@ -295,6 +295,7 @@ expect(displaySetBackend.moves.count == 1, "A C to A B C restores the explicitly
 displaySetModule.reconcile(ready: true, settled: true)
 expect(displaySetBackend.moves.count == 1, "repeated A B C snapshot does not repeat restoration")
 displaySetDefaults.removePersistentDomain(forName: displaySetDomain)
+try runClipboardTests()
 
 final class FakeRunner: CommandRunning {
     var current: [BluetoothDevice] = [speaker]
