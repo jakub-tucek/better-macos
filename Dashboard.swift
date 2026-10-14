@@ -5,7 +5,7 @@ enum DashboardTab: String, CaseIterable {
     case modules = "Modules"
     case monitors = "Monitors"
     case bluetooth = "Bluetooth"
-    case spaces = "Spaces"
+    case spaces = "Animations"
 }
 
 /// The same state drives the persistent popover and its controls. Refreshes
@@ -16,6 +16,9 @@ final class DashboardModel: ObservableObject {
     @Published var tab: DashboardTab = .monitors
     @Published var monitors: [Monitor] = []
     @Published var monitorBusy = false
+    @Published var confirmMonitorDisable = false
+    @Published var matchScreenEdges = false
+    @Published var screenEdgesActive = false
     @Published var activeMonitorCount = 0
     @Published var displaySupported = false
     @Published var displaySettling = true
@@ -40,6 +43,8 @@ final class DashboardModel: ObservableObject {
     @Published var protectedAudioAddresses = Set<String>()
     @Published var legacyServicePresent = false
     @Published var spacesEnabled = false
+    @Published var animationsEnabled = false
+    @Published var animationsBusy = false
     @Published var spacesPermission = false
     @Published var spacesAvailable = false
     @Published var spacesSpeed: TransitionSpeed = .instant
@@ -47,6 +52,8 @@ final class DashboardModel: ObservableObject {
     @Published var errorMessage: String?
 
     var onMonitorChanged: (String, Bool) -> Void = { _, _ in }
+    var onMonitorDisableModeChanged: (Bool) -> Void = { _ in }
+    var onMatchScreenEdgesChanged: (Bool) -> Void = { _ in }
     var onModuleChanged: (AppModule, Bool) -> Void = { _, _ in }
     var onKeepDisabled: (String) -> Void = { _ in }
     var onRestoreAll: () -> Void = {}
@@ -62,6 +69,7 @@ final class DashboardModel: ObservableObject {
     var onProtectedDeviceChanged: (String, Bool) -> Void = { _, _ in }
     var onTakeOverLegacy: () -> Void = {}
     var onSpacesChanged: (Bool) -> Void = { _ in }
+    var onAnimationsChanged: (Bool) -> Void = { _ in }
     var onSpeedChanged: (TransitionSpeed) -> Void = { _ in }
     var onLoginChanged: (Bool) -> Void = { _ in }
     var onClose: () -> Void = {}
@@ -252,6 +260,13 @@ struct DashboardView: View {
 
     private var monitors: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if model.enabledModules.contains(.monitors) {
+                Picker("Disable mode", selection: Binding(
+                    get: { model.confirmMonitorDisable }, set: model.onMonitorDisableModeChanged)) {
+                    Text("Dangerously").tag(false)
+                    Text("Safely (20s undo)").tag(true)
+                }.disabled(model.monitorBusy || !model.countdowns.isEmpty)
+            }
             if !model.countdowns.isEmpty {
                 card {
                     ForEach(model.countdowns.keys.sorted(), id: \.self) { uuid in
@@ -308,6 +323,16 @@ struct DashboardView: View {
                     .disabled(busy || !model.displaySupported || model.disabledMonitorCount > 0 || model.pendingArrangement || model.currentLayout.count < 2)
                     .help("Drag screens to arrange your desk")
             }
+            HStack {
+                Text("Match screen edges").font(.subheadline)
+                Spacer()
+                BlueSwitch(label: "Match screen edges", isOn: Binding(
+                    get: { model.matchScreenEdges }, set: model.onMatchScreenEdgesChanged))
+            }
+            if model.matchScreenEdges && !model.screenEdgesActive {
+                Text("Paused — waiting for stable displays or Accessibility access.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
             if model.disabledMonitorCount > 0 {
                 Text("Turn all screens on to arrange.").font(.caption2).foregroundStyle(.secondary)
             }
@@ -328,8 +353,10 @@ struct DashboardView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(busy || !model.displaySupported || !model.countdowns.isEmpty)
-                    Text("Reverts after 20 seconds unless confirmed.")
-                        .font(.caption2).foregroundStyle(.secondary)
+                    if model.confirmMonitorDisable {
+                        Text("Reverts after 20 seconds unless confirmed.")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
                 } else {
                     Text(model.activeMonitorCount <= 1 ? "The last usable screen cannot be turned off." :
                          "No reliable preview for this arrangement. Check display mirroring, connections, and resolution.")
@@ -463,8 +490,27 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 14) {
             card {
                 HStack {
+                    Text("Limit animations").font(.headline)
+                    Spacer()
+                    BlueSwitch(label: "Limit animations", isOn: Binding(
+                        get: { model.animationsEnabled }, set: model.onAnimationsChanged))
+                        .disabled(model.animationsBusy)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    animationScope("Dock", detail: "Reveal delay, sliding, bouncing, magnification")
+                    animationScope("Minimize & restore", detail: "Scale instead of Genie")
+                    animationScope("Finder & windows", detail: "Opening, closing, resizing")
+                    animationScope("Scrolling", detail: "AppKit smooth scrolling")
+                    animationScope("Window tiling", detail: "Experimental animation suppression")
+                }
+                Text("Dock and Finder restart when changed. Relaunch other apps; tiling may need a new login. Effects vary by app.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            card {
+              DisclosureGroup("Advanced") {
+                HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Fast trackpad switching").font(.headline).help("Horizontal swipes between desktops")
+                        Text("Fast desktop switching").font(.headline).help("Horizontal trackpad swipes between desktops")
                         if !model.spacesAvailable || !model.spacesPermission {
                             Text(!model.spacesAvailable ? "Waiting for watchdog or display changes" : "Accessibility permission required")
                                 .font(.caption).foregroundStyle(.secondary)
@@ -473,7 +519,7 @@ struct DashboardView: View {
                     Spacer()
                     BlueSwitch(label: "Enable fast horizontal trackpad Space switching", isOn: Binding(
                         get: { model.spacesEnabled }, set: model.onSpacesChanged))
-                        .disabled(!model.spacesAvailable)
+                        .disabled(!model.spacesAvailable || !model.animationsEnabled || model.animationsBusy)
                 }
                 Picker("Transition speed", selection: Binding(get: { model.spacesSpeed }, set: model.onSpeedChanged)) {
                     ForEach(TransitionSpeed.allCases, id: \.self) { Text($0.title).tag($0) }
@@ -485,17 +531,22 @@ struct DashboardView: View {
                         }
                     }
                 }
-            }
-            card {
-                Text("Mission Control").font(.headline)
-                Text("Uses macOS Reduce motion, not trackpad switching.")
+                Text("Mission Control and Control Center may still animate.")
                     .font(.caption).foregroundStyle(.secondary)
                 Button("Open macOS motion settings") {
                     if let url = URL(string: "x-apple.systempreferences:com.apple.preference.universalaccess?Seeing_Display") {
                         NSWorkspace.shared.open(url)
                     }
                 }
+              }
             }
+        }
+    }
+
+    private func animationScope(_ title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.subheadline).fontWeight(.medium)
+            Text(detail).font(.caption).foregroundStyle(.secondary)
         }
     }
 }

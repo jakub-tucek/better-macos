@@ -3,33 +3,51 @@ import ApplicationServices
 
 /// Owns the vendored gesture machinery; UI only knows enable/disable and speed.
 final class SpacesModule {
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
     private let engine = GestureSwitchEngine()
     private var interceptor: SwipeInterceptor?
     private var observer: NSObjectProtocol?
 
     var hasPermission: Bool { AXIsProcessTrusted() }
-    // Set by the host while its independent watchdog is ready. Never auto-start.
+    // Set by the host while its independent watchdog is ready.
     var isAvailable = false
+    private(set) var needsStartupRestore = true
+    var savedEnabled: Bool { defaults.bool(forKey: "spaces.enabled") }
     var isEnabled: Bool { interceptor?.isRunning == true && interceptor?.overrideEnabled == true }
     var speed: TransitionSpeed {
         get { TransitionSpeed.from(rawValue: defaults.integer(forKey: "spaces.speed")) }
         set { defaults.set(newValue.rawValue, forKey: "spaces.speed"); engine.setTransitionSpeed(newValue) }
     }
 
-    init() {
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
         engine.setTransitionSpeed(speed)
         observer = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
         ) { [engine] _ in engine.resetPredictions() }
-        defaults.set(false, forKey: "spaces.enabled")
+    }
+
+    func restoreSavedState() throws {
+        guard needsStartupRestore, isAvailable else { return }
+        needsStartupRestore = false
+        if savedEnabled { try setEnabled(true) }
+    }
+
+    func requestRestore(enabled: Bool) {
+        defaults.set(enabled, forKey: "spaces.enabled")
+        needsStartupRestore = true
+    }
+
+    func suspend() {
+        interceptor?.overrideEnabled = false
+        interceptor?.teardown()
+        interceptor = nil
     }
 
     func setEnabled(_ enabled: Bool) throws {
+        needsStartupRestore = false
         if !enabled {
-            interceptor?.overrideEnabled = false
-            interceptor?.teardown()
-            interceptor = nil
+            suspend()
             defaults.set(false, forKey: "spaces.enabled")
             return
         }
@@ -53,8 +71,7 @@ final class SpacesModule {
     }
 
     func stop() {
-        interceptor?.overrideEnabled = false
-        interceptor?.teardown()
+        suspend()
         if let observer { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
         observer = nil
     }

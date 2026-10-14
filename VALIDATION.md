@@ -13,8 +13,9 @@ These tests replace event posting and window enumeration; they do not swipe the
 live desktop. Local tests additionally exercise gesture suppression, boundaries,
 keyboard exclusion, and disabled-interceptor passthrough.
 
-Our integration differs from the standalone app: explicit activation each launch,
-watchdog prerequisite, and interception pauses during display reconfiguration.
+Our integration restores the saved activation choice after the watchdog is ready
+and displays settle. Interception pauses during display reconfiguration without
+erasing that choice; it stays paused for the session until explicitly re-enabled.
 Upstream hotkeys and menu implementation are not included.
 
 ### Mission Control versus Space switching
@@ -40,7 +41,9 @@ not expose a matching implementation of that function to validate against.
 Local coverage checks last-screen protection, mirrored-source/slave rejection,
 target identity rejection, notification coalescing, and real watchdog termination
 of disposable children. GUI transactions now use time-limited helper processes;
-unconfirmed disabling restores after 20 seconds while the GUI is responsive.
+**Safely** mode restores unconfirmed disabling after 20 seconds while the GUI is
+responsive. **Dangerously** (default) skips that countdown; both modes retain
+last-usable-screen protection. Arrangement changes still require confirmation.
 The independent watchdog attempts restoration after terminating a stalled parent.
 After an unrelated app crash, recorded disabled screens require explicit recovery.
 
@@ -48,3 +51,20 @@ The rebuilt app has not yet completed a live monitor disable/restore or physical
 trackpad-swipe acceptance test. Source parity is not evidence that the original
 cursor-only freeze is fixed. No claim is made that killing the app can recover a
 stalled WindowServer or graphics driver.
+
+## Matched screen edges
+
+Pure geometry tests cover the entire large-display bottom edge, negative desktop
+coordinates, proportional return mapping, side edges, removed screens, inward
+movement, and ambiguous multi-neighbor edges. The event tap only rewrites mouse
+movement; drag events reset its tracking and pass through. Mapping pauses during
+display changes and requires the watchdog, Accessibility access, and a valid
+non-overlapping layout. A physical pointer-crossing acceptance test is still needed.
+
+The initial implementation used Quartz's default warp suppression and a 120ms
+crossing cooldown. After a reported pause, the cursor source now sets local input
+suppression to zero and uses the destination inset instead of a timed cooldown.
+A regression check fails with the default source and passes with zero suppression.
+This checks configuration; physical input latency still needs user verification.
+The same warp symptom and source-scoped fix are reported in
+[Hammerspoon #3332](https://github.com/Hammerspoon/hammerspoon/issues/3332).

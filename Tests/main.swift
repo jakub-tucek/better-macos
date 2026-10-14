@@ -508,4 +508,91 @@ expect(recording.attempts == 2, "A new gesture works after a blocked edge swipe"
 interceptor.overrideEnabled = false
 expect(interceptor.handle(type: CGEventType(rawValue: 30)!, event: gesture(1)) != nil,
        "Disabled Space interception passes gestures through")
+let cursorWarpSource = ScreenEdgeController.makeWarpSource()
+expect(cursorWarpSource != nil && cursorWarpSource!.localEventsSuppressionInterval == 0,
+       "Cursor warps must not introduce the default 250ms local-input suppression")
+let edgeLayout = [
+    DisplayPosition(uuid: "A", x: -2560, y: 0, width: 2560, height: 1440),
+    DisplayPosition(uuid: "Mac", x: -2560, y: 1440, width: 1512, height: 982)
+]
+for fraction: CGFloat in [0.001, 0.5, 0.999] {
+    let x = -2560 + fraction * 2560
+    let point = ScreenEdges.destination(from: CGPoint(x: x, y: 1435), to: CGPoint(x: x, y: 1439), delta: CGPoint(x: 0, y: 10), layout: edgeLayout)
+    expect(point != nil && abs(point!.x - (-2558 + fraction * 1508)) < 0.01 && point!.y == 1442,
+           "Full lower edge maps proportionally onto Mac at fraction \(fraction)")
+}
+let edgeUp = ScreenEdges.destination(from: CGPoint(x: -1804, y: 1444), to: CGPoint(x: -1804, y: 1438), delta: CGPoint(x: 0, y: -6), layout: edgeLayout)
+expect(edgeUp == CGPoint(x: -1280, y: 1438), "Mac upper edge maps back to the larger display's center")
+expect(ScreenEdges.destination(from: CGPoint(x: -100, y: 100), to: CGPoint(x: -100, y: 101), delta: CGPoint(x: 0, y: 1), layout: edgeLayout) == nil, "Interior mouse movement never warps")
+expect(ScreenEdges.destination(from: CGPoint(x: -100, y: 1439), to: CGPoint(x: -100, y: 1438), delta: CGPoint(x: 0, y: -1), layout: edgeLayout) == nil, "Inward movement at an edge never warps")
+let ambiguousEdges = edgeLayout + [DisplayPosition(uuid: "Other", x: -1048, y: 1440, width: 1048, height: 982)]
+expect(ScreenEdges.destination(from: CGPoint(x: -100, y: 1435), to: CGPoint(x: -100, y: 1439), delta: CGPoint(x: 0, y: 10), layout: ambiguousEdges) == nil, "Split edges with multiple neighbors preserve native behavior")
+expect(ScreenEdges.destination(from: CGPoint(x: -100, y: 1435), to: CGPoint(x: -100, y: 1439), delta: CGPoint(x: 0, y: 10), layout: [edgeLayout[0]]) == nil, "Removed neighbors cannot receive pointer warps")
+let sideEdges = [DisplayPosition(uuid: "L", x: 0, y: 0, width: 2000, height: 1400), DisplayPosition(uuid: "R", x: 2000, y: 0, width: 1000, height: 900)]
+let edgeRight = ScreenEdges.destination(from: CGPoint(x: 1995, y: 1300), to: CGPoint(x: 1999, y: 1300), delta: CGPoint(x: 8, y: 0), layout: sideEdges)
+expect(edgeRight != nil && edgeRight!.x == 2002 && edgeRight!.y < 900, "Mismatched side edges map into the shorter neighbor")
+
+let animationSuite = "fix-mac-os.animation-tests.\(UUID().uuidString)"
+let animationDefaults = UserDefaults(suiteName: animationSuite)!
+var animationValues: [String: Any] = ["com.apple.dock/autohide-time-modifier": 0.25, "unrelated": "keep"]
+var failAnimationWrites = false
+let animationRead: (AnimationPreferences.Setting) -> Any? = { animationValues[$0.id] }
+let animationWrite: (AnimationPreferences.Setting, Any?) throws -> Void = { setting, value in
+    if failAnimationWrites && setting.key == "launchanim" { throw ToggleError(message: "Injected write failure") }
+    animationValues[setting.id] = value
+}
+let animationSettings = AnimationPreferences(defaults: animationDefaults, read: animationRead, write: animationWrite)
+try animationSettings.setEnabled(true)
+expect(animationSettings.enabled && animationValues["com.apple.dock/autohide-time-modifier"] as? Double == 0, "Animation preset applies and remembers enabled choice")
+let recreatedAnimations = AnimationPreferences(defaults: animationDefaults, read: animationRead, write: animationWrite)
+try recreatedAnimations.setEnabled(true)
+try recreatedAnimations.setEnabled(false, preserveChoice: true)
+expect(recreatedAnimations.enabled && animationValues["com.apple.dock/autohide-time-modifier"] as? Double == 0.25, "Module suspension restores originals while preserving choice across recreation")
+expect(animationValues["com.apple.dock/launchanim"] == nil && animationValues["unrelated"] as? String == "keep", "Animation restore preserves absent keys and unrelated preferences")
+try recreatedAnimations.setEnabled(true)
+failAnimationWrites = true
+do { try recreatedAnimations.setEnabled(false); expect(false, "Failed restoration must throw") }
+catch { expect(animationDefaults.data(forKey: "animations.originals") != nil, "Partial restoration retains durable backup for retry") }
+failAnimationWrites = false
+try recreatedAnimations.setEnabled(false)
+expect(!recreatedAnimations.enabled && animationDefaults.data(forKey: "animations.originals") == nil, "Successful restoration clears backup and persists Off")
+let legacyAnimationBackup: [String: [String: Any]] = ["com.apple.dock/autohide-time-modifier": ["value": 0.25]]
+let legacyAnimationData = try PropertyListSerialization.data(fromPropertyList: legacyAnimationBackup, format: .binary, options: 0)
+animationDefaults.set(legacyAnimationData, forKey: "animations.originals")
+animationDefaults.set(true, forKey: "animations.enabled")
+animationValues["com.apple.dock/autohide-time-modifier"] = 0.0
+animationValues["com.apple.dock/mineffect"] = "genie"
+expect(recreatedAnimations.needsUpdate, "Older animation presets detect new controls")
+try recreatedAnimations.setEnabled(true)
+expect(!recreatedAnimations.needsUpdate && animationValues["com.apple.dock/mineffect"] as? String == "scale", "Preset upgrade applies new controls and extends snapshot")
+try recreatedAnimations.setEnabled(false)
+expect(animationValues["com.apple.dock/autohide-time-modifier"] as? Double == 0.25 && animationValues["com.apple.dock/mineffect"] as? String == "genie", "Preset upgrade preserves old originals and captures new ones")
+expect(animationValues["com.apple.WindowManager/DisableTilingAnimations"] == nil, "Experimental tiling preference restores original absence")
+animationDefaults.set(legacyAnimationData, forKey: "animations.originals")
+try recreatedAnimations.setEnabled(false)
+expect(animationValues["com.apple.dock/mineffect"] as? String == "genie", "Disabling an old preset leaves never-managed keys untouched")
+animationDefaults.removePersistentDomain(forName: animationSuite)
+
+let spaceSuite = "fix-mac-os.spaces-tests.\(UUID().uuidString)"
+let spacePreferences = UserDefaults(suiteName: spaceSuite)!
+spacePreferences.set(true, forKey: "spaces.enabled")
+spacePreferences.set(TransitionSpeed.instant.rawValue, forKey: "spaces.speed")
+let savedSpaces = SpacesModule(defaults: spacePreferences)
+expect(savedSpaces.savedEnabled, "Creating Space module preserves saved enabled choice")
+expect(!savedSpaces.isEnabled, "Saved preference does not start interception before readiness")
+try savedSpaces.restoreSavedState()
+expect(savedSpaces.needsStartupRestore, "Unavailable watchdog defers restoration")
+savedSpaces.suspend()
+expect(savedSpaces.savedEnabled, "Temporary suspension preserves enabled preference")
+savedSpaces.stop()
+let recreatedSpaces = SpacesModule(defaults: spacePreferences)
+expect(recreatedSpaces.savedEnabled && recreatedSpaces.speed == .instant, "Module recreation preserves enabled choice and speed")
+try recreatedSpaces.setEnabled(false)
+expect(!recreatedSpaces.savedEnabled, "Explicit off persists disabled preference")
+recreatedSpaces.isAvailable = true
+try recreatedSpaces.restoreSavedState()
+expect(!recreatedSpaces.isEnabled, "Explicit off prevents deferred startup activation")
+recreatedSpaces.stop()
+spacePreferences.removePersistentDomain(forName: spaceSuite)
+
 print("\(checks) isolated checks passed; no Bluetooth, display, or real Space changes.")

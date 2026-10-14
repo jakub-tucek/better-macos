@@ -4,10 +4,10 @@ A macOS menu-bar app for managing monitors, Bluetooth connections, and desktop s
 
 ## Features
 
-- **Monitor switching:** turn individual screens on or off, with a 20-second restore countdown.
-- **Display arrangement:** drag screens into place, preview changes, and close gaps when a monitor goes off. Keep your remaining screens in a familiar layout.
+- **Monitor switching:** turn individual screens on or off. Choose **Dangerously** (default, immediate) or **Safely** (20-second undo); both keep at least one usable display active.
+- **Display arrangement:** drag screens into place, preview changes, and close gaps when a monitor goes off. **Match screen edges** maps cursor crossings between differently sized screens, using the full shared edge.
 - **Bluetooth reconnect:** choose devices to reconnect, connect or disconnect on demand, and protect other audio connections.
-- **Fast Space switching:** shorten horizontal trackpad transitions between desktops.
+- **Animations:** limit Dock, Finder, window, and scrolling effects; replace Genie minimization with Scale and try experimental tiling-animation suppression. Fast desktop switching lives under Advanced. Turning the preset off restores your previous settings. Effects vary by app; Mission Control and Control Center may still animate.
 
 Enable or disable each module from the **gear icon**. Disabled modules stop background work and release their state; your settings stay saved.
 

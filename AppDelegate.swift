@@ -7,6 +7,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: DisplayController?
     private var bluetooth: BluetoothModule?
     private var spaces: SpacesModule?
+    private var screenEdges: ScreenEdgeController?
+    private let animations = AnimationPreferences()
+    private let animationQueue = DispatchQueue(label: "fix-mac-os.animation-preferences")
     private let modules = ModuleSettings()
     private let model = DashboardModel()
     private let popover = NSPopover()
@@ -40,7 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if model.watchdogStatus != status { logger.notice("Watchdog status: \(status, privacy: .public)") }
             model.watchdogStatus = status
             spaces?.isAvailable = safety.isReady
-            if !safety.isReady { try? spaces?.setEnabled(false) }
+            if !safety.isReady { spaces?.suspend() }
             refreshPreferences()
             displayRefresh.requestRefresh()
         }
@@ -61,13 +64,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.contentSize = NSSize(width: 430, height: 580)
         popover.contentViewController = NSHostingController(rootView: DashboardView(model: model))
         updateModules()
+        if modules.enabled.contains(.spaces) && animations.needsUpdate {
+            setAnimations(true, preserveChoice: true)
+        }
         refreshPreferences()
         refreshBluetooth()
         displayRefresh.requestRefresh()
         if CommandLine.arguments.contains("--request-bluetooth-access") {
             DispatchQueue.main.async { [weak self] in self?.bluetooth?.requestBluetoothAccess() }
         }
-        // No graphics transactions, gesture taps, or automatic restore at launch.
+        // Saved gesture activation waits for the watchdog and settled displays.
         if CommandLine.arguments.contains("--show-dashboard") {
             model.tab = CommandLine.arguments.contains("--show-monitors") ? .monitors : .bluetooth
             if CommandLine.arguments.contains("--show-modules") { model.tab = .modules }
@@ -79,6 +85,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func configureActions() {
         model.onModuleChanged = { [weak self] module, enabled in self?.setModule(module, enabled: enabled) }
         model.onMonitorChanged = { [weak self] uuid, enabled in self?.setMonitor(uuid, enabled: enabled) }
+        model.onMonitorDisableModeChanged = { [weak self] confirm in
+            UserDefaults.standard.set(confirm, forKey: "monitors.confirmDisable")
+            self?.refreshPreferences()
+        }
+        model.onMatchScreenEdgesChanged = { [weak self] enabled in
+            guard let self else { return }
+            UserDefaults.standard.set(enabled, forKey: "arrangement.matchEdges")
+            refreshPreferences()
+            updateScreenEdges()
+        }
         model.onKeepDisabled = { [weak self] uuid in
             guard let self, rollbackUUID == uuid else { return }
             clearRollback()
@@ -114,6 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do { try spaces?.setEnabled(enabled) } catch { showError(error) }
             refreshPreferences()
         }
+        model.onAnimationsChanged = { [weak self] enabled in self?.setAnimations(enabled) }
         model.onSpeedChanged = { [weak self] speed in self?.spaces?.speed = speed; self?.refreshPreferences() }
         model.onLoginChanged = { [weak self] enabled in
             guard let self else { return }
@@ -129,6 +146,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setModule(_ module: AppModule, enabled: Bool) {
         guard !model.stoppingModules.contains(module) else { return }
+        if module == .spaces {
+            guard !model.animationsBusy else { return }
+            setAnimations(enabled && animations.enabled, preserveChoice: true) { [weak self] in
+                guard let self else { return }
+                modules.set(module, enabled: enabled)
+                updateModules()
+            }
+            return
+        }
         if module == .monitors || module == .arrangement {
             guard !recovering else { showError(ToggleError(message: "Wait for the current display operation to finish.")); return }
             if !enabled && (model.disabledMonitorCount > 0 || model.pendingArrangement || rollbackUUID != nil) {
@@ -172,11 +198,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if spaces == nil { spaces = SpacesModule() }
             spaces?.isAvailable = safety.isReady
         } else {
-            try? spaces?.setEnabled(false)
             spaces?.stop()
             spaces = nil
         }
         if !modules.enabled.contains(.arrangement) {
+            screenEdges?.stop()
+            screenEdges = nil
             arrangementWindow?.close()
             arrangementWindow?.contentView = nil
             arrangementWindow = nil
@@ -199,7 +226,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ) { [weak self] _ in
                 self?.displayRefresh.requestRefresh()
                 DispatchQueue.main.async { [weak self] in
-                    try? self?.spaces?.setEnabled(false)
+                    self?.spaces?.suspend()
                     self?.refreshPreferences()
                 }
             }
@@ -252,6 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.pendingArrangement = controller.hasPendingArrangement
         model.currentLayout = modules.enabled.contains(.arrangement) ? (try? controller.currentLayout()) ?? [] : []
         model.layoutPreviews = modules.enabled.contains(.arrangement) && modules.enabled.contains(.monitors) ? (try? controller.layoutPreviews()) ?? [:] : [:]
+        updateScreenEdges()
         if openArrangementWhenReady, safety.isReady, !model.pendingArrangement, model.disabledMonitorCount == 0,
            model.currentLayout.count > 1 {
             openArrangementWhenReady = false
@@ -322,6 +350,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshPreferences() {
+        model.matchScreenEdges = UserDefaults.standard.bool(forKey: "arrangement.matchEdges")
+        if !canMatchScreenEdges {
+            screenEdges?.stop()
+        }
+        model.screenEdgesActive = screenEdges?.isRunning == true
+        model.confirmMonitorDisable = UserDefaults.standard.bool(forKey: "monitors.confirmDisable")
+        model.animationsEnabled = animations.enabled
+        if animations.enabled && !model.animationsBusy && spaces?.isAvailable == true && !recovering && !displayRefresh.isSettling && rollbackUUID == nil && !model.pendingArrangement {
+            do { try spaces?.restoreSavedState() } catch { showError(error) }
+        }
         model.spacesEnabled = spaces?.isEnabled ?? false
         model.spacesPermission = spaces?.hasPermission ?? false
         model.spacesAvailable = spaces?.isAvailable == true && !recovering && !displayRefresh.isSettling && rollbackUUID == nil && !model.pendingArrangement
@@ -330,12 +368,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         publishModuleStatus()
     }
 
+    private var canMatchScreenEdges: Bool {
+        modules.enabled.contains(.arrangement) && UserDefaults.standard.bool(forKey: "arrangement.matchEdges") &&
+        safety.isReady && !recovering && !displayRefresh.isSettling && !model.pendingArrangement && rollbackUUID == nil
+    }
+
+    private func updateScreenEdges() {
+        guard canMatchScreenEdges, model.currentLayout.count > 1, DisplayTopology.isValidArrangement(model.currentLayout) else {
+            screenEdges?.stop()
+            model.screenEdgesActive = false
+            return
+        }
+        if screenEdges == nil { screenEdges = ScreenEdgeController() }
+        do { try screenEdges?.start(layout: model.currentLayout) }
+        catch { showError(error) }
+        model.screenEdgesActive = screenEdges?.isRunning == true
+    }
+
+    private func setAnimations(_ enabled: Bool, preserveChoice: Bool = false, completion: (() -> Void)? = nil) {
+        guard !model.animationsBusy else { return }
+        model.animationsBusy = true
+        spaces?.suspend()
+        animationQueue.async { [weak self] in
+            guard let self else { return }
+            do {
+                try animations.setEnabled(enabled, preserveChoice: preserveChoice)
+                // Restart only after the complete preference transaction succeeds.
+                _ = try? CommandRunner().run("/usr/bin/killall", ["Dock", "Finder"])
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    model.animationsBusy = false
+                    completion?()
+                    if enabled && !preserveChoice && spaces?.hasPermission == true {
+                        // Starting waits for display/watchdog readiness via refreshPreferences.
+                        spaces?.requestRestore(enabled: UserDefaults.standard.object(forKey: "spaces.enabled") == nil || spaces?.savedEnabled == true)
+                    }
+                    refreshPreferences()
+                }
+            } catch {
+                DispatchQueue.main.async { [weak self] in
+                    self?.model.animationsBusy = false
+                    self?.showError(error)
+                    self?.refreshPreferences()
+                }
+            }
+        }
+    }
+
     private func publishModuleStatus() {
         let status: [String: Any] = [
             "updatedAt": ISO8601DateFormatter().string(from: Date()),
             "enabled": modules.enabled.map(\.rawValue).sorted(),
             "stopping": model.stoppingModules.map(\.rawValue).sorted(),
             "bluetoothLoaded": bluetooth != nil, "spacesLoaded": spaces != nil,
+            "animationsEnabled": animations.enabled, "animationsBusy": model.animationsBusy,
+            "screenEdgesActive": screenEdges?.isRunning == true,
             "displayDiscoveryLoaded": controller != nil, "screenObserverInstalled": screenObserver != nil,
             "arrangementEditorLoaded": arrangementWindow?.contentView != nil
         ]
@@ -363,11 +450,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         // Do not synthesize Space gestures while display topology is changing.
-        try? spaces?.setEnabled(false)
+        spaces?.suspend()
         refreshPreferences()
         recovering = true
         model.monitorBusy = true
+        screenEdges?.stop()
         let arguments = ["--set-display", uuid, enabled ? "on" : "off"] + (modules.enabled.contains(.arrangement) ? [] : ["--basic-layout"])
+        let confirmDisable = !enabled && model.confirmMonitorDisable
         recoveryQueue.async { [weak self] in
             let result = Result { try CommandRunner().run(executable, arguments) }
             DispatchQueue.main.async { [weak self] in
@@ -377,8 +466,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 displayRefresh.requestRefresh()
                 switch result {
                 case .success:
-                    if enabled { clearRollback() }
-                    else {
+                    // The helper rejects disabling the last usable display.
+                    clearRollback()
+                    if confirmDisable {
                         rollbackUUID = uuid
                         rollbackDeadline = Date().addingTimeInterval(20)
                         model.countdowns[uuid] = 20
@@ -392,6 +482,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         }
                         rollbackTimer = timer
                         RunLoop.main.add(timer, forMode: .common)
+                        refreshPreferences()
                     }
                 case .failure(let error):
                     showError(error)
@@ -438,7 +529,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         guard let data = try? JSONEncoder().encode(request) else { return }
         arrangementWindow?.close()
-        try? spaces?.setEnabled(false)
+        spaces?.suspend()
+        screenEdges?.stop()
         recovering = true
         model.monitorBusy = true
         refreshPreferences()
@@ -479,7 +571,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         guard let executable = Bundle.main.executableURL?.path else { completion?(false); return }
-        try? spaces?.setEnabled(false)
+        spaces?.suspend()
+        screenEdges?.stop()
         refreshPreferences()
         recovering = true
         model.monitorBusy = true
@@ -500,6 +593,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !model.animationsBusy else { showError(ToggleError(message: "Wait for animation settings to finish saving.")); return .terminateCancel }
         guard !recovering else { showError(ToggleError(message: "Wait for the current display operation before quitting.")); return .terminateCancel }
         guard model.disabledMonitorCount > 0 || rollbackUUID != nil || model.pendingArrangement else { return .terminateNow }
         restoreAll { restored in sender.reply(toApplicationShouldTerminate: restored) }
@@ -507,6 +601,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        screenEdges?.stop()
         bluetooth?.stop()
         spaces?.stop()
         safety.stop()
