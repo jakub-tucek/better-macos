@@ -17,6 +17,14 @@ protocol AudioRoutingBackend {
     func select(_ uid: String, direction: AudioDirection) throws
 }
 
+/// Connection discovery supplies evidence; only AudioModule authorizes route writes.
+struct AudioProtectionSnapshot {
+    let ready: Bool
+    let protectedDeviceNames: Set<String>
+    static let clear = AudioProtectionSnapshot(ready: true, protectedDeviceNames: [])
+    static let unavailable = AudioProtectionSnapshot(ready: false, protectedDeviceNames: [])
+}
+
 /// Device IDs are resolved afresh for every write; only stable UIDs are persisted.
 struct CoreAudioBackend: AudioRoutingBackend {
     private func address(_ selector: AudioObjectPropertySelector, scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal) -> AudioObjectPropertyAddress {
@@ -88,14 +96,17 @@ final class AudioModule {
     private var running = false
     private var observed = false
     private var overrides = Set<AudioDirection>()
+    private var pending = Set<AudioDirection>()
     private(set) var devices: [AudioDevice] = []
     private(set) var routes: [AudioDirection: String] = [:]
     private(set) var status = "Automatic routing is off"
     var onChange: (() -> Void)?
-    var automaticAllowed = false
+    var automaticAllowed = false {
+        didSet { if automaticAllowed != oldValue { pending.removeAll(); observed = false } }
+    }
     var suspendRouting = false
     // Fail closed while Bluetooth is connecting or its protection state is unknown.
-    var bluetoothProtection: () -> Bool = { false }
+    var bluetoothProtection: () -> AudioProtectionSnapshot = { .clear }
 
     init(backend: AudioRoutingBackend = CoreAudioBackend(), defaults: UserDefaults = .standard) {
         self.backend = backend; self.defaults = defaults
@@ -127,13 +138,13 @@ final class AudioModule {
         guard running, !suspendRouting else { return }
         do {
             try backend.select(uid, direction: direction)
-            routes[direction] = uid; overrides.insert(direction)
+            routes[direction] = uid; overrides.insert(direction); pending.remove(direction)
             status = "Manual \(direction.rawValue) override"
         } catch { status = error.localizedDescription }
         onChange?()
     }
-    func poll() {
-        guard running else { return }
+    @discardableResult func poll() -> Bool {
+        guard running else { return false }
         do {
             let updated = try backend.devices()
             var current: [AudioDirection: String] = [:]
@@ -143,32 +154,41 @@ final class AudioModule {
                 let old = Set(devices.filter { $0.directions.contains(direction) }.map(\.uid))
                 let new = Set(updated.filter { $0.directions.contains(direction) }.map(\.uid))
                 if !observed || old != new { changed.insert(direction); overrides.remove(direction) }
-                else if current[direction] != routes[direction] { overrides.insert(direction) }
+                else if current[direction] != routes[direction] { overrides.insert(direction); pending.remove(direction) }
             }
             devices = updated; routes = current; observed = true
+            pending.formUnion(changed)
             status = automatic && automaticAllowed ? "Watching audio devices" : "Automatic routing is off"
             if automatic && automaticAllowed && !suspendRouting {
-                for direction in AudioDirection.allCases where changed.contains(direction) && !overrides.contains(direction) {
-                    try reconcile(direction)
+                var failures: [String] = []
+                for direction in AudioDirection.allCases where pending.contains(direction) && !overrides.contains(direction) {
+                    do {
+                        if try reconcile(direction) { pending.remove(direction) }
+                    } catch { failures.append("\(direction.rawValue): \(error.localizedDescription)") }
                 }
+                if !failures.isEmpty { status = failures.joined(separator: "; ") }
             }
-        } catch { status = error.localizedDescription }
+        } catch { status = error.localizedDescription; onChange?(); return false }
         onChange?()
+        return true
     }
-    private func reconcile(_ direction: AudioDirection) throws {
+    private func reconcile(_ direction: AudioDirection) throws -> Bool {
         let available = Set(devices.filter { $0.directions.contains(direction) }.map(\.uid))
-        guard let target = (preferences(direction) + [fallback(direction)]).first(where: { available.contains($0) }), target != routes[direction] else { return }
-        if direction == .output && outputProtected { status = "Keeping protected Bluetooth audio"; return }
+        guard let target = (preferences(direction) + [fallback(direction)]).first(where: { available.contains($0) }), target != routes[direction] else { return true }
+        if direction == .output && outputProtected { status = "Keeping protected Bluetooth audio"; return false }
         try backend.select(target, direction: direction); routes[direction] = target
+        return true
     }
     private var outputProtected: Bool {
-        bluetoothProtection() || devices.contains { $0.uid == routes[.output] && $0.bluetooth }
+        let protection = bluetoothProtection()
+        return !protection.ready || !protection.protectedDeviceNames.isEmpty ||
+            devices.contains { $0.uid == routes[.output] && $0.bluetooth }
     }
     /// Bluetooth's name-only legacy setting is accepted only when unambiguous.
     /// Audio rules, manual intent and connected headphones always win.
     func bluetoothConnected(name: String) {
         guard running, !suspendRouting, !(automatic && automaticAllowed) else { return }
-        poll()
+        guard poll() else { return }
         guard !overrides.contains(.output), !outputProtected else { return }
         let matches = devices.filter { $0.name == name && $0.directions.contains(.output) }
         guard matches.count == 1 else { return }

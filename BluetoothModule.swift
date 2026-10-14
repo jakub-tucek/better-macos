@@ -148,6 +148,8 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     private var pendingManual: ManualRequest?
     private var manualAddress: String?
     private var cycleCancellation: BluetoothCycleCancellation?
+    private var pendingAudioName: String?
+    private var lastObservation: Date?
     private var retryAfter: [String: Date] = [:]
     private var activity: String?
     private(set) var radioPoweredOn: Bool?
@@ -193,6 +195,13 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     var available: Bool { backend != nil }
+    var audioProtection: AudioProtectionSnapshot {
+        guard !stopped, !permissionRequired, !busy, lastError == nil, !legacyServicePresent,
+              let lastObservation, Date().timeIntervalSince(lastObservation) < 10 else { return .unavailable }
+        return AudioProtectionSnapshot(ready: true, protectedDeviceNames: Set(devices.filter {
+            $0.connected && protectedAudioAddresses.contains($0.address)
+        }.map(\.name)))
+    }
     var authorization: CBManagerAuthorization { authorizationProvider() }
     var permissionRequired: Bool { authorization != .allowedAlways }
 
@@ -275,6 +284,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         timer?.invalidate()
         timer = nil
         cycleCancellation?.cancel()
+        pendingAudioName = nil
         pendingManual = nil
         permissionManager = nil
         onStopped = completion
@@ -306,7 +316,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         backend.routeOutput = { [weak self] name in
             DispatchQueue.main.async {
                 guard !cancellation.isCanceled else { return }
-                self?.onAudioOutputRequested?(name)
+                self?.pendingAudioName = name
             }
         }
         onChange?()
@@ -396,6 +406,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         activity = nil
         switch result {
         case .success(let updated):
+            lastObservation = Date()
             devices = updated
             lastError = nil
             if let manualAddress { deviceStates.removeValue(forKey: manualAddress); retryAfter.removeValue(forKey: manualAddress) }
@@ -419,6 +430,10 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         }
         manualAddress = nil
         onChange?()
+        if let name = pendingAudioName, cycleCancellation?.isCanceled == false, lastError == nil {
+            pendingAudioName = nil
+            onAudioOutputRequested?(name)
+        } else { pendingAudioName = nil }
         startPendingManual()
     }
 

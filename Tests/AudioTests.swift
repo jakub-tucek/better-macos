@@ -5,12 +5,18 @@ private final class FakeAudio: AudioRoutingBackend {
     var routes: [AudioDirection: String] = [:]
     var writes: [(String, AudioDirection)] = []
     var fail = false
+    var failCurrent = false
+    var failedWrites = Set<AudioDirection>()
     func devices() throws -> [AudioDevice] {
         if fail { throw ToggleError(message: "Discovery failed") }
         return available
     }
-    func current(_ direction: AudioDirection) throws -> String? { routes[direction] }
+    func current(_ direction: AudioDirection) throws -> String? {
+        if failCurrent { throw ToggleError(message: "Route observation failed") }
+        return routes[direction]
+    }
     func select(_ uid: String, direction: AudioDirection) throws {
+        if failedWrites.contains(direction) { throw ToggleError(message: "Transient route failure") }
         guard available.contains(where: { $0.uid == uid && $0.directions.contains(direction) }) else { throw ToggleError(message: "Missing device") }
         writes.append((uid, direction)); routes[direction] = uid
     }
@@ -63,9 +69,16 @@ func runAudioTests() {
     expect(fake.routes[.output] == headset.uid, "Connected Bluetooth output is never stolen by automatic rules")
     module.select(usb.uid, direction: .output)
     expect(fake.routes[.output] == usb.uid, "Explicit user choice can leave protected Bluetooth output")
-    module.bluetoothProtection = { true }; module.setPreferences([monitor.uid], direction: .output); module.resume()
+    module.bluetoothProtection = { AudioProtectionSnapshot(ready: true, protectedDeviceNames: ["Headset"]) }; module.setPreferences([monitor.uid], direction: .output); module.resume()
     expect(fake.routes[.output] == usb.uid, "Known connected headphones veto automatic takeover even when not current")
-    module.bluetoothProtection = { false }
+    module.bluetoothProtection = { .clear }
+    module.poll()
+    expect(fake.routes[.output] == monitor.uid, "Deferred preference retries when Bluetooth observation/protection clears")
+    module.automaticAllowed = false
+    module.setPreferences([usb.uid], direction: .output); module.poll()
+    expect(fake.routes[.output] == monitor.uid, "Disabling Audio routing leaves the shared Bluetooth owner observation-only")
+    module.automaticAllowed = true; module.poll()
+    expect(fake.routes[.output] == usb.uid, "Re-enabling Audio applies saved routing without requiring a topology change")
     module.setPreferences(["missing"], direction: .output); module.setFallback("", direction: .output); module.resume()
     expect(fake.routes[.output] == usb.uid, "No available preference or fallback preserves current route")
     let count = fake.writes.count
@@ -75,6 +88,84 @@ func runAudioTests() {
     module.automatic = false
     module.bluetoothConnected(name: "Duplicate")
     expect(fake.writes.count == count, "Ambiguous Bluetooth names never select a guessed UID")
+    fake.available.removeAll { $0.uid == monitor.uid }; module.poll()
+    fake.fail = true
+    module.bluetoothConnected(name: "Duplicate")
+    expect(fake.writes.count == count, "Bluetooth request cannot use stale discovery after observation fails")
+    fake.fail = false
+    module.suspendRouting = true; module.select(builtIn.uid, direction: .output); module.bluetoothConnected(name: "Duplicate")
+    expect(fake.writes.count == count, "Hardware-test suspension prevents both manual and Bluetooth writes")
+    module.suspendRouting = false
+    fake.failCurrent = true; module.bluetoothConnected(name: "Duplicate")
+    expect(fake.writes.count == count, "Failed current-route observation rejects Bluetooth routing")
+    fake.failCurrent = false
+    module.setPreferences([usb.uid], direction: .input)
+    module.setPreferences([builtIn.uid], direction: .output)
+    fake.failedWrites = [.input]; module.automatic = true
+    expect(fake.routes[.output] == builtIn.uid && fake.routes[.input] == builtIn.uid, "Input write failure does not starve independent output routing")
+    fake.failedWrites = []; module.poll()
+    expect(fake.routes[.input] == usb.uid, "Transient write failure retries without another device change")
+    let stoppedCount = fake.writes.count
     module.stop(); module.select(builtIn.uid, direction: .output); module.poll(); module.resume()
-    expect(fake.writes.count == count, "Stopped routing owner rejects manual and automatic work")
+    expect(fake.writes.count == stoppedCount, "Stopped routing owner rejects manual and automatic work")
+    runBluetoothAudioIntegrationTests()
+}
+
+private func runBluetoothAudioIntegrationTests() {
+    let domain = "audio.integration.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: domain)!
+    defer { defaults.removePersistentDomain(forName: domain) }
+    defaults.set(true, forKey: "bluetooth.legacyTakenOver")
+    defaults.set([speaker.address], forKey: "bluetooth.autoAddresses")
+    defaults.set(true, forKey: "bluetooth.autoEnabled")
+    defaults.set(true, forKey: "audio.automatic")
+    let fake = FakeAudio()
+    fake.available = [AudioDevice(uid: "builtin", name: "Built-in", directions: [.output], bluetooth: false),
+                      AudioDevice(uid: "speaker", name: speaker.name, directions: [.output], bluetooth: false)]
+    fake.routes = [.output: "builtin"]
+    let runner = FakeRunner()
+    let bluetooth = BluetoothModule(defaults: defaults, backend: backend(runner), importLegacyConfiguration: false,
+                                    authorizationProvider: { .allowedAlways })
+    let audio = AudioModule(backend: fake, defaults: defaults)
+    audio.automaticAllowed = true
+    audio.setPreferences(["speaker"], direction: .output)
+    audio.bluetoothProtection = { bluetooth.audioProtection }
+    audio.start()
+    expect(fake.writes.isEmpty && !bluetooth.audioProtection.ready, "Saved routing waits for Bluetooth startup observation")
+    var callbacks = 0
+    bluetooth.onAudioOutputRequested = { name in
+        callbacks += 1
+        expect(!bluetooth.isBusy && bluetooth.audioProtection.ready, "Bluetooth forwards routing only after publishing a successful protection snapshot")
+        audio.bluetoothConnected(name: name)
+    }
+    bluetooth.start()
+    let deadline = Date().addingTimeInterval(2)
+    while bluetooth.isBusy && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+    audio.poll()
+    expect(callbacks == 1 && fake.writes.count == 1 && fake.routes[.output] == "speaker", "Bluetooth callback and Audio preferences share a single route owner")
+    audio.automatic = false
+    fake.routes[.output] = "builtin"; audio.resume()
+    runner.current = [speaker]
+    bluetooth.poll()
+    let legacyDeadline = Date().addingTimeInterval(2)
+    while bluetooth.isBusy && Date() < legacyDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+    expect(callbacks == 2 && fake.routes[.output] == "speaker", "Protected legacy post-connect request reaches the Audio backend when automatic rules are off")
+    bluetooth.stop(); audio.stop()
+
+    let entered = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    let canceledRunner = FakeRunner()
+    var canceledBackend = backend(canceledRunner)
+    canceledBackend.waitForConnection = { entered.signal(); _ = release.wait(timeout: .now() + 2) }
+    let canceled = BluetoothModule(defaults: defaults, backend: canceledBackend, importLegacyConfiguration: false,
+                                   authorizationProvider: { .allowedAlways })
+    var canceledCallbacks = 0
+    canceled.onAudioOutputRequested = { _ in canceledCallbacks += 1 }
+    canceled.start()
+    expect(entered.wait(timeout: .now() + 2) == .success, "Cancellation fixture reaches an in-flight Bluetooth connection")
+    var drained = false
+    canceled.stop { drained = true }; release.signal()
+    let cancelDeadline = Date().addingTimeInterval(2)
+    while !drained && Date() < cancelDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+    expect(drained && canceledCallbacks == 0, "Bluetooth unload cancels routing callbacks before delivery")
 }
