@@ -296,6 +296,26 @@ do {
 } catch { expect(false, "Saved topology decode failed: \(error)") }
 
 let safeSpaces = SpacesModule()
+let draggedLaptop = DisplayTopology.snapped(topologyBaseline, moving: "Mac", to: CGPoint(x: 40, y: 1500))
+expect(draggedLaptop?.first(where: { $0.uuid == "Mac" })?.x == 0 &&
+       draggedLaptop?.first(where: { $0.uuid == "Mac" })?.y == 1440,
+       "Dragging the Mac below B snaps both its top edge and left alignment")
+expect(draggedLaptop.map(DisplayTopology.isValidArrangement) == true,
+       "An edge-snapped laptop arrangement remains cursor-connected")
+let disconnectedDraft = topologyBaseline.map { position in
+    position.uuid == "Mac" ? DisplayPosition(uuid: "Mac", x: -8000, y: 8000, width: 1512, height: 982) : position
+}
+expect(!DisplayTopology.isValidArrangement(disconnectedDraft), "Disconnected draft layouts cannot be applied")
+let overlappingDraft = topologyBaseline.map { position in
+    position.uuid == "Mac" ? DisplayPosition(uuid: "Mac", x: 0, y: 0, width: 1512, height: 982) : position
+}
+expect(!DisplayTopology.isValidArrangement(overlappingDraft), "Overlapping draft screens cannot be applied")
+expect(!DisplayTopology.isValidArrangement(topologyBaseline + [topologyBaseline[0]]), "Duplicate screen identities are rejected")
+let translatedDraft = topologyBaseline.map { DisplayPosition(uuid: $0.uuid, x: $0.x + 100, y: $0.y - 300, width: $0.width, height: $0.height) }
+expect(DisplayTopology.normalized(translatedDraft, anchor: "B") == topologyBaseline,
+       "Applying a drag layout retains the original main-display identity at zero")
+expect(DisplayTopology.snapped(topologyBaseline, moving: "Mac", to: CGPoint(x: CGFloat.nan, y: 0)) == nil,
+       "Non-finite drag coordinates are rejected")
 expect(!safeSpaces.isAvailable && !safeSpaces.isEnabled, "Gesture interception starts unavailable until the host authorizes it")
 do { try safeSpaces.setEnabled(true); expect(false, "Space interception must remain blocked") }
 catch { expect(!safeSpaces.isEnabled, "Attempting to enable Space interception fails closed") }

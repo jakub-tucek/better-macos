@@ -18,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var rollbackTimer: Timer?
     private var rollbackDeadline: Date?
     private var rollbackUUID: String?
+    private var arrangementWindow: NSWindow?
+    private var openArrangementWhenReady = CommandLine.arguments.contains("--arrange")
     private var screenObserver: NSObjectProtocol?
     private var guiTestTarget: String?
     private var guiTestStarted = false
@@ -92,6 +94,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             clearRollback()
         }
         model.onRestoreAll = { [weak self] in self?.restoreAll() }
+        model.onArrangeDisplays = { [weak self] in self?.showArrangementEditor() }
+        model.onKeepArrangement = { [weak self] in
+            guard let self, !recovering, rollbackUUID == "layout" else { return }
+            UserDefaults.standard.removeObject(forKey: "pendingArrangement")
+            UserDefaults.standard.synchronize()
+            model.pendingArrangement = false
+            clearRollback()
+        }
         model.onAutoDeviceChanged = { [weak self] address, enabled in self?.bluetooth.setAutoReconnect(enabled, for: address) }
         model.onManualConnection = { [weak self] in self?.bluetooth.toggleConnection($0) }
         model.onAutomaticReconnectChanged = { [weak self] in self?.bluetooth.autoEnabled = $0 }
@@ -108,7 +118,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onTakeOverLegacy = { [weak self] in self?.bluetooth.takeOverLegacyService() }
         model.onSpacesChanged = { [weak self] enabled in
             guard let self else { return }
-            guard !enabled || (safety.isReady && !recovering && !displayRefresh.isSettling && rollbackUUID == nil) else {
+            guard !enabled || (safety.isReady && !recovering && !displayRefresh.isSettling && rollbackUUID == nil && !model.pendingArrangement) else {
                 showError(ToggleError(message: "Wait for the watchdog and pending display changes before enabling Space interception.")); return
             }
             do { try spaces.setEnabled(enabled) } catch { showError(error) }
@@ -153,8 +163,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.activeMonitorCount = (try? controller.activeIDs().count) ?? 0
         model.displaySupported = controller.supported && safety.isReady
         model.disabledMonitorCount = controller.disabledUUIDs.count
+        model.pendingArrangement = controller.hasPendingArrangement
         model.currentLayout = (try? controller.currentLayout()) ?? []
         model.layoutPreviews = (try? controller.layoutPreviews()) ?? [:]
+        if openArrangementWhenReady, safety.isReady, !model.pendingArrangement, model.disabledMonitorCount == 0,
+           model.currentLayout.count > 1 {
+            openArrangementWhenReady = false
+            showArrangementEditor()
+        }
     }
 
     private func refreshBluetooth() {
@@ -207,7 +223,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func refreshPreferences() {
         model.spacesEnabled = spaces.isEnabled
         model.spacesPermission = spaces.hasPermission
-        model.spacesAvailable = spaces.isAvailable && !recovering && !displayRefresh.isSettling && rollbackUUID == nil
+        model.spacesAvailable = spaces.isAvailable && !recovering && !displayRefresh.isSettling && rollbackUUID == nil && !model.pendingArrangement
         model.spacesSpeed = spaces.speed
         model.launchAtLogin = SMAppService.mainApp.status == .enabled
     }
@@ -224,7 +240,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setMonitor(_ uuid: String, enabled: Bool) {
-        guard safety.isReady, !recovering, !displayRefresh.isSettling,
+        guard safety.isReady, !recovering, !displayRefresh.isSettling, !model.pendingArrangement,
               rollbackUUID == nil || (enabled && rollbackUUID == uuid),
               let executable = Bundle.main.executableURL?.path else {
             showError(ToggleError(message: "Wait for the watchdog, display changes, and current confirmation to finish."))
@@ -275,6 +291,70 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func showArrangementEditor() {
+        guard safety.isReady, !recovering, !displayRefresh.isSettling, rollbackUUID == nil,
+              !model.pendingArrangement, model.disabledMonitorCount == 0, model.currentLayout.count > 1,
+              let main = model.monitors.first(where: \.isMain)?.uuid else { return }
+        arrangementWindow?.close()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 500),
+                              styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        window.title = "Fix macOS — Arrange displays"
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: DisplayArrangementEditor(
+            original: model.currentLayout, monitors: model.monitors, mainUUID: main,
+            onApply: { [weak self] request in self?.applyArrangement(request) },
+            onCancel: { [weak self] in self?.arrangementWindow?.close() }))
+        arrangementWindow = window
+        popover.performClose(nil)
+        window.center()
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    private func applyArrangement(_ request: DisplayArrangementRequest) {
+        guard safety.isReady, !recovering, !displayRefresh.isSettling, rollbackUUID == nil,
+              !model.pendingArrangement, model.disabledMonitorCount == 0,
+              let executable = Bundle.main.executableURL?.path else {
+            showError(ToggleError(message: "Wait for display changes or restore the pending layout first."))
+            showDashboard()
+            return
+        }
+        guard let data = try? JSONEncoder().encode(request) else { return }
+        arrangementWindow?.close()
+        try? spaces.setEnabled(false)
+        recovering = true
+        model.monitorBusy = true
+        refreshPreferences()
+        showDashboard()
+        recoveryQueue.async { [weak self] in
+            let result = Result { try CommandRunner().run(executable, ["--arrange-displays", data.base64EncodedString()]) }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                recovering = false
+                model.monitorBusy = false
+                model.pendingArrangement = true
+                rollbackUUID = "layout"
+                let duration: TimeInterval
+                switch result {
+                case .success: duration = 20
+                case .failure(let error): duration = 0; showError(error)
+                }
+                rollbackDeadline = Date().addingTimeInterval(duration)
+                model.countdowns["layout"] = Int(duration)
+                let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+                    guard let self, let deadline = rollbackDeadline else { return }
+                    let remaining = max(0, Int(ceil(deadline.timeIntervalSinceNow)))
+                    model.countdowns["layout"] = remaining
+                    if remaining == 0, !recovering { restoreAll() }
+                }
+                rollbackTimer = timer
+                RunLoop.main.add(timer, forMode: .common)
+                displayRefresh.requestRefresh()
+                showDashboard()
+            }
+        }
+    }
+
     private func restoreAll(completion: ((Bool) -> Void)? = nil) {
         guard !recovering, !displayRefresh.isSettling else {
             showError(ToggleError(message: "Wait for display connections to settle before recovery."))
@@ -295,7 +375,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.model.monitorBusy = false
                 self.displayRefresh.requestRefresh()
                 switch result {
-                case .success: self.clearRollback(); completion?(true)
+                case .success: self.model.pendingArrangement = false; self.clearRollback(); completion?(true)
                 case .failure(let error): self.showError(error); completion?(false)
                 }
             }
@@ -304,7 +384,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !recovering else { showError(ToggleError(message: "Wait for the current display operation before quitting.")); return .terminateCancel }
-        guard model.disabledMonitorCount > 0 || rollbackUUID != nil else { return .terminateNow }
+        guard model.disabledMonitorCount > 0 || rollbackUUID != nil || model.pendingArrangement else { return .terminateNow }
         restoreAll { restored in sender.reply(toApplicationShouldTerminate: restored) }
         return .terminateLater
     }

@@ -2,6 +2,7 @@ import AppKit
 import ServiceManagement
 
 func restoreFromCLI(_ controller: DisplayController) throws {
+    try controller.restorePendingArrangement()
     for uuid in controller.disabledUUIDs {
         try controller.setEnabled(true, for: uuid)
         Thread.sleep(forTimeInterval: 1)
@@ -123,6 +124,11 @@ if let index = CommandLine.arguments.firstIndex(of: "--watchdog") {
         try controller.setEnabled(state == "on", for: uuid)
         if state == "on" { Thread.sleep(forTimeInterval: 1); try controller.finishRestore(uuid) }
         else if controller.isEnabled(uuid) { throw ToggleError(message: "Display remained active after disabling") }
+    } catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
+} else if let index = CommandLine.arguments.firstIndex(of: "--arrange-displays"), index + 1 < CommandLine.arguments.count {
+    do {
+        guard let data = Data(base64Encoded: CommandLine.arguments[index + 1]) else { throw ToggleError(message: "Invalid layout request") }
+        try DisplayController().applyArrangement(JSONDecoder().decode(DisplayArrangementRequest.self, from: data))
     } catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
 } else if CommandLine.arguments.contains("--restore") {
     do {

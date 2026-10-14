@@ -50,9 +50,9 @@ enum SafetyWatchdog {
                     // Do not restart the app, Dock, WindowServer, or the Mac.
                     // Recovery is attempted only for explicitly app-disabled
                     // displays, and that child is independently time-limited.
-                    if let data = defaults.data(forKey: "displayRecords"),
-                       let records = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
-                       records.contains(where: { $0["disabledByApp"] as? Bool == true }) {
+                    defaults.synchronize()
+                    let records = defaults.data(forKey: "displayRecords").flatMap { try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] }
+                    if defaults.data(forKey: "pendingArrangement") != nil || records?.contains(where: { $0["disabledByApp"] as? Bool == true }) == true {
                         let recovery = Process()
                         recovery.executableURL = URL(fileURLWithPath: session.executable)
                         recovery.arguments = ["--restore"]

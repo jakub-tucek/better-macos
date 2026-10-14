@@ -14,6 +14,17 @@ struct DisplayPosition: Codable, Equatable {
     var height: Int32? = nil
 }
 
+struct DisplayArrangementRequest: Codable {
+    let original: [DisplayPosition]
+    let desired: [DisplayPosition]
+    let mainUUID: String
+}
+
+private struct DisplayArrangementTrial: Codable {
+    let original: [DisplayPosition]
+    let bootSession: String
+}
+
 struct DisplayRecord: Codable {
     let uuid: String
     var name: String
@@ -91,6 +102,65 @@ final class DisplayController {
     // The GUI authorizes changes only while its independent watchdog is ready.
     var canDisableDisplays = false
     var disabledUUIDs: [String] { records.filter(\.disabledByApp).map(\.uuid) }
+    var hasPendingArrangement: Bool { defaults.data(forKey: "pendingArrangement") != nil }
+
+    func applyArrangement(_ request: DisplayArrangementRequest) throws {
+        guard disabledUUIDs.isEmpty, !hasPendingArrangement, let bootSession else {
+            throw ToggleError(message: "Restore disabled screens and confirm or restore the current layout first.")
+        }
+        let current = try currentLayout()
+        guard current.sorted(by: { $0.uuid < $1.uuid }) == request.original.sorted(by: { $0.uuid < $1.uuid }),
+              uuid(for: CGMainDisplayID()) == request.mainUUID else {
+            throw ToggleError(message: "Displays changed while editing. Reopen Arrange displays and try again.")
+        }
+        guard DisplayTopology.isValidArrangement(request.desired),
+              Set(current.map(\.uuid)) == Set(request.desired.map(\.uuid)),
+              request.desired.allSatisfy({ desired in current.contains { $0.uuid == desired.uuid && $0.width == desired.width && $0.height == desired.height } }),
+              let normalized = DisplayTopology.normalized(request.desired, anchor: request.mainUUID) else {
+            throw ToggleError(message: "All screens must touch an edge, without overlapping. Screen sizes cannot change.")
+        }
+        let ids = try activeIDs()
+        guard ids.allSatisfy({ CGDisplayIsInMirrorSet($0) == 0 }) else { throw ToggleError(message: "Turn off display mirroring first.") }
+        let resolved = try resolveLayout(normalized)
+        defaults.set(try JSONEncoder().encode(DisplayArrangementTrial(original: current, bootSession: bootSession)), forKey: "pendingArrangement")
+        defaults.synchronize() // The independent watchdog must see recovery data before committing.
+        try applyLayout(resolved)
+        Thread.sleep(forTimeInterval: 0.5)
+        guard try currentLayout().sorted(by: { $0.uuid < $1.uuid }) == normalized.sorted(by: { $0.uuid < $1.uuid }),
+              uuid(for: CGMainDisplayID()) == request.mainUUID else {
+            throw ToggleError(message: "macOS did not apply the requested arrangement. Restoring the previous layout.")
+        }
+    }
+
+    func restorePendingArrangement() throws {
+        guard let data = defaults.data(forKey: "pendingArrangement") else { return }
+        let trial = try JSONDecoder().decode(DisplayArrangementTrial.self, from: data)
+        guard trial.bootSession == bootSession else {
+            defaults.removeObject(forKey: "pendingArrangement")
+            return // Session-only changes have already expired after reboot.
+        }
+        try applyLayout(resolveLayout(trial.original))
+        Thread.sleep(forTimeInterval: 0.5)
+        guard try currentLayout().sorted(by: { $0.uuid < $1.uuid }) == trial.original.sorted(by: { $0.uuid < $1.uuid }) else {
+            throw ToggleError(message: "macOS has not restored the previous layout yet. Recovery information has been retained.")
+        }
+        defaults.removeObject(forKey: "pendingArrangement")
+        defaults.synchronize()
+    }
+
+    private func resolveLayout(_ positions: [DisplayPosition]) throws -> [(UInt32, DisplayPosition)] {
+        let current = try currentLayout()
+        let active = try activeIDs()
+        guard active.allSatisfy({ CGDisplayIsInMirrorSet($0) == 0 }),
+              Set(current.map(\.uuid)) == Set(positions.map(\.uuid)),
+              positions.allSatisfy({ p in current.contains { $0.uuid == p.uuid && $0.width == p.width && $0.height == p.height } }) else {
+            throw ToggleError(message: "The monitor setup changed. Reconnect the original screens and resolution before restoring.")
+        }
+        return try positions.map { position in
+            guard let id = resolve(position.uuid) else { throw ToggleError(message: "Monitor unavailable") }
+            return (id, position)
+        }
+    }
 
     func uuid(for id: CGDirectDisplayID) -> String? {
         guard let value = CGDisplayCreateUUIDFromDisplayID(id)?.takeRetainedValue() else { return nil }

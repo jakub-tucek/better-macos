@@ -4,6 +4,62 @@ import Foundation
 /// Surviving edge-connected groups move together, preserving their internal
 /// alignment. Gaps between groups close without swapping left/right or above/below.
 enum DisplayTopology {
+    static func isValidArrangement(_ layout: [DisplayPosition]) -> Bool {
+        guard !layout.isEmpty, Set(layout.map(\.uuid)).count == layout.count else { return false }
+        let tiles = layout.compactMap { position -> Tile? in
+            guard let width = position.width, let height = position.height, width > 0, height > 0 else { return nil }
+            return Tile(uuid: position.uuid, frame: CGRect(x: Int(position.x), y: Int(position.y), width: Int(width), height: Int(height)))
+        }
+        return tiles.count == layout.count && !overlaps(tiles) && connectedGroups(tiles).count == 1
+    }
+
+    static func normalized(_ layout: [DisplayPosition], anchor: String) -> [DisplayPosition]? {
+        guard let main = layout.first(where: { $0.uuid == anchor }) else { return nil }
+        var result: [DisplayPosition] = []
+        for var position in layout {
+            guard let x = Int32(exactly: Int64(position.x) - Int64(main.x)),
+                  let y = Int32(exactly: Int64(position.y) - Int64(main.y)) else { return nil }
+            position = DisplayPosition(uuid: position.uuid, x: x, y: y, width: position.width, height: position.height)
+            result.append(position)
+        }
+        return result
+    }
+
+    /// Snap the dragged screen to the nearest free edge. A draft may temporarily
+    /// contain disconnected groups; Apply requires the entire desktop to connect.
+    static func snapped(_ layout: [DisplayPosition], moving uuid: String, to origin: CGPoint) -> [DisplayPosition]? {
+        guard let moving = layout.first(where: { $0.uuid == uuid }), let width = moving.width, let height = moving.height,
+              origin.x.isFinite, origin.y.isFinite else { return nil }
+        let w = CGFloat(width), h = CGFloat(height)
+        var best: (layout: [DisplayPosition], distance: CGFloat)?
+        for other in layout where other.uuid != uuid {
+            guard let ow = other.width, let oh = other.height else { continue }
+            let a = CGRect(x: Int(other.x), y: Int(other.y), width: Int(ow), height: Int(oh))
+            let overlapX = min(w, a.width) / 4, overlapY = min(h, a.height) / 4
+            var x = min(max(origin.x, a.minX - w + overlapX), a.maxX - overlapX)
+            var y = min(max(origin.y, a.minY - h + overlapY), a.maxY - overlapY)
+            if abs(x - a.minX) < 120 { x = a.minX }
+            else if abs(x + w - a.maxX) < 120 { x = a.maxX - w }
+            if abs(y - a.minY) < 120 { y = a.minY }
+            else if abs(y + h - a.maxY) < 120 { y = a.maxY - h }
+            for point in [CGPoint(x: a.maxX, y: y), CGPoint(x: a.minX - w, y: y),
+                          CGPoint(x: x, y: a.maxY), CGPoint(x: x, y: a.minY - h)] {
+                guard let px = Int32(exactly: point.x.rounded()), let py = Int32(exactly: point.y.rounded()) else { continue }
+                let frame = CGRect(x: Int(px), y: Int(py), width: Int(width), height: Int(height))
+                let collides = layout.filter { $0.uuid != uuid }.contains { position in
+                    let rect = CGRect(x: Int(position.x), y: Int(position.y), width: Int(position.width ?? 0), height: Int(position.height ?? 0))
+                    return overlap(frame.minX, frame.maxX, rect.minX, rect.maxX) > 0 && overlap(frame.minY, frame.maxY, rect.minY, rect.maxY) > 0
+                }
+                guard !collides else { continue }
+                let distance = pow(point.x - origin.x, 2) + pow(point.y - origin.y, 2)
+                if best == nil || distance < best!.distance {
+                    best = (layout.map { $0.uuid == uuid ? DisplayPosition(uuid: uuid, x: px, y: py, width: width, height: height) : $0 }, distance)
+                }
+            }
+        }
+        return best?.layout
+    }
+
     private struct Tile {
         let uuid: String
         var frame: CGRect

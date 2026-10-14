@@ -21,6 +21,7 @@ final class DashboardModel: ObservableObject {
     @Published var disabledMonitorCount = 0
     @Published var currentLayout: [DisplayPosition] = []
     @Published var layoutPreviews: [String: [DisplayPosition]] = [:]
+    @Published var pendingArrangement = false
     @Published var devices: [BluetoothDevice] = []
     @Published var selectedAddresses = Set<String>()
     @Published var automaticReconnectEnabled = false
@@ -45,6 +46,8 @@ final class DashboardModel: ObservableObject {
     var onMonitorChanged: (String, Bool) -> Void = { _, _ in }
     var onKeepDisabled: (String) -> Void = { _ in }
     var onRestoreAll: () -> Void = {}
+    var onArrangeDisplays: () -> Void = {}
+    var onKeepArrangement: () -> Void = {}
     var onAutoDeviceChanged: (String, Bool) -> Void = { _, _ in }
     var onManualConnection: (String) -> Void = { _ in }
     var onAutomaticReconnectChanged: (Bool) -> Void = { _ in }
@@ -241,10 +244,13 @@ struct DashboardView: View {
             if !model.countdowns.isEmpty {
                 card {
                     ForEach(model.countdowns.keys.sorted(), id: \.self) { uuid in
-                        Text("Restoring \(model.monitors.first(where: { $0.uuid == uuid })?.name ?? "display") in \(model.countdowns[uuid] ?? 0)s")
+                        Text("Restoring \(uuid == "layout" ? "previous layout" : model.monitors.first(where: { $0.uuid == uuid })?.name ?? "display") in \(model.countdowns[uuid] ?? 0)s")
                             .font(.caption).foregroundStyle(.orange)
                         HStack {
-                            Button("Keep disabled") { model.onKeepDisabled(uuid) }.disabled(model.monitorBusy)
+                            Button(uuid == "layout" ? "Keep layout" : "Keep disabled") {
+                                if uuid == "layout" { model.onKeepArrangement() }
+                                else { model.onKeepDisabled(uuid) }
+                            }.disabled(model.monitorBusy || (model.countdowns[uuid] ?? 0) <= 0)
                             Button("Restore now", action: model.onRestoreAll).disabled(model.monitorBusy || model.displaySettling)
                         }
                     }
@@ -271,8 +277,8 @@ struct DashboardView: View {
             }
             if model.monitorBusy { ProgressView("Applying display change…").controlSize(.small) }
             if model.displaySettling { Text("Waiting for display connections to settle…").font(.caption).foregroundStyle(.secondary) }
-            Button("Enable all disabled displays", action: model.onRestoreAll)
-                .disabled(model.displaySettling || model.monitorBusy || model.disabledMonitorCount == 0)
+            Button(model.pendingArrangement ? "Restore previous layout" : "Enable all disabled displays", action: model.onRestoreAll)
+                .disabled(model.displaySettling || model.monitorBusy || (model.disabledMonitorCount == 0 && !model.pendingArrangement))
             Text("The last usable display is protected. Quit restores screens disabled by this app.")
                 .font(.caption).foregroundStyle(.secondary)
         }
@@ -290,6 +296,10 @@ struct DashboardView: View {
             }
             Text("Click a screen to preview turning it off. Nothing changes until you apply.")
                 .font(.caption).foregroundStyle(.secondary)
+            Button("Arrange displays…", action: model.onArrangeDisplays)
+                .disabled(busy || !model.displaySupported || model.disabledMonitorCount > 0 || model.pendingArrangement || model.currentLayout.count < 2)
+            Text(model.disabledMonitorCount > 0 ? "Turn all screens on to edit the full desk layout." : "Arrange displays opens the drag-and-drop editor.")
+                .font(.caption2).foregroundStyle(.secondary)
             Text("Current layout").font(.caption).bold()
             MonitorLayoutMap(positions: model.currentLayout, monitors: model.monitors,
                              selected: selected?.uuid, onSelect: { previewMonitor = $0 })

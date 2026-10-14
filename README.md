@@ -73,6 +73,15 @@ WindowServer. The live incident's root cause has not yet been confirmed.
   Select a screen to see the proposed layout without it, then choose **Apply**.
   Selecting or canceling a preview never changes a display. The switches remain
   direct actions; applied disables still have the 20-second restore countdown.
+- **Arrange displays…** opens a larger drag-and-drop editor. Turn all screens on
+  first, drag them to match your desk, and choose **Apply layout**. Edges snap;
+  overlapping or disconnected layouts cannot be applied. **Keep layout** confirms
+  within 20 seconds; otherwise the original arrangement returns. Editing a preview
+  changes nothing. The main display is retained, and stale edits are rejected if
+  a screen is connected, removed, or resized while the editor is open.
+  Arrangement changes are session-only. Confirmed positions become the baseline
+  for subsequent monitor toggles. Recovery data for an unconfirmed edit survives
+  an app crash; use **Restore previous layout** after relaunching.
 - Resolution, brightness and color profiles are not changed. Disable mirroring
   before using monitor toggles.
 
