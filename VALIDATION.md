@@ -4,7 +4,9 @@
 
 Compared every vendored Swift implementation against `rileycx/strafe` commit
 `37ec57e0dd7ae91c22225bc36bf5cd210ff9cba7` (v0.1.2-era main). All four Swift
-files match byte-for-byte. C sources and headers now match too, including the
+files matched byte-for-byte at import. SwitchEngine.swift now has a local queue
+cancellation/draining patch and injectable phase posting for tests. C sources and
+headers remain unchanged, including the
 new macOS 27 Mission Control layer-20 detection. The module map is local build glue.
 
 Ran upstream `Tests/IOHIDPayloadTests.c` against **our vendored C sources** with
@@ -68,3 +70,19 @@ A regression check fails with the default source and passes with zero suppressio
 This checks configuration; physical input latency still needs user verification.
 The same warp symptom and source-scoped fix are reported in
 [Hammerspoon #3332](https://github.com/Hammerspoon/hammerspoon/issues/3332).
+
+## Lifecycle regression coverage
+
+The test executable now includes AppDelegate. Its real display-helper dispatch
+path runs with an injected command runner and gesture sink: an active ramp must
+post its terminal phase before the helper runs, while queued ramps are canceled.
+SystemControlLifecycle drives both host cursor reconciliation and tests for
+confirmation, stale snapshots, module disable, and watchdog loss. Repeated
+watchdog status reports are deduplicated; recovery does not depend on readiness.
+
+Animation updates persist a pending-recovery marker before writing system keys.
+Failed apply/rollback is tested with injected failures, including restoration by
+a fresh module instance while the preset is Off. Startup attempts pending recovery
+even when the parent module is disabled, and the UI provides a retry action.
+Bluetooth takeover tests cover shutdown during both success and failure, ensuring
+the stop completion runs once and automation remains disabled.

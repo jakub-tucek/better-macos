@@ -153,6 +153,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     var suspendAutomaticReconnection = false
     private let backend: BluetoothBackend?
     private let authorizationProvider: () -> CBManagerAuthorization
+    private let legacyServiceTakeover: () throws -> Void
     private var permissionManager: CBCentralManager?
     private(set) var devices: [BluetoothDevice] = []
     private(set) var status = "Loading paired devices…"
@@ -160,9 +161,11 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     var onError: ((Error) -> Void)?
 
     init(defaults: UserDefaults = .standard, backend: BluetoothBackend? = nil, importLegacyConfiguration: Bool = true,
-         authorizationProvider: @escaping () -> CBManagerAuthorization = { CBCentralManager.authorization }) {
+         authorizationProvider: @escaping () -> CBManagerAuthorization = { CBCentralManager.authorization },
+         legacyServiceTakeover: @escaping () throws -> Void = BluetoothModule.disableLegacyService) {
         self.defaults = defaults
         self.authorizationProvider = authorizationProvider
+        self.legacyServiceTakeover = legacyServiceTakeover
         self.backend = backend ?? CommandRunner.find("blueutil").map {
             BluetoothBackend(runner: CommandRunner(), blueutil: $0, audioTool: CommandRunner.find("SwitchAudioSource"))
         }
@@ -376,14 +379,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     private func complete(_ result: Result<[BluetoothDevice], Error>, reportError: Bool) {
-        if stopped {
-            busy = false
-            manualBusy = false
-            let completion = onStopped
-            onStopped = nil
-            completion?()
-            return
-        }
+        if finishStoppedOperation() { return }
         busy = false
         manualBusy = false
         activity = nil
@@ -415,6 +411,16 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         startPendingManual()
     }
 
+    private func finishStoppedOperation() -> Bool {
+        guard stopped else { return false }
+        busy = false
+        manualBusy = false
+        let completion = onStopped
+        onStopped = nil
+        completion?()
+        return true
+    }
+
     func diagnostics() -> Data? {
         let rows: [[String: Any]] = devices.map {
             ["name": $0.name, "connected": $0.connected, "autoReconnect": autoAddresses.contains($0.address),
@@ -429,21 +435,14 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     func takeOverLegacyService() {
-        guard !busy else { return }
+        guard !stopped, !busy else { return }
         busy = true
+        let takeover = legacyServiceTakeover
         queue.async { [weak self] in
-            let runner = CommandRunner()
-            let target = "gui/\(getuid())/com.user.bluetooth-autoconnect"
-            let result = Result {
-                // Verify the agent exists before booting it out. Leave its plist
-                // and scripts intact; disable autostart so two loops cannot race.
-                if (try? runner.run("/bin/launchctl", ["print", target])) != nil {
-                    _ = try runner.run("/bin/launchctl", ["bootout", target])
-                }
-                _ = try runner.run("/bin/launchctl", ["disable", target])
-            }
+            let result = Result { try takeover() }
             DispatchQueue.main.async {
                 guard let self else { return }
+                if self.finishStoppedOperation() { return }
                 self.busy = false
                 switch result {
                 case .success:
@@ -454,5 +453,14 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
                 self.onChange?()
             }
         }
+    }
+
+    static func disableLegacyService() throws {
+        let runner = CommandRunner()
+        let target = "gui/\(getuid())/com.user.bluetooth-autoconnect"
+        if (try? runner.run("/bin/launchctl", ["print", target])) != nil {
+            _ = try runner.run("/bin/launchctl", ["bootout", target])
+        }
+        _ = try runner.run("/bin/launchctl", ["disable", target])
     }
 }

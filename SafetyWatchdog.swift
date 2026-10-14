@@ -82,7 +82,14 @@ final class SafetySupervisor {
     private var timer: Timer?
     private var startupTime: TimeInterval = 0
     private(set) var isReady = false
+    private var lastStatus: String?
     var onStatusChanged: ((String) -> Void)?
+
+    func reportStatus(_ status: String) {
+        guard status != lastStatus else { return }
+        lastStatus = status
+        onStatusChanged?(status)
+    }
 
     init(domain: String = "io.github.jakub-tucek.mac-utils", timeout: TimeInterval = 8, root: URL? = nil) {
         self.domain = domain
@@ -116,7 +123,7 @@ final class SafetySupervisor {
         let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in self?.tick(expectedToken: token) }
         self.timer = timer
         RunLoop.main.add(timer, forMode: .common)
-        onStatusChanged?("Starting recovery watchdog…")
+        reportStatus("Starting recovery watchdog…")
     }
 
     private func writeHeartbeat() throws {
@@ -128,20 +135,20 @@ final class SafetySupervisor {
     private func tick(expectedToken: String) {
         do { try writeHeartbeat() } catch {
             isReady = false
-            onStatusChanged?("Watchdog heartbeat failed; keep system controls paused")
+            reportStatus("Watchdog heartbeat failed; keep system controls paused")
             return
         }
         guard process?.isRunning == true, let directory else {
             isReady = false
-            onStatusChanged?("Watchdog unavailable; system controls remain paused")
+            reportStatus("Watchdog unavailable; system controls remain paused")
             return
         }
         let token = try? String(contentsOf: directory.appendingPathComponent("ready"), encoding: .utf8)
         if token == expectedToken && !isReady {
             isReady = true
-            onStatusChanged?("Recovery watchdog active · \(Int(timeout.rounded(.up)))s hang limit")
+            reportStatus("Recovery watchdog active · \(Int(timeout.rounded(.up)))s hang limit")
         } else if token != expectedToken && ProcessInfo.processInfo.systemUptime - startupTime > 3 {
-            onStatusChanged?("Watchdog did not become ready; system controls remain paused")
+            reportStatus("Watchdog did not become ready; system controls remain paused")
         }
     }
 

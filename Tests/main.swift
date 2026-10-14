@@ -595,4 +595,165 @@ expect(!recreatedSpaces.isEnabled, "Explicit off prevents deferred startup activ
 recreatedSpaces.stop()
 spacePreferences.removePersistentDomain(forName: spaceSuite)
 
+// Host lifecycle regressions: these are the same reconciliation and helper
+// entry points used by AppDelegate, with no live event taps or display commands.
+var cursorActive = false
+let lifecycle = SystemControlLifecycle(startCursor: { _ in cursorActive = true }, stopCursor: { cursorActive = false })
+var controlState = SystemControlLifecycle.State(watchdogReady: true, displaySettling: false,
+    layoutFresh: true, cursorRequested: true, arrangementEnabled: true, layout: edgeLayout)
+try lifecycle.reconcile(controlState)
+expect(cursorActive, "Settled host state starts requested screen-edge matching")
+controlState.pendingConfirmation = true
+try lifecycle.reconcile(controlState)
+expect(!cursorActive, "Display confirmation pauses screen-edge matching")
+controlState.pendingConfirmation = false
+try lifecycle.reconcile(controlState)
+expect(cursorActive, "Keeping a display change resumes matching without another display notification")
+controlState.displaySettling = true
+controlState.layoutFresh = false
+try lifecycle.reconcile(controlState)
+controlState.displaySettling = false
+try lifecycle.reconcile(controlState)
+expect(!cursorActive, "Debounce completion cannot restart matching against a stale layout")
+controlState.layoutFresh = true
+try lifecycle.reconcile(controlState)
+expect(cursorActive, "Fresh display snapshot resumes matching")
+controlState.watchdogReady = false
+try lifecycle.reconcile(controlState)
+expect(!cursorActive && controlState.recoveryReady, "Watchdog loss stops input features without blocking explicit display recovery")
+controlState.arrangementEnabled = false
+controlState.watchdogReady = true
+try lifecycle.reconcile(controlState)
+expect(!cursorActive, "Disabled arrangement module cannot restart its cursor handler")
+
+let watchdogReviewDomain = "fix-macos.watchdog-status.\(UUID().uuidString)"
+let statusSupervisor = SafetySupervisor(domain: watchdogReviewDomain)
+var statusReports = 0
+var statusRefreshes = 0
+let statusGate = DisplayRefreshGate(delay: 0.04) { statusRefreshes += 1 }
+statusSupervisor.onStatusChanged = { _ in statusReports += 1; statusGate.requestRefresh() }
+let repeatingStatus = Timer(timeInterval: 0.01, repeats: true) { _ in statusSupervisor.reportStatus("unavailable") }
+RunLoop.main.add(repeatingStatus, forMode: .common)
+RunLoop.main.run(until: Date().addingTimeInterval(0.12))
+repeatingStatus.invalidate()
+expect(statusReports == 1 && statusRefreshes == 1 && !statusGate.isSettling,
+       "Repeated watchdog failure reports cannot starve the display debounce")
+statusSupervisor.reportStatus("ready")
+expect(statusReports == 2, "A changed watchdog status still reaches the host")
+statusGate.cancel()
+UserDefaults(suiteName: watchdogReviewDomain)?.removePersistentDomain(forName: watchdogReviewDomain)
+
+let failedAnimationDomain = "fix-macos.animation-recovery.\(UUID().uuidString)"
+let failedAnimationDefaults = UserDefaults(suiteName: failedAnimationDomain)!
+var failedAnimationValues: [String: Any] = [:]
+var rejectAnimationWrite = true
+let interruptedAnimations = AnimationPreferences(defaults: failedAnimationDefaults, read: { failedAnimationValues[$0.id] }, write: { setting, value in
+    if rejectAnimationWrite && setting.key == "launchanim" {
+        if value != nil { failedAnimationValues[setting.id] = value }
+        throw ToggleError(message: "Injected sync and rollback failure")
+    }
+    failedAnimationValues[setting.id] = value
+})
+do { try interruptedAnimations.setEnabled(true); expect(false, "Failed enable must throw") }
+catch { expect(interruptedAnimations.recoveryRequired && !interruptedAnimations.enabled && !failedAnimationValues.isEmpty,
+               "Failed apply/rollback exposes recovery even when the toggle was never enabled") }
+rejectAnimationWrite = false
+let restartedAnimations = AnimationPreferences(defaults: failedAnimationDefaults, read: { failedAnimationValues[$0.id] }, write: { failedAnimationValues[$0.id] = $1 })
+try restartedAnimations.recoverPendingRestore()
+expect(failedAnimationValues.isEmpty && !restartedAnimations.recoveryRequired && !restartedAnimations.enabled,
+       "Fresh-process recovery restores interrupted animation writes while the preset is Off")
+failedAnimationDefaults.removePersistentDomain(forName: failedAnimationDomain)
+
+for takeoverFails in [false, true] {
+    let takeoverDomain = "fix-macos.takeover-stop.\(UUID().uuidString)"
+    let takeoverDefaults = UserDefaults(suiteName: takeoverDomain)!
+    let entered = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    var takeoverModule: BluetoothModule? = BluetoothModule(defaults: takeoverDefaults, backend: backend(FakeRunner()),
+        importLegacyConfiguration: false, authorizationProvider: { .allowedAlways }, legacyServiceTakeover: {
+            entered.signal()
+            _ = release.wait(timeout: .now() + 3)
+            if takeoverFails { throw ToggleError(message: "Injected takeover failure") }
+        })
+    weak var takeoverReference = takeoverModule
+    takeoverModule?.takeOverLegacyService()
+    expect(entered.wait(timeout: .now() + 1) == .success, "Legacy takeover fixture starts")
+    var stoppedTakeover = 0
+    takeoverModule?.stop { stoppedTakeover += 1; takeoverModule = nil }
+    release.signal()
+    let deadline = Date().addingTimeInterval(2)
+    while stoppedTakeover == 0 && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+    expect(stoppedTakeover == 1 && takeoverReference == nil && !takeoverDefaults.bool(forKey: "bluetooth.autoEnabled"),
+           "Stopping during \(takeoverFails ? "failed" : "successful") takeover completes once without enabling automation")
+    takeoverReference = nil
+    takeoverDefaults.removePersistentDomain(forName: takeoverDomain)
+}
+
+final class RecordingPhases {
+    private let lock = NSLock()
+    private var phases: [Int64] = []
+    let began = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    func post(_ phase: Int64, _ progress: Double, _ velocity: Double) -> Bool {
+        lock.lock(); phases.append(phase); lock.unlock()
+        if phase == strafe_gesture_phase_began() { began.signal(); _ = release.wait(timeout: .now() + 3) }
+        return true
+    }
+    var recorded: [Int64] { lock.lock(); defer { lock.unlock() }; return phases }
+}
+final class DrainCheckingRunner: CommandRunning {
+    let phases: RecordingPhases
+    init(_ phases: RecordingPhases) { self.phases = phases }
+    func run(_ executable: String, _ arguments: [String]) throws -> String {
+        guard phases.recorded.last == strafe_gesture_phase_ended() else {
+            throw ToggleError(message: "Display command started before the gesture ended")
+        }
+        return "drained"
+    }
+}
+let phases = RecordingPhases()
+let drainEngine = GestureSwitchEngine(spaceInfo: { nil }, postPhase: phases.post)
+let drainDomain = "fix-macos.gesture-drain.\(UUID().uuidString)"
+let drainDefaults = UserDefaults(suiteName: drainDomain)!
+drainDefaults.set(TransitionSpeed.smooth.rawValue, forKey: "spaces.speed")
+let drainingSpaces = SpacesModule(defaults: drainDefaults, engine: drainEngine)
+try drainEngine.switchSpace(.right)
+expect(phases.began.wait(timeout: .now() + 1) == .success, "Synthetic ramp fixture is in flight")
+try drainEngine.switchSpace(.right) // Queued ramp must never begin after suspension.
+let host = AppDelegate(commandRunner: DrainCheckingRunner(phases), spaces: drainingSpaces)
+var commandFinished = false
+var commandSucceeded = false
+host.runDisplayCommand(executable: "fixture", arguments: []) { result in
+    commandFinished = true
+    commandSucceeded = (try? result.get()) == "drained"
+}
+expect(drainingSpaces.isDraining && !commandFinished, "Host defers display helpers while the active gesture drains")
+phases.release.signal()
+let drainDeadline = Date().addingTimeInterval(2)
+while !commandFinished && Date() < drainDeadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+expect(commandSucceeded && !drainingSpaces.isDraining, "Actual AppDelegate helper path waits for terminal gesture phase")
+expect(phases.recorded.count == TransitionSpeed.rampSteps + 2 && phases.recorded.filter { $0 == strafe_gesture_phase_began() }.count == 1,
+       "Suspension finishes the active ramp and cancels the queued ramp")
+drainingSpaces.stop()
+drainDefaults.removePersistentDomain(forName: drainDomain)
+
+let unloadPhases = RecordingPhases()
+let unloadEngine = GestureSwitchEngine(spaceInfo: { nil }, postPhase: unloadPhases.post)
+let unloadDomain = "fix-macos.gesture-unload.\(UUID().uuidString)"
+let unloadDefaults = UserDefaults(suiteName: unloadDomain)!
+unloadDefaults.set(TransitionSpeed.quick.rawValue, forKey: "spaces.speed")
+let unloadingSpaces = SpacesModule(defaults: unloadDefaults, engine: unloadEngine)
+try unloadEngine.switchSpace(.left)
+expect(unloadPhases.began.wait(timeout: .now() + 1) == .success, "Module unload fixture has an active gesture")
+try unloadEngine.switchSpace(.left)
+var unloadCompleted = false
+unloadingSpaces.stop { unloadCompleted = true }
+expect(!unloadCompleted && unloadingSpaces.isDraining, "Module shutdown waits rather than dropping the gesture's terminal event")
+unloadPhases.release.signal()
+let unloadDeadline = Date().addingTimeInterval(2)
+while !unloadCompleted && Date() < unloadDeadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+expect(unloadCompleted && unloadPhases.recorded.last == strafe_gesture_phase_ended() && unloadPhases.recorded.count == TransitionSpeed.rampSteps + 2,
+       "Module shutdown completes after one terminal event with queued work canceled")
+unloadDefaults.removePersistentDomain(forName: unloadDomain)
+
 print("\(checks) isolated checks passed; no Bluetooth, display, or real Space changes.")

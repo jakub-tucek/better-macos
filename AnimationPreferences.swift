@@ -26,6 +26,10 @@ final class AnimationPreferences {
     private let read: (Setting) -> Any?
     private let write: (Setting, Any?) throws -> Void
     var enabled: Bool { defaults.bool(forKey: "animations.enabled") }
+    var recoveryRequired: Bool {
+        defaults.bool(forKey: "animations.recoveryRequired") ||
+        (!enabled && defaults.data(forKey: "animations.originals") != nil)
+    }
     var needsUpdate: Bool {
         guard enabled, let snapshot = try? loadSnapshot() else { return enabled }
         return Self.settings.contains { snapshot[$0.id] == nil }
@@ -55,6 +59,7 @@ final class AnimationPreferences {
     }
 
     func setEnabled(_ enabled: Bool, preserveChoice: Bool = false) throws {
+        if recoveryRequired { try recoverPendingRestore() }
         let backupKey = "animations.originals"
         if enabled {
             var snapshot = try loadSnapshot()
@@ -64,18 +69,37 @@ final class AnimationPreferences {
             }
             let data = try PropertyListSerialization.data(fromPropertyList: snapshot, format: .binary, options: 0)
             defaults.set(data, forKey: backupKey)
+            defaults.set(true, forKey: "animations.recoveryRequired")
             guard defaults.synchronize() else { throw ToggleError(message: "Could not save original animation settings.") }
             do {
                 for setting in Self.settings { try write(setting, setting.value) }
             } catch {
-                // Keep the snapshot if restoration itself fails, so Off can retry.
-                try? restore()
+                do { try recoverPendingRestore() }
+                catch let recoveryError {
+                    throw ToggleError(message: "Animation changes failed: \(error.localizedDescription). Restoring originals also failed: \(recoveryError.localizedDescription). Retry Restore original settings.")
+                }
                 throw error
             }
         } else {
+            defaults.set(true, forKey: "animations.recoveryRequired")
+            guard defaults.synchronize() else { throw ToggleError(message: "Could not record pending animation restoration.") }
             try restore()
         }
         if !preserveChoice { defaults.set(enabled, forKey: "animations.enabled") }
+        defaults.set(false, forKey: "animations.recoveryRequired")
+        defaults.synchronize()
+    }
+
+    /// Recovery is driven by the durable transaction marker, not the UI choice.
+    /// Runs at startup even if the preset or its parent module is disabled.
+    func recoverPendingRestore() throws {
+        guard recoveryRequired else { return }
+        defaults.set(true, forKey: "animations.recoveryRequired")
+        guard defaults.synchronize() else { throw ToggleError(message: "Could not record animation recovery.") }
+        try restore()
+        defaults.set(false, forKey: "animations.enabled")
+        defaults.set(false, forKey: "animations.recoveryRequired")
+        defaults.synchronize()
     }
 
     private func loadSnapshot() throws -> [String: [String: Any]] {

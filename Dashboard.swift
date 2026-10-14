@@ -45,6 +45,7 @@ final class DashboardModel: ObservableObject {
     @Published var spacesEnabled = false
     @Published var animationsEnabled = false
     @Published var animationsBusy = false
+    @Published var animationRecoveryRequired = false
     @Published var spacesPermission = false
     @Published var spacesAvailable = false
     @Published var spacesSpeed: TransitionSpeed = .instant
@@ -70,6 +71,7 @@ final class DashboardModel: ObservableObject {
     var onTakeOverLegacy: () -> Void = {}
     var onSpacesChanged: (Bool) -> Void = { _ in }
     var onAnimationsChanged: (Bool) -> Void = { _ in }
+    var onRestoreAnimations: () -> Void = {}
     var onSpeedChanged: (TransitionSpeed) -> Void = { _ in }
     var onLoginChanged: (Bool) -> Void = { _ in }
     var onClose: () -> Void = {}
@@ -209,6 +211,10 @@ struct DashboardView: View {
                             Spacer(minLength: 0)
                             Button { model.errorMessage = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain)
                         }.padding(10).background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    if model.animationRecoveryRequired {
+                        Button("Restore original animation settings", action: model.onRestoreAnimations)
+                            .disabled(model.animationsBusy)
                     }
                     switch model.tab {
                     case .modules: modules

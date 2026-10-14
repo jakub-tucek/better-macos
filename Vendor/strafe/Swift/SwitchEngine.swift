@@ -64,6 +64,11 @@ final class GestureSwitchEngine: SwitchEngine, @unchecked Sendable {
     private let lock = NSLock()
     private var predictions: [String: UInt32] = [:]
     private var speed: TransitionSpeed = .default
+    // Local integration patch: queued ramps may be canceled; an already-started
+    // gesture always reaches its terminal phase before the host changes displays.
+    private var rampGeneration: UInt64 = 0
+    private var outstandingRamps = 0
+    private let postPhase: (Int64, Double, Double) -> Bool
 
     /// Serial queue for the ramped (animated) transition speeds.
     ///
@@ -83,9 +88,10 @@ final class GestureSwitchEngine: SwitchEngine, @unchecked Sendable {
          spaceInfo: @escaping @Sendable () -> StrafeInfo? = {
              var info = StrafeInfo()
              return strafe_get_space_info(&info) ? info : nil
-         }) {
+          }, postPhase: @escaping (Int64, Double, Double) -> Bool = { strafe_post_dock_swipe_phase($0, $1, $2) }) {
         self.velocity = velocity
         self.spaceInfo = spaceInfo
+        self.postPhase = postPhase
     }
 
     /// Whether the private CGS topology symbols resolved (SPEC §1.1, §6).
@@ -115,6 +121,18 @@ final class GestureSwitchEngine: SwitchEngine, @unchecked Sendable {
         rampQueue.sync {}
     }
 
+    /// Called on the main thread after the interceptor stops accepting gestures.
+    /// Never blocks that thread; completion means no older ramp can post again.
+    func cancelPendingSwitches(completion: @escaping () -> Void) {
+        lock.lock()
+        rampGeneration &+= 1
+        predictions.removeAll()
+        let pending = outstandingRamps > 0
+        lock.unlock()
+        if !pending { completion(); return }
+        rampQueue.async { DispatchQueue.main.async(execute: completion) }
+    }
+
     /// Post one directional switch in whatever shape the current speed calls for.
     ///
     /// Returns whether the switch was *dispatched*, not whether it completed:
@@ -133,13 +151,22 @@ final class GestureSwitchEngine: SwitchEngine, @unchecked Sendable {
         let endVelocity = TransitionSpeed.rampEndVelocity
         let perStep = UInt32((rampMs / Double(steps)) * 1000.0)   // µs
 
-        rampQueue.async {
+        lock.lock()
+        let generation = rampGeneration
+        outstandingRamps += 1
+        lock.unlock()
+        rampQueue.async { [self] in
+            defer { lock.lock(); outstandingRamps -= 1; lock.unlock() }
+            lock.lock()
+            let canceled = generation != rampGeneration
+            lock.unlock()
+            guard !canceled else { return }
             // began: at rest. The motion in the `changed` stream below is what
             // makes the WindowServer animate instead of jumping.
-            _ = strafe_post_dock_swipe_phase(strafe_gesture_phase_began(), 0.0, 0.0)
+            _ = postPhase(strafe_gesture_phase_began(), 0.0, 0.0)
             for step in 1...steps {
                 let frac = Double(step) / Double(steps)
-                _ = strafe_post_dock_swipe_phase(
+                _ = postPhase(
                     strafe_gesture_phase_changed(),
                     sign * peak * frac,
                     sign * endVelocity * frac
@@ -147,7 +174,7 @@ final class GestureSwitchEngine: SwitchEngine, @unchecked Sendable {
                 if perStep > 0 { usleep(perStep) }
             }
             // ended: a moderate velocity commits the switch with its animation.
-            _ = strafe_post_dock_swipe_phase(
+            _ = postPhase(
                 strafe_gesture_phase_ended(), sign * peak, sign * endVelocity
             )
         }
