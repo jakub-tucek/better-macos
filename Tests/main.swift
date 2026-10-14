@@ -83,10 +83,20 @@ final class FakeWindowBackend: WindowPositionBackend {
     var items = [PositionedWindow(token: "1", app: "test.editor", title: "Document", frame: CGRect(x: 800, y: 600, width: 500, height: 400), supported: true)]
     var moves: [CGRect] = []
     var succeeds = true
+    var failDiscovery = false
     func requestPermission() {}
     func displays() -> [WindowDisplay] { screens }
-    func windows() -> [PositionedWindow] { items }
-    func move(_ window: PositionedWindow, to frame: CGRect) -> Bool { moves.append(frame); return succeeds }
+    func windows() throws -> [PositionedWindow] {
+        if failDiscovery { throw ToggleError(message: "Injected discovery timeout") }
+        return items
+    }
+    func move(_ window: PositionedWindow, to frame: CGRect) -> Bool {
+        guard let index = items.firstIndex(where: { $0.token == window.token }),
+              items.filter({ $0.app == window.app && $0.frame == items[index].frame }).count == 1 else { return false }
+        moves.append(frame)
+        if succeeds { items[index].frame = frame }
+        return succeeds
+    }
 }
 let windowDomain = "test.windows.\(UUID().uuidString)"
 let windowDefaults = UserDefaults(suiteName: windowDomain)!
@@ -142,6 +152,12 @@ let matchingBackend = FakeWindowBackend()
 let matchingModule = WindowPositions(backend: matchingBackend, defaults: matchingDefaults, schedule: { $0() })
 matchingModule.reconcile(ready: true, settled: true)
 matchingModule.save("Matching")
+matchingBackend.failDiscovery = true
+matchingModule.save("Failed capture")
+expect(matchingModule.layouts.count == 1 && matchingModule.summary.contains("discovery failed"), "incomplete discovery never persists or selects an empty layout")
+matchingModule.restore(matchingModule.selected)
+expect(matchingModule.summary.contains("discovery failed") && matchingBackend.moves.isEmpty, "incomplete discovery is reported distinctly from missing windows")
+matchingBackend.failDiscovery = false
 matchingBackend.items[0].title = "Different document"
 matchingModule.restore(matchingModule.selected)
 expect(matchingBackend.moves.isEmpty && matchingModule.summary.contains("missing 1"), "changed title does not guess another document")
@@ -203,6 +219,24 @@ let identicalFrame = CGRect(x: 0, y: 0, width: 100, height: 100)
 expect(!AXWindowPositionBackend.hasUniqueGeometry(identicalFrame, in: [identicalFrame, identicalFrame]), "same-geometry off-Space sibling makes visibility correlation ambiguous")
 queuedWindows.stop()
 queuedDefaults.removePersistentDomain(forName: queuedDomain)
+
+let swapDomain = "test.windows.swap.\(UUID().uuidString)"
+let swapDefaults = UserDefaults(suiteName: swapDomain)!
+let swapBackend = FakeWindowBackend()
+let leftFrame = CGRect(x: 10, y: 30, width: 200, height: 200)
+let rightFrame = CGRect(x: 400, y: 30, width: 200, height: 200)
+swapBackend.items = [PositionedWindow(token: "left", app: "editor", title: "One", frame: leftFrame, supported: true),
+                     PositionedWindow(token: "right", app: "editor", title: "Two", frame: rightFrame, supported: true)]
+let swapModule = WindowPositions(backend: swapBackend, defaults: swapDefaults, schedule: { $0() })
+swapModule.reconcile(ready: true, settled: true)
+swapModule.save("Two documents")
+swapBackend.items[0].frame = rightFrame
+swapBackend.items[1].frame = leftFrame
+swapModule.restore(swapModule.selected)
+expect(swapBackend.items[0].frame == leftFrame && swapBackend.items[1].frame == rightFrame && swapBackend.moves.count == 3,
+       "same-app swapped windows restore through safe temporary geometry without ambiguity")
+expect(swapModule.summary.contains("Restored 2"), "temporary parking is not double counted in result summary")
+swapDefaults.removePersistentDomain(forName: swapDomain)
 
 final class FakeRunner: CommandRunning {
     var current: [BluetoothDevice] = [speaker]

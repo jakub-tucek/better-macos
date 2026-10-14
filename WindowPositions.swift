@@ -22,11 +22,52 @@ struct WindowLayout: Codable, Identifiable {
     var windows: [PositionedWindow]
 }
 
+struct WindowMove {
+    var window: PositionedWindow
+    var frame: CGRect
+    var temporary = false
+}
+
+/// Avoid creating an ambiguous geometry correlation while swapping same-app windows.
+enum WindowMovePlanner {
+    static func plan(_ requested: [WindowMove], current: [PositionedWindow], displays: [WindowDisplay]) -> [WindowMove]? {
+        var remaining = requested, positions = current, result: [WindowMove] = []
+        func blocked(_ move: WindowMove) -> Bool {
+            positions.contains { $0.app == move.window.app && $0.token != move.window.token && $0.frame == move.frame }
+        }
+        func record(_ move: WindowMove) {
+            result.append(move)
+            if let index = positions.firstIndex(where: { $0.token == move.window.token }) { positions[index].frame = move.frame }
+        }
+        while !remaining.isEmpty {
+            if let index = remaining.firstIndex(where: { !blocked($0) }) {
+                record(remaining.remove(at: index)); continue
+            }
+            // A cycle needs a one-pixel parking position. Never stage if a final
+            // target is occupied by a window that is not itself going to move.
+            guard result.count < requested.count * 3,
+                  remaining.allSatisfy({ move in positions.filter { $0.app == move.window.app && $0.token != move.window.token && $0.frame == move.frame }.allSatisfy { blocker in remaining.contains { $0.window.token == blocker.token } } }),
+                  let first = remaining.first,
+                  let currentWindow = positions.first(where: { $0.token == first.window.token }),
+                  let display = displays.first(where: { $0.bounds.contains(currentWindow.frame) }) else { return nil }
+            let candidates = [CGPoint(x: 1, y: 0), CGPoint(x: -1, y: 0), CGPoint(x: 0, y: 1), CGPoint(x: 0, y: -1)].map {
+                currentWindow.frame.offsetBy(dx: $0.x, dy: $0.y)
+            }
+            guard let parking = candidates.first(where: { frame in
+                display.bounds.contains(frame) && !positions.contains { $0.app == first.window.app && $0.frame == frame } &&
+                    !requested.contains { $0.window.app == first.window.app && $0.frame == frame }
+            }) else { return nil }
+            record(WindowMove(window: first.window, frame: parking, temporary: true))
+        }
+        return result
+    }
+}
+
 protocol WindowPositionBackend: AnyObject {
     var permitted: Bool { get }
     func requestPermission()
     func displays() -> [WindowDisplay]
-    func windows() -> [PositionedWindow]
+    func windows() throws -> [PositionedWindow]
     func move(_ window: PositionedWindow, to frame: CGRect) -> Bool
 }
 
@@ -37,7 +78,7 @@ final class WindowPositions: ObservableObject {
     @Published var automatic: Bool { didSet { defaults.set(automatic, forKey: "windows.auto"); pending = false; generation += 1 } }
     @Published var paused: Bool { didSet { defaults.set(paused, forKey: "windows.paused"); pending = false; generation += 1 } }
     @Published var exclusions: String { didSet { defaults.set(exclusions, forKey: "windows.exclusions"); generation += 1 } }
-    @Published var selected: String { didSet { defaults.set(selected, forKey: "windows.selected") } }
+    @Published var selected: String { didSet { defaults.set(selected, forKey: "windows.selected"); generation += 1 } }
     @Published private(set) var ready = false
     private let backend: WindowPositionBackend
     private let defaults: UserDefaults
@@ -48,11 +89,10 @@ final class WindowPositions: ObservableObject {
     private var stopped = false
     private var wakeObserver: NSObjectProtocol?
     private var sleepObserver: NSObjectProtocol?
-    private var observingConnections = false
     var onWake: (() -> Void)?
 
     init(backend: WindowPositionBackend = AXWindowPositionBackend(), defaults: UserDefaults = .standard,
-         schedule: @escaping (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }) {
+         schedule: @escaping (@escaping () -> Void) -> Void = { DispatchQueue.main.asyncAfter(deadline: .now() + 0.01, execute: $0) }) {
         self.backend = backend; self.defaults = defaults
         self.schedule = schedule
         automatic = defaults.bool(forKey: "windows.auto")
@@ -72,15 +112,12 @@ final class WindowPositions: ObservableObject {
         wakeObserver = center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             self?.wake(); self?.onWake?()
         }
-        observingConnections = CGDisplayRegisterReconfigurationCallback(windowConnectionChanged, Unmanaged.passUnretained(self).toOpaque()) == .success
+        WindowConnectionNotifications.add(self)
     }
     func stop() {
         stopped = true; invalidate()
         onWake = nil
-        if observingConnections {
-            CGDisplayRemoveReconfigurationCallback(windowConnectionChanged, Unmanaged.passUnretained(self).toOpaque())
-            observingConnections = false
-        }
+        WindowConnectionNotifications.remove(self)
         let center = NSWorkspace.shared.notificationCenter
         if let wakeObserver { center.removeObserver(wakeObserver) }
         if let sleepObserver { center.removeObserver(sleepObserver) }
@@ -115,7 +152,10 @@ final class WindowPositions: ObservableObject {
         guard !name.isEmpty else { summary = "Enter a layout name."; return }
         let displays = backend.displays()
         guard !displays.isEmpty else { summary = "No available displays."; return }
-        let windows = backend.windows().filter { !excluded.contains($0.app) }.compactMap { window -> PositionedWindow? in
+        let snapshot: [PositionedWindow]
+        do { snapshot = try backend.windows() }
+        catch { summary = "Window discovery failed: \(error.localizedDescription)"; return }
+        let windows = snapshot.filter { !excluded.contains($0.app) }.compactMap { window -> PositionedWindow? in
             guard let display = displays.max(by: { $0.bounds.intersection(window.frame).area < $1.bounds.intersection(window.frame).area }), display.bounds.intersects(window.frame) else { return nil }
             var saved = window; saved.display = display.id
             saved.frame.origin.x -= display.bounds.minX; saved.frame.origin.y -= display.bounds.minY
@@ -133,9 +173,11 @@ final class WindowPositions: ObservableObject {
         guard let layout = layouts.first(where: { $0.id == id }) else { return }
         let displays = backend.displays()
         guard displays.map(\.id).sorted() == layout.displays.map(\.id).sorted() else { summary = "Saved display set is not connected."; return }
-        let current = backend.windows()
+        let current: [PositionedWindow]
+        do { current = try backend.windows() }
+        catch { summary = "Window discovery failed: \(error.localizedDescription). Try Restore now again."; return }
         var moved = 0, missing = 0, ambiguous = 0, unsupported = 0, failed = 0, skipped = 0
-        var writes: [(PositionedWindow, CGRect)] = []
+        var requested: [WindowMove] = []
         for saved in layout.windows {
             if excluded.contains(saved.app) { skipped += 1; continue }
             let matches = current.filter { $0.app == saved.app && $0.title == saved.title }
@@ -149,18 +191,30 @@ final class WindowPositions: ObservableObject {
             frame.size.width = min(frame.width, display.bounds.width); frame.size.height = min(frame.height, display.bounds.height)
             frame.origin.x = max(display.bounds.minX, min(frame.minX, display.bounds.maxX - frame.width))
             frame.origin.y = max(display.bounds.minY, min(frame.minY, display.bounds.maxY - frame.height))
-            writes.append((matches[0], frame))
+            requested.append(WindowMove(window: matches[0], frame: frame))
+        }
+        guard let writes = WindowMovePlanner.plan(requested, current: current, displays: displays) else {
+            summary = "Restore skipped: overlapping same-app targets cannot be moved without ambiguous geometry."
+            return
         }
         func publish() {
             summary = "Restored \(moved); missing \(missing); ambiguous \(ambiguous); unsupported \(unsupported); excluded \(skipped); failed \(failed)."
         }
         func step(_ index: Int) {
-            guard ticket == generation, ready, !stopped, backend.permitted, backend.displays() == displays else {
+            guard ticket == generation else { return }
+            guard ready, !stopped, backend.permitted, backend.displays() == displays else {
                 summary = "Restore canceled after \(moved) windows; display state, permission, or settings changed."
                 return
             }
             guard index < writes.count else { publish(); return }
-            if backend.move(writes[index].0, to: writes[index].1) { moved += 1 } else { failed += 1 }
+            let write = writes[index]
+            if backend.move(write.window, to: write.frame) {
+                if !write.temporary { moved += 1 }
+            } else {
+                failed += 1
+                // A failed stage invalidates the collision-free ordering.
+                if write.temporary { publish(); return }
+            }
             schedule { [weak self] in guard self != nil else { return }; step(index + 1) }
         }
         if writes.isEmpty { publish() }
@@ -171,9 +225,34 @@ final class WindowPositions: ObservableObject {
 private extension CGRect { var area: CGFloat { isNull ? 0 : width * height } }
 
 private let windowConnectionChanged: CGDisplayReconfigurationCallBack = { _, flags, context in
-    guard flags.contains(.addFlag) || flags.contains(.removeFlag), let context else { return }
-    let module = Unmanaged<WindowPositions>.fromOpaque(context).takeUnretainedValue()
-    DispatchQueue.main.async { [weak module] in module?.connectionChanged() }
+    guard flags.contains(.addFlag) || flags.contains(.removeFlag) else { return }
+    WindowConnectionNotifications.changed()
+}
+
+/// C callbacks never dereference a module pointer. Removing a module also makes
+/// already queued callbacks inert, even if CoreGraphics is concurrently notifying.
+private enum WindowConnectionNotifications {
+    static let lock = NSLock()
+    static let modules = NSHashTable<WindowPositions>.weakObjects()
+    static var registered = false
+    static func add(_ module: WindowPositions) {
+        lock.lock(); modules.add(module); lock.unlock()
+        if !registered { registered = CGDisplayRegisterReconfigurationCallback(windowConnectionChanged, nil) == .success }
+    }
+    static func remove(_ module: WindowPositions) {
+        lock.lock(); modules.remove(module); let empty = modules.allObjects.isEmpty; lock.unlock()
+        if registered && empty { CGDisplayRemoveReconfigurationCallback(windowConnectionChanged, nil); registered = false }
+    }
+    static func changed() {
+        lock.lock(); let targets = modules.allObjects; lock.unlock()
+        for module in targets {
+            DispatchQueue.main.async { [weak module] in
+                guard let module else { return }
+                lock.lock(); let active = modules.contains(module); lock.unlock()
+                if active { module.connectionChanged() }
+            }
+        }
+    }
 }
 
 final class AXWindowPositionBackend: WindowPositionBackend {
@@ -192,7 +271,7 @@ final class AXWindowPositionBackend: WindowPositionBackend {
     private func value(_ element: AXUIElement, _ key: String) -> CFTypeRef? {
         var result: CFTypeRef?; guard AXUIElementCopyAttributeValue(element, key as CFString, &result) == .success else { return nil }; return result
     }
-    func windows() -> [PositionedWindow] {
+    func windows() throws -> [PositionedWindow] {
         var nextElements: [String: AXUIElement] = [:]
         defer { elements = nextElements }
         guard permitted else { return [] }
@@ -200,20 +279,23 @@ final class AXWindowPositionBackend: WindowPositionBackend {
         let visiblePIDs = Set(visible.compactMap { $0[kCGWindowOwnerPID as String] as? Int32 })
         let deadline = ProcessInfo.processInfo.systemUptime + 0.75
         var incomplete = false
+        var unreadableApps = Set<String>()
         let result = NSWorkspace.shared.runningApplications.flatMap { app -> [PositionedWindow] in
             if ProcessInfo.processInfo.systemUptime >= deadline { incomplete = true; return [] }
             guard ProcessInfo.processInfo.systemUptime < deadline, app.processIdentifier != ProcessInfo.processInfo.processIdentifier, let bundle = app.bundleIdentifier, visiblePIDs.contains(app.processIdentifier) else { return [] }
             let root = AXUIElementCreateApplication(app.processIdentifier)
-            AXUIElementSetMessagingTimeout(root, 0.05)
-            guard let windows = value(root, kAXWindowsAttribute) as? [AXUIElement] else { return [] }
+            guard AXUIElementSetMessagingTimeout(root, 0.05) == .success else { incomplete = true; return [] }
+            guard let windows = value(root, kAXWindowsAttribute) as? [AXUIElement] else { unreadableApps.insert(bundle); return [] }
             let records = windows.compactMap { window -> PositionedWindow? in
                 guard ProcessInfo.processInfo.systemUptime < deadline else { incomplete = true; return nil }
-                AXUIElementSetMessagingTimeout(window, 0.05)
+                guard AXUIElementSetMessagingTimeout(window, 0.05) == .success else { incomplete = true; return nil }
                 guard let p = value(window, kAXPositionAttribute), CFGetTypeID(p) == AXValueGetTypeID(),
                       let s = value(window, kAXSizeAttribute), CFGetTypeID(s) == AXValueGetTypeID() else { return nil }
                 var point = CGPoint.zero, size = CGSize.zero
                 guard AXValueGetValue(p as! AXValue, .cgPoint, &point), AXValueGetValue(s as! AXValue, .cgSize, &size) else { return nil }
-                let title = value(window, kAXTitleAttribute) as? String ?? ""
+                let readTitle = value(window, kAXTitleAttribute) as? String
+                if readTitle == nil { unreadableApps.insert(bundle) }
+                let title = readTitle ?? ""
                 var positionSettable = DarwinBoolean(false), sizeSettable = DarwinBoolean(false)
                 AXUIElementIsAttributeSettable(window, kAXPositionAttribute as CFString, &positionSettable)
                 AXUIElementIsAttributeSettable(window, kAXSizeAttribute as CFString, &sizeSettable)
@@ -233,20 +315,28 @@ final class AXWindowPositionBackend: WindowPositionBackend {
             }
             // Geometry is not a window identity. A hidden same-geometry sibling
             // makes correlation ambiguous, even when titles differ.
+            if records.count != windows.count { unreadableApps.insert(bundle) }
             return records.map { record in
                 var record = record
                 if records.count != windows.count || !Self.hasUniqueGeometry(record.frame, in: records.map(\.frame)) { record.supported = false }
                 return record
             }
         }
-        return incomplete ? [] : result
+        if incomplete { throw ToggleError(message: "Accessibility discovery timed out; no snapshot was accepted") }
+        if !unreadableApps.isEmpty { throw ToggleError(message: "Incomplete Accessibility metadata for \(unreadableApps.sorted().joined(separator: ", "))") }
+        return result.map { record in
+            var record = record
+            if unreadableApps.contains(record.app) { record.supported = false }
+            return record
+        }
     }
     static func hasUniqueGeometry(_ frame: CGRect, in frames: [CGRect]) -> Bool {
         frames.filter { $0 == frame }.count == 1
     }
     func move(_ window: PositionedWindow, to frame: CGRect) -> Bool {
         guard permitted, let element = elements[window.token] else { return false }
-        let fresh = windows().filter { $0.app == window.app && $0.title == window.title }
+        guard let snapshot = try? windows() else { return false }
+        let fresh = snapshot.filter { $0.app == window.app && $0.title == window.title }
         guard fresh.count == 1, fresh[0].supported, let freshElement = elements[fresh[0].token], CFEqual(element, freshElement) else { return false }
         guard value(element, kAXTitleAttribute) as? String == window.title,
               value(element, kAXMinimizedAttribute) as? Bool == false,
