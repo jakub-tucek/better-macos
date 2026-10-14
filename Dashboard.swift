@@ -105,6 +105,7 @@ final class DashboardModel: ObservableObject {
     var onClipboardOpen: () -> Void = {}
     var onClipboardClear: () -> Void = {}
     @Published var mouseRecoveryRequired = false
+    private var mouseErrorMessage: String?
     var onRestoreMouse: () -> Void = {}
     var onKeepAwakeStart: () -> Void = {}
     var onKeepAwakeStop: () -> Void = {}
@@ -146,6 +147,13 @@ final class DashboardModel: ObservableObject {
     var onInstallUpdate: () -> Void = {}
     var onClose: () -> Void = {}
     var onQuit: () -> Void = {}
+
+    func updateMouseRecovery(required: Bool, message: String?) {
+        mouseRecoveryRequired = required
+        if let message { errorMessage = message }
+        else if errorMessage == mouseErrorMessage { errorMessage = nil }
+        mouseErrorMessage = message
+    }
 
     func autoReconnectBinding(for address: String) -> Binding<Bool> {
         Binding(get: { self.selectedAddresses.contains(address) }, set: { enabled in

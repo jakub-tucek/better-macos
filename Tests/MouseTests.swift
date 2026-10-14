@@ -189,7 +189,7 @@ func testMouseControls() throws {
         MouseModule(backend: hostBackend, recovery: hostRecovery)
     })
     let model = DashboardModel()
-    lifecycle.onChange = { model.mouseRecoveryRequired = lifecycle.recoveryRequired }
+    lifecycle.onChange = { model.updateMouseRecovery(required: lifecycle.recoveryRequired, message: lifecycle.errorMessage) }
     lifecycle.start()
     expect(hostBackend.value == hostOriginal && lifecycle.module == nil && !model.mouseRecoveryRequired,
            "Host startup restores a journal while Mouse is disabled and leaves the owner unloaded")
@@ -199,11 +199,16 @@ func testMouseControls() throws {
     expect(!lifecycle.setEnabled(false) && settings.enabled.contains(.mouse) && lifecycle.module != nil && model.mouseRecoveryRequired,
            "Failed host disable retains the live owner and enabled choice and publishes retry state")
     expect(!lifecycle.prepareToQuit(), "Host defers quit while its own changes cannot be restored")
+    expect(model.errorMessage != nil, "Failed host cleanup publishes its error banner")
     hostBackend.failRestore = false
     lifecycle.restore()
-    expect(!model.mouseRecoveryRequired && lifecycle.errorMessage == nil && hostBackend.value == hostOriginal,
+    expect(!model.mouseRecoveryRequired && lifecycle.errorMessage == nil && model.errorMessage == nil && hostBackend.value == hostOriginal,
            "Successful host retry restores originals and clears published recovery state")
     expect(lifecycle.prepareToQuit(), "Host permits quit after restoration succeeds")
+    model.updateMouseRecovery(required: true, message: "mouse failure")
+    model.errorMessage = "unrelated display failure"
+    model.updateMouseRecovery(required: false, message: nil)
+    expect(model.errorMessage == "unrelated display failure", "Successful mouse recovery preserves unrelated error banners")
     expect(lifecycle.setEnabled(false) && !settings.enabled.contains(.mouse) && lifecycle.module == nil,
            "Successful host disable persists Off and releases the owner")
 

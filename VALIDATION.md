@@ -197,8 +197,8 @@ crash recovery with real settings, real wheel attribution, natural-trackpad
 direction, momentum, horizontal/modifier scrolling and event-count preservation.
 No actual pointer settings were changed, no synthetic input was posted, and no
 user app was launched/relaunched or quit for this increment. The existing suite
-launches disposable watchdog fixtures. `bash test.sh` passed: **247 isolated
-checks** (48 new Mouse assertions) and **7 installer scenarios**; the signed app
+launches disposable watchdog fixtures. `bash test.sh` passed: **249 isolated
+checks** (50 new Mouse assertions) and **7 installer scenarios**; the signed app
 build compiles the host UI. 4A and 4B remain incomplete.
 
 Independent read-only adversarial reviews (Codex and OpenCode) of the feature
@@ -207,3 +207,11 @@ historical recovery blocking quit, and missing host lifecycle coverage. The
 follow-up fix addresses all three with the regression scenarios above. DRY review
 found no existing generic transaction helper to reuse; hardware/source attribution
 and power-loss durability remain explicit qualification limitations.
+
+Independent read-only follow-up review of `e283d5d..01ecc0e` returned **CLEAN**:
+all three warnings were confirmed fixed, with no remaining actionable blockers or
+warnings. The reviewer did not rerun tests. Remaining assumptions are serialized
+single-owner access and retaining the explicit backend capability boundary.
+The final explicit GPT-6.1 Sol review also returned CLEAN, with one minor note:
+successful retry left a stale error banner. A presentation fix clears only the
+mouse-owned error while retaining unrelated errors, with regression coverage.

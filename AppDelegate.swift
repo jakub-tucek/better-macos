@@ -68,8 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configureActions()
         mouseLifecycle.onChange = { [weak self] in
             guard let self else { return }
-            model.mouseRecoveryRequired = mouseLifecycle.recoveryRequired
-            if let message = mouseLifecycle.errorMessage { model.errorMessage = message }
+            model.updateMouseRecovery(required: mouseLifecycle.recoveryRequired, message: mouseLifecycle.errorMessage)
         }
         mouseLifecycle.start()
         if menuBarSpacing.recoveryRequired {
