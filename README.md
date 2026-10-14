@@ -51,8 +51,9 @@ Run the isolated checks with `bash test.sh`.
 
 ## Implementation roadmap
 
-Work through these iterations in order. Each checkbox represents a usable increment
-with UI, saved preferences where needed, and verification. The items below are planned.
+Implement independent modules in parallel in separate worktrees. Within each module,
+complete its increments in order. Each checkbox represents a usable increment with
+UI, saved preferences where needed, and verification. The items below are planned.
 
 ### 1. Keep awake
 
@@ -145,10 +146,14 @@ switching. Keep Bluetooth reconnect rules separate from audio-routing preference
 - Give shared OS controls one owner, especially audio routing and display recovery.
 - Test policy with fake backends; validate OS effects on this Mac and record results
   and remaining limitations in [VALIDATION.md](VALIDATION.md).
-- Run `bash test.sh` and `git diff --check`, try the feature, then commit the increment
-  before starting the next one. Update its checkbox after verification.
+- Run `bash test.sh` and `git diff --check`, then commit each module's increment.
+  Have an independent reviewer check it, address findings in a separate commit,
+  and repeat review and tests until actionable findings are resolved.
+- Integrate reviewed commits one module at a time. Recheck shared UI, module shutdown,
+  audio ownership, and display coordination after integration. Update checkboxes
+  after verification; record physical-device checks that remain outstanding.
 
-**First implementation: 1A, timed keep-awake sessions.**
+**In progress:** Keep awake, Audio, Window positions, Mouse, and Clipboard.
 
 ## Credits
 
