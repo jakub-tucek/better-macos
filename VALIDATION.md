@@ -153,6 +153,51 @@ Native panel/shortcut compile validation passed; interactive focus preservation,
 Independent adversarial review of the initial clipboard commit identified archive encoding expansion, nontransactional persistence configuration, missing disk-failure retries, exclusion draft loss, and selection redirection. Regression checks now exercise an over-64-MiB valid archive across restart, injected enable/delete/Clear/expiry/exclusion failures with idle retry, draft preservation, stable UUID selection, and synthetic Return/keypad Enter/Escape events delivered directly to the table (never posted to the OS). The archive has a matching 96-MiB encoded read/write ceiling and rejects oversized files without deleting them. Pending writes/cleanup are visible; orderly module unload and quit wait for successful retry. Force quit/crash during an actual filesystem failure can still leave the last successfully written archive. Right-click an entry for Pin/Delete, or navigate from search with arrow keys and use the buttons. Full suite: 239 isolated checks plus installer checks passed.
 # Mouse controls 4A/4B qualification gates
 
+## Real 4A backend follow-up
+
+The initial disabled-controls foundation described below has been superseded for
+4A: a real opt-in IOKit backend now reads/writes `HIDMouseAcceleration` and
+`HIDUseLinearScalingMouseAcceleration`. The installed SDK's
+`IOHIDEventServiceKeys.h` says linear scaling only affects devices using
+HIDMouseAcceleration; trackpad-specific and generic pointer keys are never written.
+The backend uses IOHIDGet/SetAccelerationWithKey with the mouse key and
+IOHIDCopy/SetCFTypeParameter for the linear flag. Deprecated acceleration functions
+are isolated in a small C compatibility boundary, not guessed private symbols.
+
+Primary sources:
+- [Apple IOHID event-service keys](https://github.com/apple-oss-distributions/IOHIDFamily/blob/main/IOHIDFamily/IOKit/hid/IOHIDEventServiceKeys.h)
+- [Apple IOEventStatusAPI implementation](https://github.com/apple-oss-distributions/IOKitUser/blob/main/hidsystem.subproj/IOEventStatusAPI.c)
+
+Real read-only API inspection on this Mac succeeded: linear mode **0**, mouse
+tracking **0.6875**. The API can obtain values from the event system even when
+IOHIDSystem registry entries omit the mouse-specific key. Acceleration uses 16.16
+fixed-point values. Capture stores effective explicit runtime values, not guessed
+defaults. User preference keys remain untouched, including their original absence.
+Absent/malformed runtime snapshots are rejected because this API does not provide
+a qualified deletion operation. A missing linear flag or failed connection/read
+disables Apply and reports the exact operation/IOKit result. Successful reads do
+not guarantee write permission or hardware effects; Apply verifies readback and
+rolls back on failure. No writer is invoked until the user clicks Apply.
+
+All mice using that acceleration class are affected; third-party drivers may
+ignore it. Tracking is the OS curve index, not a physical DPI or constant speed
+multiplier. Turning acceleration off selects linear mouse scaling. Runtime
+settings are restored on disable/quit and after interrupted sessions; no saved
+override is automatically applied on startup. Reconnect or WindowServer changes
+may reset runtime values; automatic reapplication is intentionally not implemented.
+Physical effectiveness, trackpad invariance and reconnect remain unverified.
+4B still installs no tap because reliable physical-device attribution was not
+established. All wheel/trackpad events pass through unchanged.
+
+Injected HID-boundary tests cover exact mouse-only operations, fixed-point
+readback tolerance, explicit original restoration, invalid/absent rejection,
+ignored writes, capability failure and transaction rollback. Development performs
+only real capability reads, never real pointer writes or synthetic input.
+`bash test.sh` passed **255 isolated checks** and **7 installer scenarios**, including
+the signed app/UI build. Real write behavior was deliberately not exercised.
+
+## Initial foundation validation (historical)
+
 Read-only inspection on macOS **26.6.2 (25G83)**, 2026-10-14:
 
 - `defaults read -g com.apple.mouse.scaling` and `com.apple.mouse.linear` both

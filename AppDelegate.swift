@@ -69,6 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mouseLifecycle.onChange = { [weak self] in
             guard let self else { return }
             model.updateMouseRecovery(required: mouseLifecycle.recoveryRequired, message: mouseLifecycle.errorMessage)
+            model.mouseOverrideActive = mouseLifecycle.module?.active == true
+            model.mouseCapabilityError = mouseLifecycle.capability()
         }
         mouseLifecycle.start()
         if menuBarSpacing.recoveryRequired {
@@ -150,6 +152,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model.onClipboardExclusions = { [weak self] in self?.clipboard?.setExclusions($0) }
         model.onRestoreMouse = { [weak self] in self?.mouseLifecycle.restore() }
+        model.onApplyMouse = { [weak self] in
+            guard let self else { return }
+            mouseLifecycle.apply(acceleration: model.mouseAcceleration, speed: model.mouseTracking)
+        }
         model.onKeepAwakeStart = { [weak self] in self?.performKeepAwake { try $0.start() } }
         model.onKeepAwakeStop = { [weak self] in self?.performKeepAwake { try $0.stop() } }
         model.onKeepAwakeExtend = { [weak self] in self?.performKeepAwake { try $0.extend() } }

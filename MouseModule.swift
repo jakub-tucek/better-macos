@@ -48,17 +48,8 @@ final class MouseFileRecoveryStore: MouseRecoveryStore {
     }
 }
 
-private struct UnqualifiedMouseBackend: MouseSettingsBackend {
-    let identifier = "unqualified"
-    let available = false
-    func read() throws -> MouseOriginalSettings { throw MouseModule.unavailable }
-    func apply(acceleration: Bool, speed: Double) throws { throw MouseModule.unavailable }
-    func restore(_ original: MouseOriginalSettings) throws { throw MouseModule.unavailable }
-}
-
 /// One host owner calls this synchronously on the main thread.
 final class MouseModule {
-    static let pointerLimitation = "Unavailable: mouse-only acceleration and tracking changes have not been verified on Tahoe. Candidate preferences apply to all mice, not individual devices."
     static let scrollLimitation = "Unavailable: public scroll events do not reliably identify the physical device. Continuous/discrete flags are not proof of a mouse. All scrolling passes through unchanged; no event tap is installed."
     static let unavailable = NSError(domain: "MouseControls", code: 1,
         userInfo: [NSLocalizedDescriptionKey: "Mouse controls require a verified mouse-only backend."])
@@ -73,7 +64,7 @@ final class MouseModule {
     convenience init() {
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Fix macOS", isDirectory: true)
-        self.init(backend: UnqualifiedMouseBackend(), recovery: MouseFileRecoveryStore(url: directory.appendingPathComponent("mouse-recovery.json")))
+        self.init(backend: SystemMouseBackend(), recovery: MouseFileRecoveryStore(url: directory.appendingPathComponent("mouse-recovery.json")))
     }
 
     init(backend: MouseSettingsBackend, recovery: MouseRecoveryStore) {
@@ -188,6 +179,18 @@ final class MouseLifecycle {
         // Historical/corrupt metadata must not prevent other modules' cleanup
         // or trap this build in the app when it cannot perform recovery.
         return module?.hasSessionChanges != true
+    }
+
+    func apply(acceleration: Bool, speed: Double) {
+        guard let module else { return }
+        do { try module.apply(acceleration: acceleration, speed: speed); errorMessage = nil }
+        catch { errorMessage = error.localizedDescription }
+        onChange()
+    }
+
+    func capability() -> String? {
+        do { _ = try SystemMouseBackend().read(); return nil }
+        catch { return error.localizedDescription }
     }
 }
 

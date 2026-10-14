@@ -106,6 +106,11 @@ final class DashboardModel: ObservableObject {
     var onClipboardClear: () -> Void = {}
     @Published var mouseRecoveryRequired = false
     private var mouseErrorMessage: String?
+    @Published var mouseCapabilityError: String?
+    @Published var mouseAcceleration = true
+    @Published var mouseTracking = 0.6875
+    @Published var mouseOverrideActive = false
+    var onApplyMouse: () -> Void = {}
     var onRestoreMouse: () -> Void = {}
     var onKeepAwakeStart: () -> Void = {}
     var onKeepAwakeStop: () -> Void = {}
@@ -465,14 +470,19 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 14) {
             card {
                 Label("Acceleration and tracking", systemImage: "computermouse").font(.headline)
-                Text(MouseModule.pointerLimitation).font(.caption).foregroundStyle(.secondary)
+                Text("Session-wide for devices using HIDMouseAcceleration, not per-device. Trackpad-specific keys are never written. Hardware behavior and reconnect still need verification.").font(.caption).foregroundStyle(.secondary)
+                if let error = model.mouseCapabilityError { Text(error).font(.caption).foregroundStyle(.orange) }
                 Text("All-mice controls · no per-device support").font(.caption)
                 HStack {
-                    Text("Override mouse acceleration")
+                    Text("Acceleration")
                     Spacer()
-                    BlueSwitch(label: "Override mouse acceleration unavailable", isOn: .constant(false)).disabled(true)
+                    BlueSwitch(label: "Mouse acceleration", isOn: $model.mouseAcceleration)
                 }
-                Text("Tracking speed: unavailable").foregroundStyle(.secondary)
+                Slider(value: $model.mouseTracking, in: 0.1...3) { Text("Tracking") }
+                Text(String(format: "Tracking: %.2f", model.mouseTracking)).font(.caption)
+                Button("Apply mouse settings", action: model.onApplyMouse).disabled(model.mouseCapabilityError != nil || model.mouseRecoveryRequired)
+                if model.mouseOverrideActive { Button("Restore original mouse settings", action: model.onRestoreMouse) }
+                Text("Nothing changes until Apply. These runtime settings are restored on disable or quit, not saved as system preferences.").font(.caption)
             }
             card {
                 Text("Separate wheel scrolling").font(.headline)

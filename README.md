@@ -14,7 +14,7 @@ A macOS menu-bar app for managing monitors, Bluetooth connections, and desktop s
 - **Menu bar:** experimental compact spacing and a movable divider for hiding extra icons. Both controls start off. ⌘-drag the divider left of the chevron, and less-used icons left of the divider. Click the chevron to hide/reveal them; quitting reveals them. Spacing changes may require restarting apps or logging out; turning spacing or the module off restores original values. This is not a separate overflow panel for icons behind the notch.
 - **Hold to quit:** under **Keyboard**, hold ⌘Q for 3 seconds by default, adjustable from 1 to 99 seconds. A popup names the app while Pac-Man eats dots across the countdown. Releasing early, switching apps, or clicking cancels. Uses normal quit requests, preserving save prompts. Requires Accessibility access; starts off. Menu commands and other quit shortcuts are unaffected.
 - **Keep awake:** timed presets, five-minute custom increments, +15 minutes, and optional display wake. Add apps by bundle identity to stay awake while they run in the background. Timed and app reasons overlap; Stop pauses currently matching apps until they exit, and Resume restores them. Disabling the module releases assertions; timed sessions never survive relaunch. Saved app rules apply to already-running apps on activation.
-- **Mouse availability:** a Mouse panel explains the current qualification gates. Acceleration, tracking speed, wheel direction and wheel speed are unavailable pending mouse-only hardware verification and reliable device attribution. It installs no event tap and changes no pointer settings. This is a foundation for roadmap 4A/4B, not completed mouse controls.
+- **Mouse:** opt-in acceleration and tracking controls use mouse-specific IOKit runtime parameters. Click Apply to change devices using HIDMouseAcceleration; disable or quit restores the captured runtime values. No system preferences are written, and settings are not automatically reapplied on relaunch/reconnect. Capability reads and write readback detect API failures, not physical effectiveness. Per-device controls and wheel direction/speed remain unsupported.
 
 Enable or disable each module from the **gear icon**. Disabled modules stop background work and release their state; your settings stay saved.
 
@@ -121,11 +121,11 @@ and remaining live/hardware acceptance checks; roadmap boxes remain open until t
 
 ### 4. Mouse controls
 
-**Current increment:** host UI/lifecycle and injected-backend recovery/scroll-policy
-tests are implemented. Both completion boxes remain open: no production mouse
-backend is qualified, and no physical-device scroll classifier is installed.
-Candidate pointer preferences are global to all mice; per-device controls are not
-supported. See [validation](VALIDATION.md#mouse-controls-4a4b-qualification-gates).
+**Current increment:** real mouse-specific acceleration/tracking runtime backend,
+opt-in UI, restoration and injected boundary tests are implemented. Both acceptance
+boxes remain open pending physical mouse/trackpad verification and reliable wheel
+attribution. Controls apply to the mouse acceleration class, not individual devices.
+See [validation](VALIDATION.md#mouse-controls-4a4b-qualification-gates).
 
 - [ ] **4A · Acceleration and speed.** First verify which mouse-only controls work
   on the target macOS version. Add a **Mouse** module with acceleration control and

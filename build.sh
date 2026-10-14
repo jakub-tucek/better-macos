@@ -20,10 +20,11 @@ for source in CStrafe IOHIDPayload; do
         -I Vendor/strafe/CStrafe/include -c "Vendor/strafe/CStrafe/$source.c" \
         -o "build/objects/$source.o"
 done
+xcrun clang -O2 -arch arm64 -mmacosx-version-min=15.0 -c MouseHID/MouseHID.c -o build/objects/MouseHID.o
 xcrun swiftc -swift-version 5 -warnings-as-errors -O -target arm64-apple-macos15.0 \
-    -I Vendor/strafe/CStrafe/include ClipboardHistory.swift ClipboardModule.swift WindowPositions.swift WindowPositionsView.swift \
+    -I Vendor/strafe/CStrafe/include -I MouseHID ClipboardHistory.swift ClipboardModule.swift WindowPositions.swift WindowPositionsView.swift \
     AppModules.swift DisplayController.swift DisplayTopology.swift DisplayArrangementEditor.swift DisplayRefreshGate.swift SafetyWatchdog.swift Dashboard.swift AppDelegate.swift CommandRunner.swift BluetoothModule.swift \
-    MouseModule.swift KeepAwakeModule.swift QuitGuard.swift MenuBarModule.swift SourceUpdates.swift SystemControlLifecycle.swift ScreenEdges.swift AnimationPreferences.swift SpacesModule.swift Vendor/strafe/Swift/*.swift main.swift \
+    MouseSystemBackend.swift MouseModule.swift KeepAwakeModule.swift QuitGuard.swift MenuBarModule.swift SourceUpdates.swift SystemControlLifecycle.swift ScreenEdges.swift AnimationPreferences.swift SpacesModule.swift Vendor/strafe/Swift/*.swift main.swift \
     AudioModule.swift build/objects/*.o -framework Carbon -framework CoreAudio -framework AppKit -framework ServiceManagement \
     -framework SwiftUI -framework CoreBluetooth -framework ApplicationServices -framework CoreGraphics -framework CoreFoundation -framework IOKit \
     -o "$APP/Contents/MacOS/fix-mac-os"

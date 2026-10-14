@@ -42,7 +42,48 @@ private final class FakeMouseRecovery: MouseRecoveryStore {
     }
 }
 
+private final class FakeMouseHIDAccess: MouseHIDAccess {
+    var linear = 0.0
+    var tracking = 0.6875
+    var writes: [String] = []
+    var ignoreTracking = false
+    var failRead = false
+    func readLinear() throws -> Double { if failRead { throw MouseModule.unavailable }; return linear }
+    func readTracking() throws -> Double { tracking }
+    func setLinear(_ value: Double) throws { writes.append("mouse-linear"); linear = value }
+    func setTracking(_ value: Double) throws {
+        writes.append("mouse-tracking")
+        if !ignoreTracking { tracking = floor(value * 65536) / 65536 }
+    }
+}
+
 func testMouseControls() throws {
+    let hid = FakeMouseHIDAccess()
+    let system = SystemMouseBackend(access: hid)
+    let systemOriginal = try system.read()
+    expect(system.available && hid.writes.isEmpty, "Real backend capability boundary only reads parameters")
+    try system.apply(acceleration: false, speed: 1.2)
+    expect(hid.linear == 1 && abs(hid.tracking - 1.2) < 1.0 / 65536 && hid.writes == ["mouse-linear", "mouse-tracking"],
+           "Backend disables acceleration through mouse linear mode and applies fixed-point tracking")
+    try system.restore(systemOriginal)
+    expect(hid.linear == 0 && hid.tracking == 0.6875, "Runtime backend restores captured linear mode and tracking")
+    let beforeInvalid = hid.writes.count
+    do { try system.restore(MouseOriginalSettings(acceleration: .absent, speed: .number(1))); expect(false, "Absent runtime restoration must fail") } catch {}
+    do { try system.apply(acceleration: true, speed: .nan); expect(false, "Invalid runtime write must fail") } catch {}
+    expect(hid.writes.count == beforeInvalid, "Absent runtime originals and invalid speed are rejected before any HID write")
+    hid.ignoreTracking = true
+    do { try system.apply(acceleration: true, speed: 2); expect(false, "Ignored runtime write must fail readback") } catch {}
+    expect(hid.tracking == 0.6875, "Runtime write readback detects an ignored setting")
+    hid.ignoreTracking = false
+    hid.failRead = true
+    expect(!system.available, "Runtime read failure reports unsupported capability without writes")
+    hid.failRead = false
+    let runtimeRecovery = FakeMouseRecovery()
+    let runtimeModule = MouseModule(backend: system, recovery: runtimeRecovery)
+    hid.ignoreTracking = true
+    do { try runtimeModule.apply(acceleration: false, speed: 2); expect(false, "Readback mismatch must rollback") } catch {}
+    expect(hid.linear == 0 && runtimeRecovery.pending == nil, "Transaction rolls back partial real-backend boundary failure")
+    hid.ignoreTracking = false
     let backend = FakeMouseBackend()
     let recovery = FakeMouseRecovery()
     var module = MouseModule(backend: backend, recovery: recovery)
@@ -97,7 +138,10 @@ func testMouseControls() throws {
     recovery.pending = MouseRecovery(backend: "different-device-backend", original: original)
     do { try module.stop(); expect(false, "Mismatched backend must throw") } catch {}
     expect(backend.writes == beforeUnavailable && recovery.pending != nil, "Recovery refuses a different backend and retains its journal")
-    expect(!MouseModule().available, "Production mouse controls fail closed without hardware qualification")
+    do {
+        let real = try SystemMouseBackend().read()
+        print("READ-ONLY mouse runtime capability: \(real)")
+    } catch { print("READ-ONLY mouse runtime capability unavailable: \(error.localizedDescription)") }
 
     recovery.pending = nil
     try module.stop()
