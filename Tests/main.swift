@@ -92,12 +92,20 @@ final class FakeWindowBackend: WindowPositionBackend {
     }
     func move(_ window: PositionedWindow, to frame: CGRect) -> Bool {
         guard let index = items.firstIndex(where: { $0.token == window.token }),
-              items.filter({ $0.app == window.app && $0.frame == items[index].frame }).count == 1 else { return false }
+              items.filter({ $0.app == window.app && $0.frame == items[index].frame }).count == 1,
+              AXWindowPositionBackend.destinationIsClear(frame, for: window, in: items) else { return false }
         moves.append(frame)
         if succeeds { items[index].frame = frame }
         return succeeds
     }
 }
+let failedWindowServer = AXWindowPositionBackend(permissionCheck: { true }, windowInfo: { nil })
+do { _ = try failedWindowServer.windows(); expect(false, "WindowServer failure must throw") }
+catch { expect(error.localizedDescription.contains("WindowServer discovery failed"), "real adapter throws injected WindowServer discovery failure without live calls") }
+var revokedWindowInfoReads = 0
+let revokedWindowAccess = AXWindowPositionBackend(permissionCheck: { false }, windowInfo: { revokedWindowInfoReads += 1; return [] })
+do { _ = try revokedWindowAccess.windows(); expect(false, "revoked Accessibility permission must throw") }
+catch { expect(revokedWindowInfoReads == 0 && error.localizedDescription.contains("permission"), "real adapter rejects revoked permission without returning an empty snapshot") }
 let windowDomain = "test.windows.\(UUID().uuidString)"
 let windowDefaults = UserDefaults(suiteName: windowDomain)!
 let windowBackend = FakeWindowBackend()
@@ -236,7 +244,57 @@ swapModule.restore(swapModule.selected)
 expect(swapBackend.items[0].frame == leftFrame && swapBackend.items[1].frame == rightFrame && swapBackend.moves.count == 3,
        "same-app swapped windows restore through safe temporary geometry without ambiguity")
 expect(swapModule.summary.contains("Restored 2"), "temporary parking is not double counted in result summary")
+swapBackend.items[0].frame = rightFrame
+swapBackend.items[1].frame = leftFrame
+swapBackend.moves = []
+swapBackend.succeeds = false
+swapModule.restore(swapModule.selected)
+expect(swapBackend.moves.count == 1 && swapBackend.items[0].frame == rightFrame && swapBackend.items[1].frame == leftFrame,
+       "failed prerequisite aborts collision-dependent subsequent moves")
+expect(!AXWindowPositionBackend.destinationIsClear(leftFrame, for: swapBackend.items[0], in: swapBackend.items),
+       "fresh destination occupancy rejects an externally moved same-app sibling")
+let thirdFrame = CGRect(x: 700, y: 30, width: 200, height: 200)
+swapBackend.items[0].frame = thirdFrame
+swapBackend.items[1].frame = leftFrame
+swapModule.save("Dependent ordinary moves")
+swapBackend.items[0].frame = leftFrame
+swapBackend.items[1].frame = rightFrame
+swapBackend.moves = []
+swapModule.restore(swapModule.selected)
+expect(swapBackend.moves.count == 1 && swapBackend.items[1].frame == rightFrame && swapModule.summary.contains("failed 1"),
+       "failed ordinary prerequisite stops later moves into its still-occupied destination")
 swapDefaults.removePersistentDomain(forName: swapDomain)
+
+let displaySetDomain = "test.windows.display-sets.\(UUID().uuidString)"
+let displaySetDefaults = UserDefaults(suiteName: displaySetDomain)!
+let displaySetBackend = FakeWindowBackend()
+displaySetBackend.screens.append(WindowDisplay(id: "B", bounds: CGRect(x: 1000, y: -400, width: 1200, height: 900)))
+displaySetBackend.screens.append(WindowDisplay(id: "C", bounds: CGRect(x: -1000, y: 25, width: 1000, height: 700)))
+displaySetBackend.items = [PositionedWindow(token: "display-B", app: "editor", title: "B document", frame: CGRect(x: 1200, y: -300, width: 400, height: 300), supported: true)]
+let displaySetModule = WindowPositions(backend: displaySetBackend, defaults: displaySetDefaults, schedule: { $0() })
+displaySetModule.reconcile(ready: true, settled: true)
+displaySetModule.save("A B C")
+let threeDisplayLayout = displaySetModule.selected
+displaySetBackend.screens[1].bounds.origin.x = 1400
+displaySetModule.restore(threeDisplayLayout)
+expect(displaySetBackend.moves.last == CGRect(x: 1600, y: -300, width: 400, height: 300), "window frame follows saved display identity after topology translation")
+displaySetModule.save("Alternative A B C")
+displaySetModule.selected = ""
+displaySetModule.automatic = true
+displaySetBackend.moves = []
+displaySetModule.wake()
+displaySetModule.reconcile(ready: true, settled: true)
+expect(displaySetBackend.moves.isEmpty && displaySetModule.summary.contains("unique saved layout"), "multiple layouts require an explicit selection rather than guessing")
+displaySetModule.selected = threeDisplayLayout
+displaySetBackend.screens.remove(at: 1)
+displaySetModule.reconcile(ready: true, settled: true)
+expect(displaySetModule.layouts.count == 2 && displaySetBackend.moves.isEmpty, "A B C to A C retains layouts without moving windows for a mismatched set")
+displaySetBackend.screens.insert(WindowDisplay(id: "B", bounds: CGRect(x: 1400, y: -400, width: 1200, height: 900)), at: 1)
+displaySetModule.reconcile(ready: true, settled: true)
+expect(displaySetBackend.moves.count == 1, "A C to A B C restores the explicitly selected display-set layout once")
+displaySetModule.reconcile(ready: true, settled: true)
+expect(displaySetBackend.moves.count == 1, "repeated A B C snapshot does not repeat restoration")
+displaySetDefaults.removePersistentDomain(forName: displaySetDomain)
 
 final class FakeRunner: CommandRunning {
     var current: [BluetoothDevice] = [speaker]

@@ -212,8 +212,9 @@ final class WindowPositions: ObservableObject {
                 if !write.temporary { moved += 1 }
             } else {
                 failed += 1
-                // A failed stage invalidates the collision-free ordering.
-                if write.temporary { publish(); return }
+                // Every move can be a prerequisite for another destination.
+                // Failure invalidates the collision-free ordering, not just parking.
+                publish(); return
             }
             schedule { [weak self] in guard self != nil else { return }; step(index + 1) }
         }
@@ -257,7 +258,14 @@ private enum WindowConnectionNotifications {
 
 final class AXWindowPositionBackend: WindowPositionBackend {
     private var elements: [String: AXUIElement] = [:]
-    var permitted: Bool { AXIsProcessTrusted() }
+    private let permissionCheck: () -> Bool
+    private let windowInfo: () -> [[String: Any]]?
+    init(permissionCheck: @escaping () -> Bool = { AXIsProcessTrusted() },
+         windowInfo: @escaping () -> [[String: Any]]? = { CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] }) {
+        self.permissionCheck = permissionCheck
+        self.windowInfo = windowInfo
+    }
+    var permitted: Bool { permissionCheck() }
     func requestPermission() { _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary) }
     func displays() -> [WindowDisplay] {
         let top = NSScreen.screens.first?.frame.maxY ?? 0
@@ -274,8 +282,10 @@ final class AXWindowPositionBackend: WindowPositionBackend {
     func windows() throws -> [PositionedWindow] {
         var nextElements: [String: AXUIElement] = [:]
         defer { elements = nextElements }
-        guard permitted else { return [] }
-        let visible = (CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]]) ?? []
+        guard permitted else { throw ToggleError(message: "Accessibility permission is unavailable") }
+        guard let visible = windowInfo() else {
+            throw ToggleError(message: "WindowServer discovery failed; no snapshot was accepted")
+        }
         let visiblePIDs = Set(visible.compactMap { $0[kCGWindowOwnerPID as String] as? Int32 })
         let deadline = ProcessInfo.processInfo.systemUptime + 0.75
         var incomplete = false
@@ -333,11 +343,15 @@ final class AXWindowPositionBackend: WindowPositionBackend {
     static func hasUniqueGeometry(_ frame: CGRect, in frames: [CGRect]) -> Bool {
         frames.filter { $0 == frame }.count == 1
     }
+    static func destinationIsClear(_ frame: CGRect, for window: PositionedWindow, in snapshot: [PositionedWindow]) -> Bool {
+        !snapshot.contains { $0.app == window.app && $0.token != window.token && $0.frame == frame }
+    }
     func move(_ window: PositionedWindow, to frame: CGRect) -> Bool {
         guard permitted, let element = elements[window.token] else { return false }
         guard let snapshot = try? windows() else { return false }
         let fresh = snapshot.filter { $0.app == window.app && $0.title == window.title }
         guard fresh.count == 1, fresh[0].supported, let freshElement = elements[fresh[0].token], CFEqual(element, freshElement) else { return false }
+        guard Self.destinationIsClear(frame, for: fresh[0], in: snapshot) else { return false }
         guard value(element, kAXTitleAttribute) as? String == window.title,
               value(element, kAXMinimizedAttribute) as? Bool == false,
               value(element, "AXFullScreen") as? Bool == false else { return false }
