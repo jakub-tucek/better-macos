@@ -33,7 +33,7 @@ struct DisplayArrangementEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Arrange displays").font(.title2).bold()
-            Text("Drag screens to match your desk. They snap to nearby edges when released. Your main display stays the same.")
+            Text("Drag to arrange. Edges snap.")
                 .font(.callout).foregroundStyle(.secondary)
             GeometryReader { geometry in
                 let scale = min(geometry.size.width / viewport.width, geometry.size.height / viewport.height)
@@ -70,8 +70,8 @@ struct DisplayArrangementEditor: View {
                     }
                 }.clipped()
             }.frame(minHeight: 260)
-            Text(valid ? "Preview only. Apply starts a 20-second confirmation; otherwise the old layout returns." :
-                 "Connect every screen to another screen's edge before applying. You can keep dragging to join the groups.")
+            Text(valid ? "Reverts after 20 seconds unless confirmed." :
+                 "Join all screens along an edge to apply.")
                 .font(.caption).foregroundStyle(valid ? Color.secondary : Color.orange)
             HStack {
                 Button("Reset preview") { draft = original }

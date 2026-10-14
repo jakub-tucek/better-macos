@@ -180,25 +180,20 @@ struct DashboardView: View {
                 Button(action: model.onClose) { Image(systemName: "xmark") }
                     .buttonStyle(.plain).help("Close dashboard")
             }.padding(16)
-            Text(model.watchdogStatus).font(.caption2).foregroundStyle(.secondary).padding(.bottom, 8)
             if model.tab != .modules {
             Picker("Controls", selection: $model.tab) {
                 ForEach(DashboardTab.allCases.filter { $0 != .modules }, id: \.self) { Text($0.rawValue).tag($0) }
-            }.pickerStyle(.segmented).padding(.horizontal, 16).padding(.bottom, 12)
+            }.pickerStyle(.segmented).labelsHidden().padding(.horizontal, 16).padding(.bottom, 12)
             } else {
                 HStack {
                     Text("Settings").font(.headline)
                     Spacer()
-                    Button("Back to controls") { model.tab = .monitors }
+                    Button("Back") { model.tab = .monitors }
                 }.padding(.horizontal, 16).padding(.bottom, 12)
             }
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("System controls require the recovery watchdog. Display changes pause Space interception; unconfirmed changes restore after 20 seconds.")
-                        .font(.caption).foregroundStyle(.orange)
-                        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
                     if let error = model.errorMessage {
                         HStack(alignment: .top) {
                             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
@@ -255,16 +250,8 @@ struct DashboardView: View {
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
     }
 
-    private func heading(_ title: String, detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.headline)
-            Text(detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
     private var monitors: some View {
         VStack(alignment: .leading, spacing: 14) {
-            heading("Displays", detail: "Blue means enabled. Disabling a screen removes it from the desktop.")
             if !model.countdowns.isEmpty {
                 card {
                     ForEach(model.countdowns.keys.sorted(), id: \.self) { uuid in
@@ -288,8 +275,9 @@ struct DashboardView: View {
                             .frame(width: 22).foregroundStyle(.secondary)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(monitor.name).font(.system(size: 13, weight: .medium))
-                            Text(monitor.isMain ? "Main display" : monitor.enabled ? "Enabled" : "Disabled")
-                                .font(.caption).foregroundStyle(.secondary)
+                            if monitor.isMain || !monitor.enabled {
+                                Text(monitor.isMain ? "Main" : "Off").font(.caption).foregroundStyle(.secondary)
+                            }
                         }
                         Spacer()
                         if model.enabledModules.contains(.monitors) {
@@ -305,8 +293,6 @@ struct DashboardView: View {
             if model.displaySettling { Text("Waiting for display connections to settle…").font(.caption).foregroundStyle(.secondary) }
             Button(model.pendingArrangement ? "Restore previous layout" : "Enable all disabled displays", action: model.onRestoreAll)
                 .disabled(model.displaySettling || model.monitorBusy || (model.disabledMonitorCount == 0 && !model.pendingArrangement))
-            Text("The last usable display is protected. Quit restores screens disabled by this app.")
-                .font(.caption).foregroundStyle(.secondary)
         }
     }
 
@@ -316,17 +302,15 @@ struct DashboardView: View {
         let busy = model.displaySettling || model.monitorBusy
         return card {
             HStack {
-                Label("Smart arrangement", systemImage: "rectangle.3.group").font(.headline)
+                Label("Layout", systemImage: "rectangle.3.group").font(.headline)
                 Spacer()
-                Text("Automatic").font(.caption2).foregroundStyle(.blue)
+                Button("Arrange…", action: model.onArrangeDisplays)
+                    .disabled(busy || !model.displaySupported || model.disabledMonitorCount > 0 || model.pendingArrangement || model.currentLayout.count < 2)
+                    .help("Drag screens to arrange your desk")
             }
-            Text(model.enabledModules.contains(.monitors) ? "Click a screen to preview turning it off. Nothing changes until you apply." : "Monitor switching is off. Use Arrange displays to edit screen positions.")
-                .font(.caption).foregroundStyle(.secondary)
-            Button("Arrange displays…", action: model.onArrangeDisplays)
-                .disabled(busy || !model.displaySupported || model.disabledMonitorCount > 0 || model.pendingArrangement || model.currentLayout.count < 2)
-            Text(model.disabledMonitorCount > 0 ? "Turn all screens on to edit the full desk layout." : "Arrange displays opens the drag-and-drop editor.")
-                .font(.caption2).foregroundStyle(.secondary)
-            Text("Current layout").font(.caption).bold()
+            if model.disabledMonitorCount > 0 {
+                Text("Turn all screens on to arrange.").font(.caption2).foregroundStyle(.secondary)
+            }
             MonitorLayoutMap(positions: model.currentLayout, monitors: model.monitors,
                              selected: selected?.uuid, onSelect: model.enabledModules.contains(.monitors) ? { previewMonitor = $0 } : nil)
                 .disabled(busy)
@@ -338,24 +322,19 @@ struct DashboardView: View {
                 }
                 if let proposal {
                     MonitorLayoutMap(positions: proposal, monitors: model.monitors)
-                    Text("Remaining screens close the gap. Connected screens keep their alignment.")
-                        .font(.caption).foregroundStyle(.secondary)
                     Button("Apply — turn off \(selected.name)") {
                         model.onMonitorChanged(selected.uuid, false)
                         previewMonitor = nil
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(busy || !model.displaySupported || !model.countdowns.isEmpty)
-                    Text("Restores after 20 seconds unless you choose Keep disabled.")
+                    Text("Reverts after 20 seconds unless confirmed.")
                         .font(.caption2).foregroundStyle(.secondary)
                 } else {
                     Text(model.activeMonitorCount <= 1 ? "The last usable screen cannot be turned off." :
                          "No reliable preview for this arrangement. Check display mirroring, connections, and resolution.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-            } else {
-                Text("Turning screens back on restores their saved positions. The switches below apply changes directly.")
-                    .font(.caption2).foregroundStyle(.secondary)
             }
         }
     }
@@ -363,14 +342,13 @@ struct DashboardView: View {
     private func disabledModule(_ title: String) -> some View {
         card {
             Text("\(title) is off").font(.headline)
-            Text("Its settings are saved. Enable it in Modules when you need it.").font(.caption).foregroundStyle(.secondary)
-                    Button("Open module settings") { model.tab = .modules }
+            Button("Enable in settings") { model.tab = .modules }
         }
     }
 
     private var modules: some View {
         VStack(alignment: .leading, spacing: 14) {
-            heading("Modules", detail: "Enable only the features you use. Off stops background work and releases module state; settings are remembered.")
+            Text("Modules").font(.headline)
             ForEach(AppModule.allCases) { module in
                 card {
                     HStack {
@@ -382,18 +360,15 @@ struct DashboardView: View {
                             .disabled(model.stoppingModules.contains(module) ||
                                       ((module == .monitors || module == .arrangement) && model.monitorBusy))
                     }
-                    Text(module.detail).font(.caption).foregroundStyle(.secondary)
                     if model.stoppingModules.contains(module) {
                         Text(module == .bluetooth ? "Stopping — finishing the current Bluetooth command…" : "Restoring displays before unloading…")
                             .font(.caption).foregroundStyle(.orange)
-                    } else {
-                        Text(model.enabledModules.contains(module) ? "Enabled · loaded when needed" : "Off · module state released")
-                            .font(.caption2).foregroundStyle(.secondary)
                     }
-                }
+                }.help(module.detail)
             }
-            Text("Display discovery is shared by the two display modules. The recovery watchdog stays available. macOS pages executable code on demand; switching modules off does not unload the executable.")
-                .font(.caption).foregroundStyle(.secondary)
+            DisclosureGroup("Diagnostics") {
+                Text(model.watchdogStatus).font(.caption).foregroundStyle(.secondary)
+            }.font(.caption)
         }
     }
 
@@ -411,12 +386,8 @@ struct DashboardView: View {
                         get: { model.automaticReconnectEnabled }, set: model.onAutomaticReconnectChanged))
                         .disabled(!model.bluetoothAvailable || model.legacyServicePresent || model.bluetoothPermissionRequired)
                 }
-                Text("Checks every 5 seconds. Pausing keeps your device selections.")
-                    .font(.caption).foregroundStyle(.secondary)
                 if model.bluetoothPermissionRequired {
                     Button("Allow Bluetooth access…", action: model.onBluetoothAccessRequested)
-                    Text("macOS permission is separate from the radio being on. Rebuilt ad-hoc apps may need permission granted again.")
-                        .font(.caption).foregroundStyle(.secondary)
                 } else if model.bluetoothRadioOn == false {
                     Button("Turn Bluetooth on", action: model.onBluetoothPowerOn).disabled(model.bluetoothManualBusy)
                 }
@@ -424,7 +395,6 @@ struct DashboardView: View {
                     Button("Take over existing service…") { showLegacyWarning = true }.disabled(model.bluetoothBusy)
                 }
             }
-            heading("Devices to reconnect", detail: "The blue switch means auto-reconnect—not connected right now. Connect / Disconnect is a separate, one-time action.")
             card {
                 HStack {
                     Text("Paired device").font(.caption).foregroundStyle(.secondary)
@@ -491,13 +461,14 @@ struct DashboardView: View {
 
     private var spaces: some View {
         VStack(alignment: .leading, spacing: 14) {
-            heading("Desktop Spaces", detail: "Speed up horizontal trackpad swipes between desktops. Opening Mission Control and keyboard shortcuts are separate actions.")
             card {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Fast trackpad switching").font(.headline)
-                        Text(!model.spacesAvailable ? "Waiting for watchdog or display changes" : model.spacesPermission ? "Accessibility permission granted" : "Accessibility permission required")
-                            .font(.caption).foregroundStyle(.secondary)
+                        Text("Fast trackpad switching").font(.headline).help("Horizontal swipes between desktops")
+                        if !model.spacesAvailable || !model.spacesPermission {
+                            Text(!model.spacesAvailable ? "Waiting for watchdog or display changes" : "Accessibility permission required")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                     Spacer()
                     BlueSwitch(label: "Enable fast horizontal trackpad Space switching", isOn: Binding(
@@ -513,13 +484,11 @@ struct DashboardView: View {
                             NSWorkspace.shared.open(url)
                         }
                     }
-                    Text("Grant permission to Fix macOS, then turn this switch on. Monitors and Bluetooth do not require it.")
-                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
             card {
-                Text("Mission Control overview").font(.headline)
-                Text("Opening the overview with your keyboard shortcut is not accelerated by strafe. For less overview motion, use macOS Accessibility → Display → Reduce motion. That changes motion throughout macOS, not only this app.")
+                Text("Mission Control").font(.headline)
+                Text("Uses macOS Reduce motion, not trackpad switching.")
                     .font(.caption).foregroundStyle(.secondary)
                 Button("Open macOS motion settings") {
                     if let url = URL(string: "x-apple.systempreferences:com.apple.preference.universalaccess?Seeing_Display") {
