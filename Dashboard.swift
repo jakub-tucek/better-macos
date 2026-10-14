@@ -6,6 +6,7 @@ enum DashboardTab: String, CaseIterable {
     case monitors = "Monitors"
     case bluetooth = "Bluetooth"
     case spaces = "Animations"
+    case menuBar = "Menu bar"
 }
 
 /// The same state drives the persistent popover and its controls. Refreshes
@@ -53,6 +54,14 @@ final class DashboardModel: ObservableObject {
     @Published var updateStatus = "Not checked yet"
     @Published var updateChecking = false
     @Published var updateAvailable = false
+    @Published var compactMenuBar = false
+    @Published var menuBarHiding = false
+    @Published var menuBarHidden = false
+    @Published var menuBarRecoveryRequired = false
+    var onCompactMenuBarChanged: (Bool) -> Void = { _ in }
+    var onMenuBarHidingChanged: (Bool) -> Void = { _ in }
+    var onToggleMenuBar: () -> Void = {}
+    var onRestoreMenuBarSpacing: () -> Void = {}
     @Published var errorMessage: String?
 
     var onMonitorChanged: (String, Bool) -> Void = { _, _ in }
@@ -221,6 +230,9 @@ struct DashboardView: View {
                         Button("Restore original animation settings", action: model.onRestoreAnimations)
                             .disabled(model.animationsBusy)
                     }
+                    if model.menuBarRecoveryRequired {
+                        Button("Restore original menu-bar spacing", action: model.onRestoreMenuBarSpacing)
+                    }
                     switch model.tab {
                     case .modules: modules
                     case .monitors:
@@ -232,6 +244,9 @@ struct DashboardView: View {
                     case .spaces:
                         if model.enabledModules.contains(.spaces) { spaces }
                         else { disabledModule("Space animations") }
+                    case .menuBar:
+                        if model.enabledModules.contains(.menuBar) { menuBar }
+                        else { disabledModule("Menu bar") }
                     }
                 }.padding(16)
             }
@@ -267,6 +282,34 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 12, content: content)
             .padding(12).frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var menuBar: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            card {
+                HStack {
+                    Text("Compact spacing")
+                    Spacer()
+                    BlueSwitch(label: "Compact menu-bar spacing", isOn: Binding(get: { model.compactMenuBar }, set: model.onCompactMenuBarChanged))
+                }
+                Text("Experimental. Restart affected apps or log out to apply. Turning off restores your original spacing.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            card {
+                HStack {
+                    Text("Hide extra icons")
+                    Spacer()
+                    BlueSwitch(label: "Hide extra menu-bar icons", isOn: Binding(get: { model.menuBarHiding }, set: model.onMenuBarHidingChanged))
+                }
+                Text("Hold ⌘ and drag the divider left of the chevron. Move less-used icons left of the divider; keep Fix macOS and essential icons to its right.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if model.menuBarHiding {
+                    Button(model.menuBarHidden ? "Show extra icons" : "Hide extra icons", action: model.onToggleMenuBar)
+                }
+                Text("Click the chevron to reveal icons. Quitting reveals them too. Icons beyond the notch may still need more space to appear.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
     }
 
     private var monitors: some View {

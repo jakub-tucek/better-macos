@@ -299,7 +299,7 @@ let safeSpaces = SpacesModule()
 let moduleSettingsDomain = "fix-macos.modules-test.\(UUID().uuidString)"
 let modulePreferences = UserDefaults(suiteName: moduleSettingsDomain)!
 let moduleSettings = ModuleSettings(defaults: modulePreferences)
-expect(moduleSettings.enabled == Set(AppModule.allCases), "Existing installations retain all four features by default")
+expect(moduleSettings.enabled == Set(AppModule.allCases), "Modules are available by default")
 modulePreferences.set(["remembered-device"], forKey: "bluetooth.autoAddresses")
 moduleSettings.set(.bluetooth, enabled: false)
 expect(!ModuleSettings(defaults: modulePreferences).enabled.contains(.bluetooth), "Disabled modules stay off across host recreation")
@@ -839,5 +839,39 @@ expect(updater.status.contains("not published") && !updater.canInstall, "Unpubli
 updater.stop()
 updateSession.invalidateAndCancel()
 updateDefaults.removePersistentDomain(forName: updateDomain)
+
+let spacingDomain = "fix-macos.spacing-test.\(UUID().uuidString)"
+let spacingDefaults = UserDefaults(suiteName: spacingDomain)!
+var spacingValues: [String: Any] = ["NSStatusItemSpacing": 12]
+var failSpacingWrites = false
+let spacing = MenuBarSpacing(defaults: spacingDefaults, read: { spacingValues[$0] }, write: { key, value in
+    if failSpacingWrites { throw ToggleError(message: "Injected preference failure") }
+    spacingValues[key] = value
+})
+try spacing.setEnabled(true)
+expect(spacing.enabled && spacingValues["NSStatusItemSpacing"] as? Int == 4, "Compact spacing applies to an isolated preference backend")
+try spacing.restore(preserveChoice: true)
+expect(spacing.enabled && spacing.needsApply && spacingValues["NSStatusItemSpacing"] as? Int == 12,
+       "Module suspension restores spacing while preserving the user's compact choice")
+try spacing.setEnabled(true)
+try spacing.setEnabled(true)
+try spacing.setEnabled(false)
+expect(spacingValues["NSStatusItemSpacing"] as? Int == 12 && spacingValues["NSStatusItemSelectionPadding"] == nil,
+       "Repeated spacing enable retains originals and restores absent keys")
+failSpacingWrites = true
+do { try spacing.setEnabled(true); expect(false, "Spacing write should fail") }
+catch { expect(spacing.recoveryRequired, "Failed spacing rollback retains durable recovery metadata") }
+failSpacingWrites = false
+let restartedSpacing = MenuBarSpacing(defaults: spacingDefaults, read: { spacingValues[$0] }, write: { spacingValues[$0] = $1 })
+try restartedSpacing.restore()
+expect(!restartedSpacing.recoveryRequired && !restartedSpacing.enabled && spacingValues["NSStatusItemSpacing"] as? Int == 12,
+       "New spacing owner recovers failed writes using the durable snapshot")
+try spacing.setEnabled(true)
+failSpacingWrites = true
+do { try spacing.setEnabled(false); expect(false, "Spacing restore should fail") }
+catch { expect(spacing.enabled && spacing.recoveryRequired, "Failed spacing disable stays enabled with recovery available") }
+failSpacingWrites = false
+try spacing.restore()
+spacingDefaults.removePersistentDomain(forName: spacingDomain)
 
 print("\(checks) isolated checks passed; no Bluetooth, display, or real Space changes.")

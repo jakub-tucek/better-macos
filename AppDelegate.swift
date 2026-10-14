@@ -15,6 +15,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         try screenEdges?.start(layout: layout)
     }, stopCursor: { [weak self] in self?.screenEdges?.stop() })
     private let animations = AnimationPreferences()
+    private let menuBarSpacing = MenuBarSpacing()
+    private var menuBar: MenuBarModule?
     private let sourceUpdater = SourceUpdater()
     private let animationQueue = DispatchQueue(label: "fix-mac-os.animation-preferences")
     private let modules = ModuleSettings()
@@ -52,6 +54,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guiTestOriginalOutput = CommandLine.arguments[index + 1]
         }
         configureActions()
+        if menuBarSpacing.recoveryRequired {
+            do { try menuBarSpacing.restore() } catch { showError(error) }
+        } else if !modules.enabled.contains(.menuBar) {
+            do { try menuBarSpacing.restore(preserveChoice: true) } catch { showError(error) }
+        }
         sourceUpdater.onChange = { [weak self] in
             guard let self else { return }
             model.updateStatus = sourceUpdater.status
@@ -102,11 +109,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model.tab = CommandLine.arguments.contains("--show-monitors") ? .monitors : .bluetooth
             if CommandLine.arguments.contains("--show-modules") { model.tab = .modules }
             if CommandLine.arguments.contains("--show-spaces") { model.tab = .spaces }
+            if CommandLine.arguments.contains("--show-menu-bar") { model.tab = .menuBar }
             DispatchQueue.main.async { [weak self] in self?.showDashboard() }
         }
     }
 
     private func configureActions() {
+        model.onCompactMenuBarChanged = { [weak self] enabled in
+            guard let self else { return }
+            do { try menuBarSpacing.setEnabled(enabled) } catch { showError(error) }
+            refreshMenuBar()
+        }
+        model.onRestoreMenuBarSpacing = { [weak self] in
+            guard let self else { return }
+            do { try menuBarSpacing.restore() } catch { showError(error) }
+            refreshMenuBar()
+        }
+        model.onMenuBarHidingChanged = { [weak self] in self?.menuBar?.setEnabled($0) }
+        model.onToggleMenuBar = { [weak self] in self?.menuBar?.toggle() }
         model.onModuleChanged = { [weak self] module, enabled in self?.setModule(module, enabled: enabled) }
         model.onMonitorChanged = { [weak self] uuid, enabled in self?.setMonitor(uuid, enabled: enabled) }
         model.onMonitorDisableModeChanged = { [weak self] confirm in
@@ -175,6 +195,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setModule(_ module: AppModule, enabled: Bool) {
         guard !model.stoppingModules.contains(module) else { return }
+        if module == .menuBar && !enabled {
+            do { try menuBarSpacing.restore(preserveChoice: true) }
+            catch { refreshMenuBar(); showError(error); return }
+        }
         if module == .spaces {
             guard !model.animationsBusy else { return }
             setAnimations(enabled && animations.enabled, preserveChoice: true) { [weak self] in
@@ -200,8 +224,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateModules()
     }
 
+    private func refreshMenuBar() {
+        model.compactMenuBar = menuBarSpacing.enabled
+        model.menuBarRecoveryRequired = menuBarSpacing.recoveryRequired
+        model.menuBarHiding = menuBar?.enabled ?? false
+        model.menuBarHidden = menuBar?.hidden ?? false
+        publishModuleStatus()
+    }
+
     private func updateModules() {
         model.enabledModules = modules.enabled
+        if modules.enabled.contains(.menuBar) {
+            if menuBar == nil {
+                let module = MenuBarModule()
+                module.onChange = { [weak self] in self?.refreshMenuBar() }
+                module.onError = { [weak self] error in
+                    self?.showError(error)
+                    self?.model.tab = .menuBar
+                    self?.showDashboard()
+                }
+                menuBar = module
+                module.start()
+                if menuBarSpacing.needsApply && !menuBarSpacing.recoveryRequired {
+                    do { try menuBarSpacing.setEnabled(true) } catch { showError(error) }
+                }
+            }
+        } else {
+            menuBar?.stop()
+            menuBar = nil
+        }
+        refreshMenuBar()
         if modules.enabled.contains(.bluetooth) {
             if bluetooth == nil {
                 let module = BluetoothModule()
@@ -474,6 +526,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "enabled": modules.enabled.map(\.rawValue).sorted(),
             "stopping": model.stoppingModules.map(\.rawValue).sorted(),
             "bluetoothLoaded": bluetooth != nil, "spacesLoaded": spaces != nil,
+            "menuBarLoaded": menuBar != nil, "menuBarHidden": menuBar?.hidden == true,
+            "compactMenuBar": menuBarSpacing.enabled,
             "animationsEnabled": animations.enabled, "animationsBusy": model.animationsBusy,
             "screenEdgesActive": screenEdges?.isRunning == true,
             "displayDiscoveryLoaded": controller != nil, "screenObserverInstalled": screenObserver != nil,
@@ -648,6 +702,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        menuBar?.stop()
         sourceUpdater.stop()
         spaces?.onChange = nil
         screenEdges?.stop()

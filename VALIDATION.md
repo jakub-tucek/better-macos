@@ -86,3 +86,19 @@ a fresh module instance while the preset is Off. Startup attempts pending recove
 even when the parent module is disabled, and the UI provides a retry action.
 Bluetooth takeover tests cover shutdown during both success and failure, ensuring
 the stop completion runs once and automation remains disabled.
+# Menu-bar controls
+
+The menu-bar module uses AppKit status items for a movable, expandable divider.
+It does not enumerate, capture, or reposition other applications' icons. Hiding
+requires the chevron to be right of the divider; invalid placement is rejected.
+Hidden state is session-only, and removing the module's items reveals the icons.
+Very crowded/notched menu bars may not have room to reveal every icon.
+An isolated live AppKit probe on this Mac confirmed divider expansion, a stationary
+chevron on the three external menu bars, reveal, and removal. User-arranged icon
+sets and notched-screen overflow still need hands-on validation.
+
+Compact spacing writes the undocumented global `NSStatusItemSpacing` and
+`NSStatusItemSelectionPadding` preferences. Their effect on Tahoe is not visually
+verified; affected processes may cache them until relaunch or logout. No process
+is killed to apply spacing. Isolated tests cover restoring original values and
+absent keys, repeated enable, failed rollback, and recovery by a new owner.
