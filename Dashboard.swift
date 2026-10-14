@@ -5,6 +5,7 @@ enum DashboardTab: String, CaseIterable {
     case modules = "Modules"
     case monitors = "Monitors"
     case bluetooth = "Bluetooth"
+    case audio = "Audio"
     case spaces = "Animations"
     case menuBar = "Menu bar"
     case keyboard = "Keyboard"
@@ -16,6 +17,18 @@ enum DashboardTab: String, CaseIterable {
 /// update values without destroying the UI or closing its containing popover.
 final class DashboardModel: ObservableObject {
     @Published var windowPositions: WindowPositions?
+    @Published var audioDevices: [AudioDevice] = []
+    @Published var audioRoutes: [AudioDirection: String] = [:]
+    @Published var audioPreferences: [AudioDirection: [String]] = [:]
+    @Published var audioFallbacks: [AudioDirection: String] = [:]
+    @Published var audioOverrides: [AudioDirection: Bool] = [:]
+    @Published var audioAutomatic = false
+    @Published var audioStatus = "Loading audio devices…"
+    var onAudioSelect: (String, AudioDirection) -> Void = { _, _ in }
+    var onAudioAutomatic: (Bool) -> Void = { _ in }
+    var onAudioResume: () -> Void = {}
+    var onAudioPreferences: ([String], AudioDirection) -> Void = { _, _ in }
+    var onAudioFallback: (String, AudioDirection) -> Void = { _, _ in }
     @Published var enabledModules = Set(AppModule.allCases)
     @Published var stoppingModules = Set<AppModule>()
     @Published var tab: DashboardTab = .monitors
@@ -269,6 +282,9 @@ struct DashboardView: View {
                     case .monitors:
                         if !model.enabledModules.isDisjoint(with: [.monitors, .arrangement]) || model.pendingArrangement || model.disabledMonitorCount > 0 { monitors }
                         else { disabledModule("Display modules") }
+                    case .audio:
+                        if model.enabledModules.contains(.audio) { audioControls }
+                        else { Text("Enable Audio in Settings and modules.") }
                     case .bluetooth:
                         if model.enabledModules.contains(.bluetooth) { bluetooth }
                         else { disabledModule("Bluetooth reconnect") }
@@ -319,6 +335,60 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 12, content: content)
             .padding(12).frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var audioControls: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Automatic audio routing")
+                Spacer()
+                BlueSwitch(label: "Automatic audio routing", isOn: Binding(get: { model.audioAutomatic }, set: model.onAudioAutomatic))
+            }
+            Text(model.audioStatus).font(.caption).foregroundStyle(.secondary)
+            Text("Preferences apply on device changes or Resume. Connected Bluetooth audio is protected.").font(.caption)
+            ForEach(AudioDirection.allCases, id: \.self) { direction in
+                audioDirectionControls(direction)
+            }
+            Button("Resume preferred routes", action: model.onAudioResume)
+        }
+    }
+
+    private func audioDirectionControls(_ direction: AudioDirection) -> some View {
+        let devices = model.audioDevices.filter { $0.directions.contains(direction) }
+        let preferred = model.audioPreferences[direction] ?? []
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(direction == .input ? "Microphone" : "Output").font(.headline)
+            Picker("Current", selection: Binding(get: { model.audioRoutes[direction] ?? "" }, set: { model.onAudioSelect($0, direction) })) {
+                Text("Unavailable").tag("")
+                ForEach(devices) { device in Text("\(device.name) · \(device.uid)").tag(device.uid) }
+            }
+            if model.audioOverrides[direction] == true { Text("Manual override until this device list changes or Resume.").font(.caption) }
+            Text("Preference order (highest first)").font(.caption)
+            ForEach(Array(preferred.enumerated()), id: \.element) { index, uid in
+                HStack {
+                    Text("\(index + 1). \(devices.first { $0.uid == uid }?.name ?? "Unavailable") · \(uid)").lineLimit(2)
+                    Spacer()
+                    Button("↑") {
+                        var values = preferred; values.swapAt(index, index - 1)
+                        model.onAudioPreferences(values, direction)
+                    }.disabled(index == 0).help("Move preference up")
+                    Button("Remove") { model.onAudioPreferences(preferred.filter { $0 != uid }, direction) }
+                }.font(.caption)
+            }
+            Menu("Add preferred device") {
+                ForEach(devices.filter { !preferred.contains($0.uid) }) { device in
+                    Button("\(device.name) · \(device.uid)") { model.onAudioPreferences(preferred + [device.uid], direction) }
+                }
+            }
+            Picker("Fallback", selection: Binding(get: { model.audioFallbacks[direction] ?? "" }, set: { model.onAudioFallback($0, direction) })) {
+                Text("Keep current route").tag("")
+                ForEach(devices) { device in Text("\(device.name) · \(device.uid)").tag(device.uid) }
+                if let uid = model.audioFallbacks[direction], !uid.isEmpty, !devices.contains(where: { $0.uid == uid }) {
+                    Text("Unavailable · \(uid)").tag(uid)
+                }
+            }
+            Divider()
+        }
     }
 
     private var keepAwake: some View {

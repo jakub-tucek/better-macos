@@ -338,8 +338,11 @@ final class FakeRunner: CommandRunning {
 }
 
 func backend(_ fake: FakeRunner, audioTool: String? = "audio") -> BluetoothBackend {
-    BluetoothBackend(runner: fake, blueutil: "blueutil", audioTool: audioTool, waitForConnection: {})
+    BluetoothBackend(runner: fake, blueutil: "blueutil", audioTool: audioTool, waitForConnection: {},
+                     routeOutput: { fake.commands.append(["routing-owner", "-s", $0]) })
 }
+
+runAudioTests()
 
 let config = BluetoothConfiguration(enabled: true, autoAddresses: [speaker.address], protectOtherAudio: true, switchAudioOutput: true)
 expect(BluetoothPolicy.shouldPause(target: speaker, devices: [speaker, headphones], audioOutputs: [headphones.name]), "Connected headphones pause auto-connect")

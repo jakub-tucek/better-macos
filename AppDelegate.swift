@@ -6,6 +6,7 @@ import os
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: DisplayController?
     private var bluetooth: BluetoothModule?
+    private var audio: AudioModule?
     private var spaces: SpacesModule?
     private var screenEdges: ScreenEdgeController?
     private var layoutFresh = false
@@ -121,6 +122,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func configureActions() {
+        model.onAudioSelect = { [weak self] uid, direction in self?.audio?.select(uid, direction: direction) }
+        model.onAudioAutomatic = { [weak self] in self?.audio?.automatic = $0 }
+        model.onAudioResume = { [weak self] in self?.audio?.resume() }
+        model.onAudioPreferences = { [weak self] values, direction in self?.audio?.setPreferences(values, direction: direction) }
+        model.onAudioFallback = { [weak self] uid, direction in self?.audio?.setFallback(uid, direction: direction) }
         model.onKeepAwakeStart = { [weak self] in self?.performKeepAwake { try $0.start() } }
         model.onKeepAwakeStop = { [weak self] in self?.performKeepAwake { try $0.stop() } }
         model.onKeepAwakeExtend = { [weak self] in self?.performKeepAwake { try $0.extend() } }
@@ -313,6 +319,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             windowPositions = nil
         }
         model.windowPositions = windowPositions
+        if !modules.enabled.isDisjoint(with: [.audio, .bluetooth]) {
+            if audio == nil {
+                let module = AudioModule()
+                audio = module
+                module.onChange = { [weak self] in self?.refreshAudio() }
+                module.bluetoothProtection = { [weak self] in
+                    guard let bluetooth = self?.bluetooth else { return false }
+                    return bluetooth.permissionRequired || bluetooth.lastError != nil || bluetooth.legacyServicePresent ||
+                        bluetooth.devices.contains { $0.connected && bluetooth.protectedAudioAddresses.contains($0.address) }
+                }
+                module.suspendRouting = guiTestTarget != nil
+                module.automaticAllowed = modules.enabled.contains(.audio)
+                module.start()
+            }
+            audio?.automaticAllowed = modules.enabled.contains(.audio)
+        } else { audio?.stop(); audio = nil }
+        refreshAudio()
         if modules.enabled.contains(.keepAwake) {
             if keepAwake == nil {
                 let module = KeepAwakeModule()
@@ -368,6 +391,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if bluetooth == nil {
                 let module = BluetoothModule()
                 bluetooth = module
+                module.onAudioOutputRequested = { [weak self] name in self?.audio?.bluetoothConnected(name: name) }
                 module.suspendAutomaticReconnection = guiTestTarget != nil
                 module.onChange = { [weak self] in self?.refreshBluetooth() }
                 module.onError = { [weak self] in self?.showError($0) }
@@ -522,6 +546,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.legacyServicePresent = bluetooth.legacyServicePresent
         if let data = bluetooth.diagnostics() { UserDefaults.standard.set(data, forKey: "bluetooth.lastSnapshot") }
         checkGUIBluetoothTest()
+    }
+
+    private func refreshAudio() {
+        model.audioDevices = audio?.devices ?? []
+        model.audioRoutes = audio?.routes ?? [:]
+        model.audioAutomatic = audio?.automatic ?? false
+        model.audioStatus = audio?.status ?? "Audio module is off"
+        for direction in AudioDirection.allCases {
+            model.audioPreferences[direction] = audio?.preferences(direction) ?? []
+            model.audioFallbacks[direction] = audio?.fallback(direction) ?? ""
+            model.audioOverrides[direction] = audio?.isOverridden(direction) ?? false
+        }
     }
 
     private func checkGUIBluetoothTest() {
@@ -827,6 +863,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         windowPositions?.stop()
         try? keepAwake?.deactivate()
+        audio?.stop()
         quitGuard?.stop()
         menuBar?.stop()
         sourceUpdater.stop()

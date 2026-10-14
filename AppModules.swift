@@ -1,13 +1,14 @@
 import Foundation
 
 enum AppModule: String, CaseIterable, Identifiable {
-    case monitors, arrangement, bluetooth, spaces, menuBar, quitGuard, keepAwake, windows
+    case monitors, arrangement, bluetooth, audio, spaces, menuBar, quitGuard, keepAwake, windows
     var id: String { rawValue }
     var title: String {
         switch self {
         case .monitors: return "Monitor switching"
         case .arrangement: return "Display arrangement"
         case .bluetooth: return "Bluetooth reconnect"
+        case .audio: return "Audio"
         case .spaces: return "Animations"
         case .menuBar: return "Menu bar"
         case .quitGuard: return "Hold to quit"
@@ -20,6 +21,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .monitors: return "Turn monitors on/off, with recovery and confirmation."
         case .arrangement: return "Drag-to-arrange editor and automatic gap closing."
         case .bluetooth: return "Paired devices, manual connections, and reconnect monitoring."
+        case .audio: return "Independent microphone and output selection and preferred routes."
         case .spaces: return "Limit Dock, window, and scrolling animations, with fast desktop switching."
         case .menuBar: return "Compact spacing and hide less-used menu-bar icons."
         case .quitGuard: return "Hold ⌘Q before quitting, with the app name and a countdown."

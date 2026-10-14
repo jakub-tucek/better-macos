@@ -7,6 +7,7 @@ A macOS menu-bar app for managing monitors, Bluetooth connections, and desktop s
 - **Monitor switching:** turn individual screens on or off. Choose **Dangerously** (default, immediate) or **Safely** (20-second undo); both keep at least one usable display active.
 - **Display arrangement:** drag screens into place, preview changes, and close gaps when a monitor goes off. **Match screen edges** maps cursor crossings between differently sized screens, using the full shared edge.
 - **Bluetooth reconnect:** choose devices to reconnect, connect or disconnect on demand, and protect other audio connections.
+- **Audio:** select microphone and output independently by stable device UID. Keep ordered preferences and an optional fallback for each. Automatic routing starts off; when enabled, device-list changes (polled every two seconds) apply preferences. Manual selections, including external changes, pause that direction until its device list changes or **Resume preferred routes**. Connected Bluetooth output and explicitly protected headphones take precedence over automatic preferences. Bluetooth forwards post-connect requests to the same routing owner.
 - **Animations:** limit Dock, Finder, window, and scrolling effects; replace Genie minimization with Scale and try experimental tiling-animation suppression. Fast desktop switching lives under Advanced. Turning the preset off restores your previous settings. Effects vary by app; Mission Control and Control Center may still animate.
 - **Menu bar:** experimental compact spacing and a movable divider for hiding extra icons. Both controls start off. ⌘-drag the divider left of the chevron, and less-used icons left of the divider. Click the chevron to hide/reveal them; quitting reveals them. Spacing changes may require restarting apps or logging out; turning spacing or the module off restores original values. This is not a separate overflow panel for icons behind the notch.
 - **Hold to quit:** under **Keyboard**, hold ⌘Q for 3 seconds by default, adjustable from 1 to 99 seconds. A popup names the app while Pac-Man eats dots across the countdown. Releasing early, switching apps, or clicking cancels. Uses normal quit requests, preserving save prompts. Requires Accessibility access; starts off. Menu commands and other quit shortcuts are unaffected.
@@ -78,19 +79,21 @@ UI, saved preferences where needed, and verification. The items below are planne
 Build on the existing Bluetooth connection protection and post-connect output
 switching. Keep Bluetooth reconnect rules separate from audio-routing preferences.
 
-- [ ] **2A · Device selection.** Add an **Audio** module with current input/output,
+- [x] **2A · Device selection.** Add an **Audio** module with current input/output,
   manual selection, and separate preferred-device lists for microphone and output.
   Identify audio devices by stable UID rather than display name. Include built-in,
   Bluetooth, USB, and monitor audio; share discovery and routing with Bluetooth.
   **Done when:** test duplicate names, missing devices, and reconnected devices;
   manual switching changes only the selected input or output.
-- [ ] **2B · Routing rules.** On device arrival/removal, choose the highest available
+- [x] **2B · Routing rules.** On device arrival/removal, choose the highest available
   preference. Offer an explicit fallback and preserve the user's current route when
   none matches. Let users keep the built-in microphone while using headphone output.
   Retain existing protections for connected headphones and respect manual overrides
   until the next relevant device change or explicit Resume.
   **Done when:** test headset reconnect, USB unplug, monitor wake, and manual override;
   Bluetooth and Audio must not compete to change the output.
+
+  Implemented with injected-backend coverage; physical route changes and headset/USB/monitor hardware acceptance remain unverified (see VALIDATION.md).
 
 ### 3. Restore window positions
 

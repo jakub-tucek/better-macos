@@ -120,3 +120,9 @@ dot consumption, bounds, and the three-second default.
 Actual keyboard-layout behavior, secure-input contexts, full-screen HUD placement,
 and application-specific quit/save prompts require hands-on validation. When macOS
 does not deliver events (for example, secure input), interception is not guaranteed.
+# Audio 2A / 2B
+
+- `bash test.sh` passes: 218 isolated checks plus installer fixtures; build compiles host and SwiftUI with warnings as errors. No app launch or live route writes were performed.
+- Injected Audio backend covers duplicate names/stable UIDs, independent routes, persisted ordered preferences/fallback, missing and returning USB/monitor devices, current-route preservation, manual/external override, input-only topology changes, Resume, connected Bluetooth protection, failed observation, ambiguous legacy names, and stop cleanup. Existing Bluetooth reconnect/protection/race checks pass through an injected routing callback.
+- CoreAudio discovery and route writes are compiled, not hardware-validated. Physical headset reconnect, USB unplug, monitor wake, and actual microphone/output selection need manual acceptance. Device changes are detected by a two-second poll; transient disconnect/reconnect between polls is not observable. UIDs are shown to distinguish duplicate names.
+- Automatic Audio behavior defaults off. The routing owner stays loaded for Bluetooth's existing post-connect behavior when only the Audio panel is disabled. Explicitly protected Bluetooth devices and an active Bluetooth output block automatic takeover; manual selection remains available. Third-party routing applications can still race an OS write.

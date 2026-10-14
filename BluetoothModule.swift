@@ -54,6 +54,8 @@ struct BluetoothBackend {
     let blueutil: String
     let audioTool: String?
     var waitForConnection: () -> Void = { Thread.sleep(forTimeInterval: 1) }
+    var audioOutputs: (() throws -> Set<String>)?
+    var routeOutput: ((String) -> Void)?
 
     func isPoweredOn() throws -> Bool {
         let value = try runner.run(blueutil, ["--power"]).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -73,6 +75,7 @@ struct BluetoothBackend {
     }
 
     private func outputs() throws -> Set<String>? {
+        if let audioOutputs { return try audioOutputs() }
         guard let audioTool else { return nil }
         return Set(try runner.run(audioTool, ["-a", "-t", "output"]).split(separator: "\n").map(String.init))
     }
@@ -120,13 +123,13 @@ struct BluetoothBackend {
             successes += 1
             progress?(.connected(target))
             guard shouldContinue() else { break }
-            guard configuration.switchAudioOutput, let audioTool,
+            guard configuration.switchAudioOutput,
                   let refreshed = current.first(where: { $0.address == address }) else { continue }
             let audioOutputs = try outputs()
             // Recheck AFTER connecting: headphones may have arrived meanwhile.
             guard audioOutputs?.contains(refreshed.name) == true,
                   !BluetoothPolicy.shouldPause(target: refreshed, devices: current, audioOutputs: audioOutputs, knownAudioAddresses: configuration.protectedAudioAddresses) else { continue }
-            _ = try runner.run(audioTool, ["-t", "output", "-s", refreshed.name])
+            routeOutput?(refreshed.name)
         }
         if successes == 0, let firstFailure, shouldContinue() { throw firstFailure }
         return current
@@ -159,6 +162,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     private(set) var status = "Loading paired devices…"
     var onChange: (() -> Void)?
     var onError: ((Error) -> Void)?
+    var onAudioOutputRequested: ((String) -> Void)?
 
     init(defaults: UserDefaults = .standard, backend: BluetoothBackend? = nil, importLegacyConfiguration: Bool = true,
          authorizationProvider: @escaping () -> CBManagerAuthorization = { CBCentralManager.authorization },
@@ -167,7 +171,8 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         self.authorizationProvider = authorizationProvider
         self.legacyServiceTakeover = legacyServiceTakeover
         self.backend = backend ?? CommandRunner.find("blueutil").map {
-            BluetoothBackend(runner: CommandRunner(), blueutil: $0, audioTool: CommandRunner.find("SwitchAudioSource"))
+            BluetoothBackend(runner: CommandRunner(), blueutil: $0, audioTool: nil,
+                             audioOutputs: { Set(try CoreAudioBackend().devices().filter { $0.directions.contains(.output) }.map(\.name)) })
         }
         super.init()
         defaults.register(defaults: ["bluetooth.protectAudio": true, "bluetooth.switchAudio": true])
@@ -285,7 +290,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
             onChange?()
             return
         }
-        guard let backend else {
+        guard var backend else {
             status = "Install blueutil to manage Bluetooth"
             onChange?()
             return
@@ -298,6 +303,12 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         activity = "Checking Bluetooth devices…"
         let cancellation = BluetoothCycleCancellation()
         cycleCancellation = cancellation
+        backend.routeOutput = { [weak self] name in
+            DispatchQueue.main.async {
+                guard !cancellation.isCanceled else { return }
+                self?.onAudioOutputRequested?(name)
+            }
+        }
         onChange?()
         queue.async { [weak self] in
             let result = Result {
