@@ -110,6 +110,9 @@ if let index = CommandLine.arguments.firstIndex(of: "--watchdog") {
 } else if CommandLine.arguments.contains("--snapshot") {
     do { print(String(decoding: try DisplayController().snapshot(), as: UTF8.self)) }
     catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
+} else if let index = CommandLine.arguments.firstIndex(of: "--preview-layout-without"), index + 1 < CommandLine.arguments.count {
+    do { print(String(decoding: try DisplayController().previewDisabling(name: CommandLine.arguments[index + 1]), as: UTF8.self)) }
+    catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
 } else if let index = CommandLine.arguments.firstIndex(of: "--set-display"), index + 2 < CommandLine.arguments.count {
     do {
         let controller = DisplayController()

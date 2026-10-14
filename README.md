@@ -61,6 +61,14 @@ WindowServer. The live incident's root cause has not yet been confirmed.
   disabled. After relaunching, use explicit recovery for any recorded disabled screens.
 - Original desktop positions and main-display status are restored when the whole
   original setup is back. A changed plugged-in setup is not rearranged.
+- **Smart arrangement:** the full layout, screen sizes, and main-screen identity
+  are saved before the first disable. Remaining edge-connected groups stay together
+  and gaps close without reversing left/right or above/below. For `A–B–C` with the
+  Mac below A, disabling B produces `A–C`, still with the Mac below A. Partial
+  re-enabling is also planned from the original layout, not macOS's temporary one.
+  Ambiguous diagonal layouts, new/unplugged screens, or changed resolutions skip
+  automatic compaction. The original full arrangement is restored when possible.
+  Disable and compact-position changes commit together in a session-only transaction.
 - Resolution, brightness and color profiles are not changed. Disable mirroring
   before using monitor toggles.
 
@@ -167,6 +175,7 @@ under [`Vendor/strafe`](Vendor/strafe).
 ```sh
 bash test.sh                         # isolated tests; no hardware changes
 APP="build/Fix macOS.app/Contents/MacOS/fix-mac-os"
+"$APP" --preview-layout-without "Dell S2716DG" # proposed positions; no screen changes
 "$APP" --status                      # monitors
 "$APP" --bluetooth-status            # paired devices; observation only
 "$APP" --bluetooth-app-status        # actual running GUI snapshot and errors

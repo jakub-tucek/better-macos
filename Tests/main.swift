@@ -247,6 +247,54 @@ if CommandLine.arguments.contains("--render-ui") {
     expect(bluePixels(isOn: false) == 0, "Disabled switch renders gray, not blue")
 }
 
+// The real user's geometry: middle Dell is main; laptop is below the left screen.
+let topologyBaseline = [
+    DisplayPosition(uuid: "A", x: -2560, y: 0, width: 2560, height: 1440),
+    DisplayPosition(uuid: "B", x: 0, y: 0, width: 2560, height: 1440),
+    DisplayPosition(uuid: "C", x: 2560, y: 0, width: 1920, height: 1200),
+    DisplayPosition(uuid: "Mac", x: -2560, y: 1440, width: 1512, height: 982)
+]
+let withoutMiddle = DisplayTopology.plan(topologyBaseline, active: ["A", "C", "Mac"], anchor: "A")
+expect(withoutMiddle == [
+    DisplayPosition(uuid: "A", x: 0, y: 0, width: 2560, height: 1440),
+    DisplayPosition(uuid: "C", x: 2560, y: 0, width: 1920, height: 1200),
+    DisplayPosition(uuid: "Mac", x: 0, y: 1440, width: 1512, height: 982)
+], "Removing middle/main B joins A–C and keeps the Mac directly below A")
+let alternateAnchor = DisplayTopology.plan(topologyBaseline, active: ["A", "C", "Mac"], anchor: "C")
+expect(alternateAnchor?.first(where: { $0.uuid == "A" })?.x == -2560 &&
+       alternateAnchor?.first(where: { $0.uuid == "Mac" })?.x == -2560,
+       "A different main display changes the origin without changing physical topology")
+let restored = DisplayTopology.plan(topologyBaseline, active: ["A", "B", "C", "Mac"], anchor: "B")
+expect(restored == topologyBaseline, "Restoring B restores exact original positions and main-screen origin")
+let partial = DisplayTopology.plan(topologyBaseline, active: ["A", "B", "Mac"], anchor: "B")
+expect(partial == topologyBaseline.filter { $0.uuid != "C" }, "Restoring B while C stays off recovers the original A–B/Mac topology")
+let twoDisabled = DisplayTopology.plan(topologyBaseline, active: ["A", "Mac"], anchor: "A")
+expect(twoDisabled?.first(where: { $0.uuid == "Mac" })?.y == 1440,
+       "Sequential disabling retains the original laptop attachment")
+let vertical = [DisplayPosition(uuid: "A", x: 0, y: 0, width: 1000, height: 800),
+                DisplayPosition(uuid: "B", x: 0, y: 800, width: 1000, height: 800),
+                DisplayPosition(uuid: "C", x: 100, y: 1600, width: 900, height: 700)]
+let compactVertical = DisplayTopology.plan(vertical, active: ["A", "C"], anchor: "A")
+expect(compactVertical?.last?.x == 100 && compactVertical?.last?.y == 800,
+       "Vertical middle-screen removal preserves horizontal offset and closes the gap")
+let offsetRow = [DisplayPosition(uuid: "A", x: 0, y: 0, width: 1000, height: 800),
+                 DisplayPosition(uuid: "B", x: 1000, y: 100, width: 800, height: 700),
+                 DisplayPosition(uuid: "C", x: 1800, y: 200, width: 1200, height: 600)]
+expect(DisplayTopology.plan(offsetRow, active: ["A", "C"], anchor: "A")?.last?.y == 200,
+       "Uneven top edges retain their vertical alignment when a row is compacted")
+expect(DisplayTopology.plan(topologyBaseline, active: ["A", "Unknown"], anchor: "A") == nil,
+       "An unfamiliar screen cannot be arranged using the saved topology")
+expect(DisplayTopology.plan([DisplayPosition(uuid: "legacy", x: 0, y: 0)], active: ["legacy"], anchor: "legacy") == nil,
+       "Legacy layouts without dimensions do not guess monitor sizes")
+do {
+    let persisted = try JSONEncoder().encode(topologyBaseline)
+    let decoded = try JSONDecoder().decode([DisplayPosition].self, from: persisted)
+    expect(DisplayTopology.plan(decoded, active: ["A", "C", "Mac"], anchor: "A") == withoutMiddle,
+           "Fresh-process layout planning survives a saved-baseline round trip")
+    let legacy = try JSONDecoder().decode([DisplayPosition].self, from: Data("[{\"uuid\":\"old\",\"x\":0,\"y\":0}]".utf8))
+    expect(legacy[0].width == nil, "Previously saved recovery positions remain decodable")
+} catch { expect(false, "Saved topology decode failed: \(error)") }
+
 let safeSpaces = SpacesModule()
 expect(!safeSpaces.isAvailable && !safeSpaces.isEnabled, "Gesture interception starts unavailable until the host authorizes it")
 do { try safeSpaces.setEnabled(true); expect(false, "Space interception must remain blocked") }

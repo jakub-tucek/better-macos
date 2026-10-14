@@ -181,6 +181,8 @@ struct DashboardView: View {
     private var monitors: some View {
         VStack(alignment: .leading, spacing: 14) {
             heading("Displays", detail: "Blue means enabled. Disabling a screen removes it from the desktop.")
+            Text("Smart arrangement closes gaps while keeping connected screens aligned. Turning screens back on restores their saved positions.")
+                .font(.caption).foregroundStyle(.secondary)
             card {
                 ForEach(model.monitors, id: \.uuid) { monitor in
                     HStack(spacing: 10) {

@@ -6,10 +6,12 @@ struct ToggleError: LocalizedError {
     var errorDescription: String? { message }
 }
 
-struct DisplayPosition: Codable {
+struct DisplayPosition: Codable, Equatable {
     let uuid: String
     let x: Int32
     let y: Int32
+    var width: Int32? = nil
+    var height: Int32? = nil
 }
 
 struct DisplayRecord: Codable {
@@ -216,34 +218,53 @@ final class DisplayController {
             if disabledUUIDs.isEmpty {
                 let positions = try active.map { display -> DisplayPosition in
                     guard let uuid = uuid(for: display) else { throw ToggleError(message: "Cannot identify active display") }
-                    let origin = CGDisplayBounds(display).origin
-                    return DisplayPosition(uuid: uuid, x: Int32(origin.x), y: Int32(origin.y))
+                    let bounds = CGDisplayBounds(display)
+                    return DisplayPosition(uuid: uuid, x: Int32(bounds.minX), y: Int32(bounds.minY),
+                                           width: Int32(bounds.width), height: Int32(bounds.height))
                 }
                 defaults.set(try JSONEncoder().encode(positions), forKey: "savedLayout")
+                defaults.set(uuid(for: CGMainDisplayID()), forKey: "savedMainUUID")
             }
             records[index].bootSession = bootSession
             records[index].lastID = id
             records[index].disabledByApp = true
             saveRecords() // A crash during the transaction must still be recoverable.
         }
+        // Plan before changing the hardware; disable + compact origins commit
+        // together so macOS cannot pick a different intermediate arrangement.
+        let arrangement = enabled ? nil : try plannedLayout(excluding: value)
         try transaction { config in
             let result = configureEnabled(config, id, enabled)
             guard result == 0 else { throw ToggleError(message: "Display toggle failed (\(result)).") }
+            if let arrangement {
+                for (display, position) in arrangement {
+                    try check(CGConfigureDisplayOrigin(config, display, position.x, position.y), "Arrange remaining monitors")
+                }
+            }
         }
     }
 
     func finishRestore(_ value: String) throws {
         guard isEnabled(value) else { throw ToggleError(message: "Monitor did not come back. Check its cable/power; logout resets session-only changes.") }
-        // Restore the baseline only once every originally connected screen is back.
+        // Recompute from the original baseline, including partial restoration.
         try restoreLayout()
         if let index = records.firstIndex(where: { $0.uuid == value }) { records[index].disabledByApp = false }
         saveRecords()
-        if disabledUUIDs.isEmpty { defaults.removeObject(forKey: "savedLayout") }
+        if disabledUUIDs.isEmpty {
+            defaults.removeObject(forKey: "savedLayout")
+            defaults.removeObject(forKey: "savedMainUUID")
+        }
     }
 
     private func restoreLayout() throws {
+        if let planned = try plannedLayout() {
+            try applyLayout(planned)
+            return
+        }
+        // Compatibility with layouts saved before dimensions were recorded.
         guard let data = defaults.data(forKey: "savedLayout") else { return }
         let positions = try JSONDecoder().decode([DisplayPosition].self, from: data)
+        guard positions.allSatisfy({ $0.width == nil && $0.height == nil }) else { return }
         let active = try activeIDs()
         let resolved = positions.compactMap { position -> (UInt32, DisplayPosition)? in
             guard let id = resolve(position.uuid), active.contains(id) else { return nil }
@@ -251,6 +272,10 @@ final class DisplayController {
         }
         // Do not rearrange a setup someone has changed by plugging/unplugging.
         guard Set(resolved.map { $0.0 }) == Set(active), resolved.count == positions.count else { return }
+        try applyLayout(resolved)
+    }
+
+    private func applyLayout(_ resolved: [(UInt32, DisplayPosition)]) throws {
         guard resolved.contains(where: { id, position in
             let origin = CGDisplayBounds(id).origin
             return Int32(origin.x) != position.x || Int32(origin.y) != position.y
@@ -262,10 +287,69 @@ final class DisplayController {
         }
     }
 
+    private func plannedLayout(excluding: String? = nil) throws -> [(UInt32, DisplayPosition)]? {
+        guard let data = defaults.data(forKey: "savedLayout") else { return nil }
+        let baseline = try JSONDecoder().decode([DisplayPosition].self, from: data)
+        let active = try activeIDs()
+        var ids: [String: UInt32] = [:]
+        for id in active {
+            guard let key = uuid(for: id) else { return nil }
+            ids[key] = id
+        }
+        let savedKeys = Set(baseline.map(\.uuid))
+        // Unplugging a screen, adding a new one, or changing resolution invalidates
+        // automatic compaction. Only intentionally app-disabled screens may be absent.
+        guard Set(ids.keys).isSubset(of: savedKeys),
+              savedKeys.subtracting(ids.keys).isSubset(of: Set(disabledUUIDs)) else { return nil }
+        for position in baseline {
+            guard let id = ids[position.uuid] else { continue }
+            let bounds = CGDisplayBounds(id)
+            guard position.width.map({ CGFloat($0) == bounds.width }) == true,
+                  position.height.map({ CGFloat($0) == bounds.height }) == true else { return nil }
+        }
+        if let excluding { ids.removeValue(forKey: excluding) }
+        if Set(ids.keys) == savedKeys {
+            return baseline.compactMap { position in ids[position.uuid].map { ($0, position) } }
+        }
+        let preferred = defaults.string(forKey: "savedMainUUID") ?? baseline.first(where: { $0.x == 0 && $0.y == 0 })?.uuid
+        let currentMain = uuid(for: CGMainDisplayID())
+        let anchor = [preferred, currentMain].compactMap { $0 }.first(where: { ids[$0] != nil }) ??
+            baseline.filter { ids[$0.uuid] != nil }.sorted { ($0.x, $0.y, $0.uuid) < ($1.x, $1.y, $1.uuid) }.first?.uuid
+        guard let anchor, let plan = DisplayTopology.plan(baseline, active: Set(ids.keys), anchor: anchor) else { return nil }
+        return plan.compactMap { position in ids[position.uuid].map { ($0, position) } }
+    }
+
     func status() -> String {
         monitors.map { monitor in
             "\(monitor.enabled ? "●" : "○") \(monitor.name)\(monitor.isMain ? " (main)" : "") — \(monitor.enabled ? "enabled" : "disabled/unavailable") [ID: \(monitor.id.map(String.init) ?? "unknown")]"
         }.joined(separator: "\n")
+    }
+
+    /// Read-only preview: no display transaction or saved-baseline changes.
+    func previewDisabling(name: String) throws -> Data {
+        guard disabledUUIDs.isEmpty else { throw ToggleError(message: "Restore disabled monitors before previewing a new baseline.") }
+        let matches = monitors.filter { $0.name.caseInsensitiveCompare(name) == .orderedSame && $0.enabled }
+        guard matches.count == 1 else { throw ToggleError(message: "Choose exactly one enabled monitor name.") }
+        let active = try activeIDs()
+        let baseline = try active.map { id -> DisplayPosition in
+            guard let key = uuid(for: id) else { throw ToggleError(message: "Cannot identify display") }
+            let bounds = CGDisplayBounds(id)
+            return DisplayPosition(uuid: key, x: Int32(bounds.minX), y: Int32(bounds.minY),
+                                   width: Int32(bounds.width), height: Int32(bounds.height))
+        }
+        let remaining = baseline.filter { $0.uuid != matches[0].uuid }
+        let currentMain = uuid(for: CGMainDisplayID())
+        let anchor = remaining.first(where: { $0.uuid == currentMain })?.uuid ??
+            remaining.sorted { ($0.x, $0.y, $0.uuid) < ($1.x, $1.y, $1.uuid) }.first?.uuid
+        guard let anchor, let plan = DisplayTopology.plan(baseline, active: Set(remaining.map(\.uuid)), anchor: anchor) else {
+            throw ToggleError(message: "This layout cannot be compacted unambiguously.")
+        }
+        let rows: [[String: Any]] = plan.map { position in
+            ["name": records.first(where: { $0.uuid == position.uuid })?.name ?? position.uuid,
+             "x": position.x, "y": position.y, "width": position.width ?? 0, "height": position.height ?? 0,
+             "main": position.uuid == anchor]
+        }
+        return try JSONSerialization.data(withJSONObject: rows, options: [.prettyPrinted, .sortedKeys])
     }
 
     func snapshot() throws -> Data {
