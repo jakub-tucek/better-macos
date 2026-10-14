@@ -87,6 +87,19 @@ installed signing identity:
 MAC_UTILS_SIGNING_IDENTITY="Your Apple Development signing identity" bash build.sh
 ```
 
+To retain that identity for subsequent builds in this clone:
+
+```sh
+git config --local macutils.signingIdentity "Your Apple Development signing identity"
+bash build.sh
+```
+
+This setting stays in local Git configuration. A configured signing failure stops
+the build rather than silently switching back to ad-hoc signing. When migrating
+from ad-hoc signing, remove the old **Mac Utils** entry from **Privacy & Security →
+Accessibility**, then add `build/Mac Utils.app` again and enable it. Merely toggling
+an old entry may retain its stale code requirement. Restart the app afterward.
+
 Signing keys remain in Keychain and are not exported or committed. Mac Utils
 does not edit the TCC database or grant itself permissions.
 
