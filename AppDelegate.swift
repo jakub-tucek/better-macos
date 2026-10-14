@@ -44,12 +44,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var guiTestFinished = false
     private var guiTestOriginalOutput: String?
     private let commandRunner: CommandRunning
+    private var terminationPending = false
+    private let terminationReply: (NSApplication, Bool) -> Void
 
-    init(commandRunner: CommandRunning = CommandRunner(), spaces: SpacesModule? = nil, windowPositions: WindowPositions? = nil, clipboard: ClipboardModule? = nil) {
+    init(commandRunner: CommandRunning = CommandRunner(), spaces: SpacesModule? = nil, windowPositions: WindowPositions? = nil, clipboard: ClipboardModule? = nil,
+         terminationReply: @escaping (NSApplication, Bool) -> Void = { $0.reply(toApplicationShouldTerminate: $1) }) {
         self.commandRunner = commandRunner
         self.spaces = spaces
         self.windowPositions = windowPositions
         self.clipboard = clipboard
+        self.terminationReply = terminationReply
         super.init()
     }
 
@@ -633,7 +637,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.confirmMonitorDisable = UserDefaults.standard.bool(forKey: "monitors.confirmDisable")
         model.animationsEnabled = animations.enabled
         model.animationRecoveryRequired = animations.recoveryRequired
-        if animations.enabled && !model.animationsBusy && controlState.inputReady && spaces?.isAvailable == true {
+        if !terminationPending && animations.enabled && !model.animationsBusy && controlState.inputReady && spaces?.isAvailable == true {
             do { try spaces?.restoreSavedState() } catch { showError(error) }
         }
         model.spacesEnabled = spaces?.isEnabled ?? false
@@ -885,18 +889,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        terminationPending = true
         if !prepareClipboardTermination() {
+            terminationPending = false
             clipboard?.resumeMonitoring()
             model.errorMessage = "Clipboard disk cleanup is pending. Retry quitting after storage becomes available."
             return .terminateCancel
         }
-        guard !model.animationsBusy else { clipboard?.resumeMonitoring(); showError(ToggleError(message: "Wait for animation settings to finish saving.")); return .terminateCancel }
-        guard !recovering else { clipboard?.resumeMonitoring(); showError(ToggleError(message: "Wait for the current display operation before quitting.")); return .terminateCancel }
+        guard !model.animationsBusy else { terminationPending = false; clipboard?.resumeMonitoring(); showError(ToggleError(message: "Wait for animation settings to finish saving.")); return .terminateCancel }
+        guard !recovering else { terminationPending = false; clipboard?.resumeMonitoring(); showError(ToggleError(message: "Wait for the current display operation before quitting.")); return .terminateCancel }
         guard model.disabledMonitorCount > 0 || rollbackUUID != nil || model.pendingArrangement else {
             guard let spaces else { return .terminateNow }
-            spaces.onChange = nil
             // Always reply asynchronously: an idle engine can drain immediately.
-            spaces.stop { DispatchQueue.main.async { self.finishTermination(sender, approved: true) } }
+            // Suspension is reversible if a final clipboard flush vetoes quit.
+            spaces.suspend { DispatchQueue.main.async { self.finishTermination(sender, approved: true) } }
             return .terminateLater
         }
         restoreAll { restored in self.finishTermination(sender, approved: restored) }
@@ -904,14 +910,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func finishTermination(_ sender: NSApplication, approved: Bool) {
-        sender.reply(toApplicationShouldTerminate: finishClipboardTermination(approved: approved))
+        terminationReply(sender, finishClipboardTermination(approved: approved))
     }
 
     func prepareClipboardTermination() -> Bool { clipboard?.prepareTermination() != false }
 
     func finishClipboardTermination(approved: Bool) -> Bool {
         let clean = prepareClipboardTermination()
-        if !approved || !clean { clipboard?.resumeMonitoring() }
+        terminationPending = approved && clean
+        if !terminationPending {
+            clipboard?.resumeMonitoring()
+            if let spaces { spaces.requestRestore(enabled: spaces.savedEnabled) }
+            refreshPreferences()
+        }
         if !clean { model.errorMessage = "Clipboard disk cleanup is pending. Retry quitting after storage becomes available." }
         return approved && clean
     }

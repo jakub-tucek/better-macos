@@ -7,6 +7,7 @@ final class SpacesModule {
     private let engine: GestureSwitchEngine
     private var interceptor: SwipeInterceptor?
     private var observer: NSObjectProtocol?
+    var observesSpaceChanges: Bool { observer != nil }
 
     var hasPermission: Bool { AXIsProcessTrusted() }
     // Set by the host while its independent watchdog is ready.

@@ -196,6 +196,33 @@ func runClipboardTests() throws {
     expect(host.finishClipboardTermination(approved: true) && failing.entries.isEmpty, "host quit approves only after late cleanup succeeds")
     module.stop()
 
+    failing.entries = [savedEntry]
+    let quitHistory = ClipboardHistory(board: board, archive: failing, now: { date }, source: { app })
+    try quitHistory.configurePersistence(true, ageDays: 1, load: true)
+    let quitModule = ClipboardModule(defaults: defaults, history: quitHistory)
+    let quitPhases = RecordingPhases()
+    let quitEngine = GestureSwitchEngine(spaceInfo: { nil }, postPhase: quitPhases.post)
+    defaults.set(TransitionSpeed.smooth.rawValue, forKey: "spaces.speed")
+    let quitSpaces = SpacesModule(defaults: defaults, engine: quitEngine)
+    defaults.set(true, forKey: "spaces.enabled")
+    var spaceNotifications = 0
+    quitSpaces.onChange = { spaceNotifications += 1 }
+    var quitReply: Bool?
+    let quitHost = AppDelegate(spaces: quitSpaces, clipboard: quitModule, terminationReply: { _, approved in quitReply = approved })
+    try quitEngine.switchSpace(.right)
+    expect(quitPhases.began.wait(timeout: .now() + 1) == .success, "host quit fixture has an in-flight fake gesture")
+    expect(quitHost.applicationShouldTerminate(NSApplication.shared) == .terminateLater && quitSpaces.isDraining,
+           "actual host quit path waits for reversible gesture drain")
+    failing.failing = true; quitHistory.delete(savedEntry.id)
+    quitPhases.release.signal()
+    let quitDeadline = Date().addingTimeInterval(2)
+    while quitReply == nil && Date() < quitDeadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+    expect(quitReply == false && quitSpaces.observesSpaceChanges && quitSpaces.onChange != nil && spaceNotifications > 0,
+           "late clipboard failure vetoes actual host quit without unloading Spaces observer or callback")
+    expect(quitSpaces.needsStartupRestore && quitSpaces.savedEnabled, "canceled quit requests restoration of saved gesture choice")
+    failing.failing = false; quitHistory.poll()
+    quitModule.stop(); quitSpaces.stop()
+
     var worstCase: [ClipboardEntry] = (0..<8).map { index in
         ClipboardEntry(id: UUID(), created: date, source: "fixture", text: nil,
                        image: Data(repeating: UInt8(index), count: ClipboardHistory.imageLimit), pinned: true)
