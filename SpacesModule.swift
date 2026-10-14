@@ -9,9 +9,8 @@ final class SpacesModule {
     private var observer: NSObjectProtocol?
 
     var hasPermission: Bool { AXIsProcessTrusted() }
-    // Fail closed after the reported system input freeze. Keep the implementation
-    // available for isolated diagnosis, but never install a live event tap.
-    var isAvailable: Bool { false }
+    // Set by the host while its independent watchdog is ready. Never auto-start.
+    var isAvailable = false
     var isEnabled: Bool { interceptor?.isRunning == true && interceptor?.overrideEnabled == true }
     var speed: TransitionSpeed {
         get { TransitionSpeed.from(rawValue: defaults.integer(forKey: "spaces.speed")) }

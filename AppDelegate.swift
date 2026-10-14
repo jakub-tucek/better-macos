@@ -15,6 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let recoveryQueue = DispatchQueue(label: "mac-utils.display-recovery", qos: .userInitiated)
     private var item: NSStatusItem!
     private var recovering = false
+    private var rollbackTimer: Timer?
+    private var rollbackDeadline: Date?
+    private var rollbackUUID: String?
     private var screenObserver: NSObjectProtocol?
     private var guiTestTarget: String?
     private var guiTestStarted = false
@@ -34,6 +37,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             if model.watchdogStatus != status { logger.notice("Watchdog status: \(status, privacy: .public)") }
             model.watchdogStatus = status
+            spaces.isAvailable = safety.isReady
+            if !safety.isReady { try? spaces.setEnabled(false) }
+            refreshPreferences()
+            displayRefresh.requestRefresh()
         }
         do { try safety.start() }
         catch { showError(ToggleError(message: "Could not start the recovery watchdog: \(error.localizedDescription)")) }
@@ -41,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             logger.notice("Display refresh settling: \(settling, privacy: .public)")
             model.displaySettling = settling
+            refreshPreferences()
         }
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "Mac Utils")
@@ -58,6 +66,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Return without CG/ColorSync calls while AppKit acknowledges the
             // synchronous screen-change notification. Read only after it settles.
             self?.displayRefresh.requestRefresh()
+            DispatchQueue.main.async { [weak self] in
+                try? self?.spaces.setEnabled(false)
+                self?.refreshPreferences()
+            }
         }
         refreshPreferences()
         refreshBluetooth()
@@ -74,8 +86,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func configureActions() {
-        model.onMonitorChanged = { [weak self] _, _ in
-            self?.showError(ToggleError(message: "Private display switching remains paused while the WindowServer stall is investigated."))
+        model.onMonitorChanged = { [weak self] uuid, enabled in self?.setMonitor(uuid, enabled: enabled) }
+        model.onKeepDisabled = { [weak self] uuid in
+            guard let self, rollbackUUID == uuid else { return }
+            clearRollback()
         }
         model.onRestoreAll = { [weak self] in self?.restoreAll() }
         model.onAutoDeviceChanged = { [weak self] address, enabled in self?.bluetooth.setAutoReconnect(enabled, for: address) }
@@ -94,6 +108,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onTakeOverLegacy = { [weak self] in self?.bluetooth.takeOverLegacyService() }
         model.onSpacesChanged = { [weak self] enabled in
             guard let self else { return }
+            guard !enabled || (safety.isReady && !recovering && !displayRefresh.isSettling && rollbackUUID == nil) else {
+                showError(ToggleError(message: "Wait for the watchdog and pending display changes before enabling Space interception.")); return
+            }
             do { try spaces.setEnabled(enabled) } catch { showError(error) }
             refreshPreferences()
         }
@@ -134,7 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.button?.toolTip = "Mac Utils\n" + controller.status()
         model.monitors = controller.monitors
         model.activeMonitorCount = (try? controller.activeIDs().count) ?? 0
-        model.displaySupported = controller.supported && controller.canDisableDisplays
+        model.displaySupported = controller.supported && safety.isReady
         model.disabledMonitorCount = controller.disabledUUIDs.count
     }
 
@@ -188,12 +205,73 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func refreshPreferences() {
         model.spacesEnabled = spaces.isEnabled
         model.spacesPermission = spaces.hasPermission
-        model.spacesAvailable = spaces.isAvailable
+        model.spacesAvailable = spaces.isAvailable && !recovering && !displayRefresh.isSettling && rollbackUUID == nil
         model.spacesSpeed = spaces.speed
         model.launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 
     private func showError(_ error: Error) { model.errorMessage = error.localizedDescription }
+
+    private func clearRollback() {
+        rollbackTimer?.invalidate()
+        rollbackTimer = nil
+        rollbackDeadline = nil
+        rollbackUUID = nil
+        model.countdowns = [:]
+        refreshPreferences()
+    }
+
+    private func setMonitor(_ uuid: String, enabled: Bool) {
+        guard safety.isReady, !recovering, !displayRefresh.isSettling,
+              rollbackUUID == nil || (enabled && rollbackUUID == uuid),
+              let executable = Bundle.main.executableURL?.path else {
+            showError(ToggleError(message: "Wait for the watchdog, display changes, and current confirmation to finish."))
+            return
+        }
+        // Do not synthesize Space gestures while display topology is changing.
+        try? spaces.setEnabled(false)
+        refreshPreferences()
+        recovering = true
+        model.monitorBusy = true
+        recoveryQueue.async { [weak self] in
+            let result = Result { try CommandRunner().run(executable, ["--set-display", uuid, enabled ? "on" : "off"]) }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                recovering = false
+                model.monitorBusy = false
+                displayRefresh.requestRefresh()
+                switch result {
+                case .success:
+                    if enabled { clearRollback() }
+                    else {
+                        rollbackUUID = uuid
+                        rollbackDeadline = Date().addingTimeInterval(20)
+                        model.countdowns[uuid] = 20
+                        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+                            guard let self, let deadline = rollbackDeadline else { return }
+                            let remaining = max(0, Int(ceil(deadline.timeIntervalSinceNow)))
+                            model.countdowns[uuid] = remaining
+                            if remaining == 0, !recovering {
+                                restoreAll { restored in if restored { self.clearRollback() } }
+                            }
+                        }
+                        rollbackTimer = timer
+                        RunLoop.main.add(timer, forMode: .common)
+                    }
+                case .failure(let error):
+                    showError(error)
+                    // A timed-out helper may have committed before reporting failure.
+                    rollbackUUID = uuid
+                    rollbackDeadline = Date()
+                    let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+                        self?.restoreAll { restored in if restored { self?.clearRollback() } }
+                    }
+                    rollbackTimer = timer
+                    RunLoop.main.add(timer, forMode: .common)
+                }
+            }
+        }
+    }
 
     private func restoreAll(completion: ((Bool) -> Void)? = nil) {
         guard !recovering, !displayRefresh.isSettling else {
@@ -202,6 +280,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         guard let executable = Bundle.main.executableURL?.path else { completion?(false); return }
+        try? spaces.setEnabled(false)
+        refreshPreferences()
         recovering = true
         model.monitorBusy = true
         // Even explicit recovery is outside the UI process and time-limited.
@@ -213,7 +293,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.model.monitorBusy = false
                 self.displayRefresh.requestRefresh()
                 switch result {
-                case .success: completion?(true)
+                case .success: self.clearRollback(); completion?(true)
                 case .failure(let error): self.showError(error); completion?(false)
                 }
             }
@@ -221,7 +301,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard model.disabledMonitorCount > 0 else { return .terminateNow }
+        guard !recovering else { showError(ToggleError(message: "Wait for the current display operation before quitting.")); return .terminateCancel }
+        guard model.disabledMonitorCount > 0 || rollbackUUID != nil else { return .terminateNow }
         restoreAll { restored in sender.reply(toApplicationShouldTerminate: restored) }
         return .terminateLater
     }
@@ -230,6 +311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         bluetooth.stop()
         spaces.stop()
         safety.stop()
+        rollbackTimer?.invalidate()
         displayRefresh.cancel()
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
     }

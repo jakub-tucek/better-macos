@@ -4,10 +4,10 @@ One personal macOS menu-bar app for **monitors, Bluetooth, and fast desktop Spac
 switching**. SwiftUI dashboard in an AppKit menu-bar popover, with blue on/off switches.
 Apple Silicon, macOS 15+; display toggling tested on macOS Tahoe.
 
-> **Safety hold:** after a reported cursor-only/system input freeze, new display
-> disabling and Space gesture interception are blocked pending diagnosis.
-> Recovery can still enable an app-disabled display. Do not treat the isolated
-> tests as proof these private-API features are safe on a live desktop.
+> Monitor and Space controls are available when the independent watchdog is ready.
+> Gesture interception starts off and pauses whenever displays change. The earlier
+> system freeze remains unexplained; upstream parity and isolated tests do not prove
+> live WindowServer safety. See [upstream validation](VALIDATION.md).
 
 ## Build and run
 
@@ -27,8 +27,8 @@ Click the icon again, the close button, or outside the app to dismiss it.
 **Launch at login** is optional; keep the built app at a permanent location
 before enabling it.
 For the affected installation, login startup has been disabled and the app left
-off at login. The guarded build can be launched manually; private display
-disabling and gesture interception still cannot be enabled during the safety hold.
+off at login. The guarded build can be launched manually; enable Space interception
+explicitly in the dashboard after granting Accessibility permission.
 
 ### Recovery safeguards
 
@@ -47,16 +47,18 @@ disabling and gesture interception still cannot be enabled during the safety hol
   about keyboard/mouse access. Selected reconnect rules change only with consent.
 
 The watchdog cannot guarantee recovery from a stalled macOS graphics driver or
-WindowServer. The live incident's root cause has not yet been confirmed; private
-system controls remain blocked rather than treating watchdog coverage as proof.
+WindowServer. The live incident's root cause has not yet been confirmed.
 
 ## Monitors
 
 - Every connected screen has its own switch, including the built-in screen.
 - After switching off, select **Keep disabled** within 20 seconds or it restores.
+- Display transactions run in a bounded helper process, not on the UI thread.
+  Only one unconfirmed change is allowed at a time. Space interception pauses
+  before display transactions and after hotplug notifications.
 - Disabled screens remain listed. The last usable screen cannot be disabled.
-- **Enable all disabled displays**, quitting, or relaunching after a crash restores
-  the screens this app disabled.
+- **Enable all disabled displays** or quitting restores the screens this app
+  disabled. After relaunching, use explicit recovery for any recorded disabled screens.
 - Original desktop positions and main-display status are restored when the whole
   original setup is back. A changed plugged-in setup is not rearranged.
 - Resolution, brightness and color profiles are not changed. Disable mirroring
@@ -173,16 +175,10 @@ preserves reconnect selections, and restores the original audio output if macOS
 automatically changed it. It never disconnects input devices. Running GUI
 diagnostics contain device names and remain in local preferences, not the repo.
 
-Hardware tests are currently blocked by the safety hold. When the private-API
-behavior has been diagnosed and verified, these commands exercise real displays:
-
-```sh
-"$APP" --test-cycle --name "Your Monitor Name"
-"$APP" --test-multi                  # two external screens; needs a third screen
-```
-
-Hardware tests verify disable/enable, fresh-process recovery, and exact restoration
-of display bounds and main-display UUID. Failure paths attempt recovery.
+The legacy `--test-cycle` and `--test-multi` commands remain blocked because they
+do not run under the GUI watchdog. For a supervised hardware check, use one monitor
+switch in the dashboard and let its 20-second confirmation expire; verify that
+the original monitor arrangement returns before keeping a subsequent change.
 Undocumented display/gesture behavior may break with future macOS updates.
 
 ## License

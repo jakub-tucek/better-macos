@@ -110,6 +110,17 @@ if let index = CommandLine.arguments.firstIndex(of: "--watchdog") {
 } else if CommandLine.arguments.contains("--snapshot") {
     do { print(String(decoding: try DisplayController().snapshot(), as: UTF8.self)) }
     catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
+} else if let index = CommandLine.arguments.firstIndex(of: "--set-display"), index + 2 < CommandLine.arguments.count {
+    do {
+        let controller = DisplayController()
+        let state = CommandLine.arguments[index + 2]
+        guard state == "on" || state == "off" else { throw ToggleError(message: "Expected on or off") }
+        let uuid = CommandLine.arguments[index + 1]
+        controller.canDisableDisplays = true
+        try controller.setEnabled(state == "on", for: uuid)
+        if state == "on" { Thread.sleep(forTimeInterval: 1); try controller.finishRestore(uuid) }
+        else if controller.isEnabled(uuid) { throw ToggleError(message: "Display remained active after disabling") }
+    } catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
 } else if CommandLine.arguments.contains("--restore") {
     do {
         try restoreFromCLI(DisplayController())

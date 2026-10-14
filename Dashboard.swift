@@ -118,7 +118,7 @@ struct DashboardView: View {
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("Display disabling and Space interception are paused for safety after a reported system freeze.")
+                    Text("System controls require the recovery watchdog. Display changes pause Space interception; unconfirmed changes restore after 20 seconds.")
                         .font(.caption).foregroundStyle(.orange)
                         .padding(10).frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
@@ -314,7 +314,7 @@ struct DashboardView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Fast Space switching").font(.headline)
-                        Text(!model.spacesAvailable ? "Disabled for safety during investigation" : model.spacesPermission ? "Accessibility permission granted" : "Accessibility permission required")
+                        Text(!model.spacesAvailable ? "Waiting for watchdog or display changes" : model.spacesPermission ? "Accessibility permission granted" : "Accessibility permission required")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()

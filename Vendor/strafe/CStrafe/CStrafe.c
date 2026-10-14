@@ -365,5 +365,10 @@ bool strafe_is_expose_active(void) {
     // Mission Control: layer18Count > 0 && layer20Count > layer18Count.
     if (layer18Count > 0 && layer20Count > 0 && layer20Count <= layer18Count) { return true; }
     if (layer18Count > 0 && layer20Count > layer18Count) { return true; }
+    // macOS 27 Mission Control can show a lone Dock window at layer 20.
+    // Earlier systems retain the existing layer-18 requirement.
+    if (__builtin_available(macOS 27.0, *)) {
+        if (layer20Count > 0) { return true; }
+    }
     return false;
 }

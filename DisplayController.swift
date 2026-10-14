@@ -86,9 +86,8 @@ final class DisplayController {
     }
 
     var supported: Bool { configureEnabled != nil }
-    // Recovery remains allowed, but no new display may be disabled until the
-    // reported cursor-only/input freeze has been diagnosed safely.
-    var canDisableDisplays: Bool { false }
+    // The GUI authorizes changes only while its independent watchdog is ready.
+    var canDisableDisplays = false
     var disabledUUIDs: [String] { records.filter(\.disabledByApp).map(\.uuid) }
 
     func uuid(for id: CGDirectDisplayID) -> String? {

@@ -248,14 +248,17 @@ if CommandLine.arguments.contains("--render-ui") {
 }
 
 let safeSpaces = SpacesModule()
-expect(!safeSpaces.isAvailable && !safeSpaces.isEnabled, "Safety hold never starts gesture interception on initialization")
+expect(!safeSpaces.isAvailable && !safeSpaces.isEnabled, "Gesture interception starts unavailable until the host authorizes it")
 do { try safeSpaces.setEnabled(true); expect(false, "Space interception must remain blocked") }
 catch { expect(!safeSpaces.isEnabled, "Attempting to enable Space interception fails closed") }
 safeSpaces.stop()
 let safeDisplays = DisplayController()
-expect(!safeDisplays.canDisableDisplays, "Safety hold blocks new display disabling")
+expect(!safeDisplays.canDisableDisplays, "Unsupervised display controllers cannot disable screens by default")
 do { try safeDisplays.setEnabled(false, for: "fixture-not-a-real-display"); expect(false, "Display disabling must remain blocked") }
 catch { expect(true, "Display disabling is rejected before starting a configuration transaction") }
+safeDisplays.canDisableDisplays = true
+do { try safeDisplays.setEnabled(false, for: "fixture-not-a-real-display"); expect(false, "An authorized controller must still validate the target") }
+catch { expect(true, "Authorization does not bypass display identity validation") }
 
 var metadataReads = 0
 let refreshGate = DisplayRefreshGate(delay: 0.02) { metadataReads += 1 }
