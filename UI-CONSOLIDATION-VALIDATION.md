@@ -48,6 +48,13 @@ feature navigation and the shared pill symbol. Native SwiftUI compiles with warn
 as errors. Clipboard/Mouse/Spaces combined quit fixtures use fake storage, mouse,
 clipboard and gesture backends; no live device settings/content/routes are accessed.
 
+Integration follow-up: final asynchronous quit completion now rechecks Mouse
+restoration as well as Clipboard cleanup. A late Apply during drain cannot approve
+quit with owned runtime changes left behind. Injected host regressions cover failed
+late restoration veto and successful retry. Final suite: **453 isolated checks and
+7 installer scenarios passed**; `git diff --check` passed. This was found during the
+implementer's lifecycle audit, not by an independent reviewer.
+
 The adversarial review skill was loaded. This session has no subagent/delegation
 tool: tool discovery confirmed only session move/rename and workspace tools, not
 agent creation. **Final independent GPT-6.1 Sol integration/UI review is pending.**

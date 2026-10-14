@@ -954,15 +954,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func prepareClipboardTermination() -> Bool { clipboard?.prepareTermination() != false }
 
     func finishClipboardTermination(approved: Bool) -> Bool {
+        // The popover remains interactive while Spaces/display work drains.
+        // A late Apply must be restored too, before replying to AppKit.
+        let mouseClean = mouseLifecycle.prepareToQuit()
         let clean = prepareClipboardTermination()
-        terminationPending = approved && clean
+        terminationPending = approved && clean && mouseClean
         if !terminationPending {
             clipboard?.resumeMonitoring()
             if let spaces { spaces.requestRestore(enabled: spaces.savedEnabled) }
             refreshPreferences()
         }
         if !clean { model.errorMessage = "Clipboard disk cleanup is pending. Retry quitting after storage becomes available." }
-        return approved && clean
+        else if !mouseClean { model.errorMessage = mouseLifecycle.errorMessage }
+        return terminationPending
     }
 
     func applicationWillTerminate(_ notification: Notification) {

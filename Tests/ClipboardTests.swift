@@ -200,6 +200,13 @@ func runClipboardTests() throws {
     expect(!host.finishClipboardTermination(approved: true), "host async quit completion rechecks cleanup and refuses pending deletion")
     failing.failing = false
     expect(host.finishClipboardTermination(approved: true) && failing.entries.isEmpty, "host quit approves only after late cleanup succeeds")
+    mouseLifecycle.apply(acceleration: false, speed: 2)
+    mouseBackend.failRestore = true
+    expect(!host.finishClipboardTermination(approved: true) && mouseLifecycle.recoveryRequired,
+           "final host quit rechecks late Mouse Apply and vetoes failed restoration even with clean Clipboard")
+    mouseBackend.failRestore = false
+    expect(host.finishClipboardTermination(approved: true) && !mouseLifecycle.recoveryRequired && mouseBackend.value.speed == .number(1.25),
+           "final host quit retries late Mouse cleanup before approving termination")
     module.stop()
 
     let switchArchive = FailingClipboardArchive()
