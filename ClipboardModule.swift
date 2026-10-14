@@ -23,6 +23,22 @@ private final class ClipboardPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+final class ClipboardTable: NSTableView {
+    var onCopy: () -> Void = {}
+    var onClose: () -> Void = {}
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 36 || event.keyCode == 76 { onCopy() }
+        else if event.keyCode == 53 { onClose() }
+        else { super.keyDown(with: event) }
+    }
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let row = self.row(at: convert(event.locationInWindow, from: nil))
+        guard row >= 0 else { return nil }
+        selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        return super.menu(for: event)
+    }
+}
+
 final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
     let history: ClipboardHistory
     private let defaults: UserDefaults
@@ -31,7 +47,7 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
     private var handler: EventHandlerRef?
     private var panel: NSPanel?
     private let search = NSSearchField()
-    private let table = NSTableView()
+    private let table = ClipboardTable()
     private var rows: [ClipboardEntry] = []
     var onChange: () -> Void = {}
     var onError: (String) -> Void = { _ in }
@@ -58,14 +74,22 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
         // Recording is an explicit per-launch opt-in, never restored from defaults.
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.history.poll() }
         var type = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        let status = InstallEventHandler(GetApplicationEventTarget(), { _, _, context in
-            guard let context else { return OSStatus(eventNotHandledErr) }
+        let status = InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
+            guard let event, let context else { return OSStatus(eventNotHandledErr) }
+            var identifier = EventHotKeyID()
+            guard GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                nil, MemoryLayout<EventHotKeyID>.size, nil, &identifier) == noErr,
+                identifier.signature == 0x434C4950, identifier.id == 1 else { return OSStatus(eventNotHandledErr) }
             Unmanaged<ClipboardModule>.fromOpaque(context).takeUnretainedValue().show()
             return noErr
         }, 1, &type, Unmanaged.passUnretained(self).toOpaque(), &handler)
         let registered = RegisterEventHotKey(UInt32(kVK_ANSI_V), UInt32(cmdKey | shiftKey),
             EventHotKeyID(signature: 0x434C4950, id: 1), GetApplicationEventTarget(), 0, &hotKey)
-        if status != noErr || registered != noErr { onError("Clipboard shortcut unavailable; use Open history.") }
+        if status != noErr || registered != noErr {
+            if let hotKey { UnregisterEventHotKey(hotKey) }; hotKey = nil
+            if let handler { RemoveEventHandler(handler) }; handler = nil
+            onError("Clipboard shortcut unavailable; use Open history.")
+        }
     }
     func stop() {
         timer?.invalidate(); timer = nil
@@ -90,7 +114,7 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
     func clear() { do { try history.clear() } catch { onError("Clipboard disk history could not be removed. Retry Clear.") } }
     func show() {
         if panel == nil { makePanel() }
-        search.stringValue = ""; reload()
+        search.stringValue = ""; reload(resetSelection: true)
         panel?.center()
         panel?.makeKeyAndOrderFront(nil)
         panel?.makeFirstResponder(search)
@@ -110,6 +134,14 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("entry")); column.width = 475
         table.addTableColumn(column); table.headerView = nil; table.rowHeight = 32
         table.delegate = self; table.dataSource = self; table.target = self; table.action = #selector(copySelected)
+        table.onCopy = { [weak self] in self?.copySelected() }
+        table.onClose = { [weak self] in self?.panel?.orderOut(nil) }
+        let menu = NSMenu()
+        for definition in [("Pin / unpin", #selector(pinSelected)), ("Delete", #selector(deleteSelected))] {
+            let item = NSMenuItem(title: definition.0, action: definition.1, keyEquivalent: "")
+            item.target = self; menu.addItem(item)
+        }
+        table.menu = menu
         scroll.documentView = table; content.addSubview(scroll)
         for (index, definition) in [("Copy", #selector(copySelected)), ("Pin / unpin", #selector(pinSelected)), ("Delete", #selector(deleteSelected))].enumerated() {
             let button = NSButton(title: definition.0, target: self, action: definition.1)
@@ -118,17 +150,23 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
         }
         window.contentView = content; panel = window
     }
-    private func reload() {
+    private func reload(resetSelection: Bool = false) {
+        let previous = selected
         let query = search.stringValue
         rows = history.entries.filter { query.isEmpty || $0.label.localizedCaseInsensitiveContains(query) }
         table.reloadData()
-        if !rows.isEmpty { table.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false) }
+        if let index = ClipboardSelection.index(previous: previous, entries: rows, reset: resetSelection) {
+            table.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
+        } else {
+            // An expired/deleted target must not silently redirect the next action.
+            table.deselectAll(nil)
+        }
     }
     func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         NSTextField(labelWithString: (rows[row].pinned ? "📌 " : "") + String(rows[row].label.prefix(240)))
     }
-    func controlTextDidChange(_ obj: Notification) { reload() }
+    func controlTextDidChange(_ obj: Notification) { reload(resetSelection: true) }
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         switch commandSelector {
         case #selector(NSResponder.insertNewline(_:)): copySelected(); return true

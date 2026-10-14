@@ -1,5 +1,21 @@
 import Foundation
 
+struct ClipboardExclusionsDraft {
+    var edited: String?
+    func text(applied: String) -> String { edited ?? applied }
+    mutating func apply(current: String, save: (String) -> Void) {
+        save(text(applied: current)); edited = nil
+    }
+}
+
+enum ClipboardSelection {
+    static func index(previous: UUID?, entries: [ClipboardEntry], reset: Bool) -> Int? {
+        if reset { return entries.isEmpty ? nil : 0 }
+        guard let previous else { return nil }
+        return entries.firstIndex { $0.id == previous }
+    }
+}
+
 struct ClipboardEntry: Codable, Identifiable, Equatable {
     let id: UUID
     let created: Date
@@ -26,19 +42,26 @@ protocol ClipboardPersistence {
 
 /// A single bounded archive owns image bytes too: delete/expiry/Clear cannot orphan images.
 struct ClipboardArchive: ClipboardPersistence {
+    // Raw caps can expand to ~81 MiB with base64 and worst-case JSON text escaping.
+    static let encodedLimit = 96 * 1024 * 1024
+    enum ArchiveError: Error { case oversized }
     let directory: URL
     private var file: URL { directory.appendingPathComponent("history.json") }
     func load() throws -> [ClipboardEntry] {
         guard FileManager.default.fileExists(atPath: file.path) else { return [] }
         let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size <= 64 * 1024 * 1024 else { try clear(); return [] }
+        guard size <= Self.encodedLimit else { throw ArchiveError.oversized }
         return try JSONDecoder().decode([ClipboardEntry].self, from: Data(contentsOf: file))
     }
     func save(_ entries: [ClipboardEntry]) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                attributes: [.posixPermissions: 0o700])
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
-        try JSONEncoder().encode(entries).write(to: file, options: .atomic)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        let data = try encoder.encode(entries)
+        guard data.count <= Self.encodedLimit else { throw ArchiveError.oversized }
+        try data.write(to: file, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
     }
     func clear() throws {
@@ -60,6 +83,8 @@ final class ClipboardHistory {
     private(set) var persistent = false
     private(set) var ageDays = 7
     private(set) var exclusions: Set<String> = []
+    private(set) var storagePending = false
+    private var pendingClear = false
     var onChange: () -> Void = {}
     var onError: () -> Void = {}
 
@@ -69,16 +94,23 @@ final class ClipboardHistory {
         lastChange = board.changeCount // Never capture the clipboard present at startup/resume.
     }
     func configurePersistence(_ enabled: Bool, ageDays: Int, load: Bool = false) throws {
+        let previousDays = self.ageDays
+        let previousEntries = entries
         self.ageDays = min(365, max(1, ageDays))
+        do {
         if enabled {
             if load { entries = try archive.load() }
-            persistent = true
             prune()
             try archive.save(entries)
         } else {
             try archive.clear()
-            persistent = false
         }
+        } catch {
+            self.ageDays = previousDays; entries = previousEntries
+            throw error
+        }
+        persistent = enabled
+        storagePending = false; pendingClear = false
         onChange()
     }
     func setExclusions(_ values: Set<String>) {
@@ -92,6 +124,7 @@ final class ClipboardHistory {
         onChange()
     }
     func poll() {
+        if storagePending { retryStorage() }
         let old = entries
         prune()
         if old != entries { changed() }
@@ -122,8 +155,15 @@ final class ClipboardHistory {
     }
     func clear() throws {
         entries = []; lastChange = board.changeCount
-        onChange()
+        storagePending = true; pendingClear = true
+        defer { onChange() }
         try archive.clear()
+        storagePending = false; pendingClear = false
+    }
+    @discardableResult
+    func flushPendingStorage() -> Bool {
+        if storagePending { retryStorage() }
+        return !storagePending
     }
     func stop() { setRecording(false); entries = []; onChange() }
     private func prune() {
@@ -144,7 +184,18 @@ final class ClipboardHistory {
         }
     }
     private func changed() {
-        if persistent { do { try archive.save(entries) } catch { onError() } }
+        if persistent {
+            storagePending = true; pendingClear = false
+            retryStorage()
+        }
+        onChange()
+    }
+    private func retryStorage() {
+        do {
+            if pendingClear { try archive.clear() }
+            else { try archive.save(entries) }
+            storagePending = false; pendingClear = false
+        } catch { onError() }
         onChange()
     }
 }

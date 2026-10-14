@@ -247,6 +247,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setModule(_ module: AppModule, enabled: Bool) {
         guard !model.stoppingModules.contains(module) else { return }
+        if module == .clipboard && !enabled && clipboard?.history.flushPendingStorage() == false {
+            model.errorMessage = "Clipboard disk cleanup is pending. Retry after storage becomes available."
+            return
+        }
         if module == .keepAwake && !enabled {
             do { try keepAwake?.deactivate() } catch { keepAwake?.activate(); showError(error); return }
         }
@@ -500,6 +504,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.clipboardRecording = clipboard?.history.recording ?? false
         model.clipboardCount = clipboard?.history.entries.count ?? 0
         model.clipboardPersistence = clipboard?.persistence ?? false
+        model.clipboardStoragePending = clipboard?.history.storagePending ?? false
         model.clipboardDays = clipboard?.days ?? 7
         model.clipboardExclusions = clipboard?.exclusions ?? ""
     }
@@ -879,6 +884,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if clipboard?.history.flushPendingStorage() == false {
+            model.errorMessage = "Clipboard disk cleanup is pending. Retry quitting after storage becomes available."
+            return .terminateCancel
+        }
         guard !model.animationsBusy else { showError(ToggleError(message: "Wait for animation settings to finish saving.")); return .terminateCancel }
         guard !recovering else { showError(ToggleError(message: "Wait for the current display operation before quitting.")); return .terminateCancel }
         guard model.disabledMonitorCount > 0 || rollbackUUID != nil || model.pendingArrangement else {
