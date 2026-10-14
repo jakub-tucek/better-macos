@@ -85,11 +85,25 @@ final class ClipboardHistory {
     private(set) var persistent = false
     private(set) var ageDays = 7
     private(set) var exclusions: Set<String> = []
-    private(set) var storagePending = false
-    private var pendingClear = false
-    private var archiveRollback: [ClipboardEntry]?
-    private var startupRecovery: (enabled: Bool, days: Int)?
-    var requestedPersistence: Bool { startupRecovery?.enabled ?? persistent }
+    // Exactly one disk intent can be pending. Deliberate deletion supersedes
+    // recovery/rollback, so a completed delete cannot leave hidden restore work.
+    private enum StorageIntent {
+        case idle
+        case save
+        case rollback([ClipboardEntry])
+        case startup(days: Int)
+        case delete
+    }
+    private var storageIntent: StorageIntent = .idle
+    var storagePending: Bool {
+        if case .idle = storageIntent { return false }
+        return true
+    }
+    private var startupDays: Int? {
+        if case .startup(let days) = storageIntent { return days }
+        return nil
+    }
+    var requestedPersistence: Bool { startupDays != nil || persistent }
     var onChange: () -> Void = {}
     var onError: () -> Void = {}
 
@@ -99,56 +113,56 @@ final class ClipboardHistory {
         lastChange = board.changeCount // Never capture the clipboard present at startup/resume.
     }
     func configurePersistence(_ enabled: Bool, ageDays: Int, load: Bool = false) throws {
+        if !enabled {
+            // Disable preserves memory but revokes every previous disk restore
+            // intent before attempting I/O, even if deletion commits then throws.
+            persistent = false
+            storageIntent = .delete
+            defer { onChange() }
+            try finishArchiveDeletion()
+            self.ageDays = min(365, max(1, ageDays))
+            return
+        }
         // Clear is authoritative over every recovery/merge path. Never read
         // an archive containing discarded history until its deletion succeeds.
-        if enabled, pendingClear {
-            retryStorage()
-            guard !pendingClear else { throw CocoaError(.fileWriteUnknown) }
+        if case .delete = storageIntent {
+            try finishArchiveDeletion()
         }
         // Never replace an archive that startup has not successfully loaded and pruned.
         // An explicit disable/Clear may discard it; enabling must recover it first.
-        if enabled, !load, let recovery = startupRecovery {
-            try configurePersistence(recovery.enabled, ageDays: recovery.days, load: true)
+        if !load, let days = startupDays {
+            try configurePersistence(true, ageDays: days, load: true)
         }
-        if enabled, archiveRollback != nil {
-            retryStorage()
-            guard archiveRollback == nil else { throw CocoaError(.fileWriteUnknown) }
+        if case .rollback = storageIntent {
+            try reconcileStorage()
         }
         // Before first enable, remember disk work we don't yet own. If load
         // fails, do not write at all. A failed save must not silently delete an
         // older archive when restoring the disabled configuration.
-        let originalArchive = enabled && !persistent && !load ? try archive.load() : nil
+        let originalArchive = !persistent && !load ? try archive.load() : nil
         let previousDays = self.ageDays
         let previousEntries = entries
         self.ageDays = min(365, max(1, ageDays))
         do {
-        if enabled {
             if load { entries = try archive.load() }
             else if let originalArchive { entries += originalArchive }
             prune()
             try archive.save(entries)
-        } else {
-            try archive.clear()
-        }
         } catch {
             self.ageDays = previousDays; entries = previousEntries
             if load {
-                startupRecovery = (enabled, ageDays)
+                storageIntent = .startup(days: ageDays)
             } else if let originalArchive {
-                archiveRollback = originalArchive
+                storageIntent = .rollback(originalArchive)
             } else {
-                // Restore the old configuration conservatively, including
-                // failed retention saves or a disable that committed its clear.
-                pendingClear = pendingClear || !persistent
+                // Retention/configuration saves restore the old memory state.
+                storageIntent = .save
             }
-            storagePending = true
             onChange()
             throw error
         }
-        persistent = enabled
-        storagePending = false; pendingClear = false
-        startupRecovery = nil
-        archiveRollback = nil
+        persistent = true
+        storageIntent = .idle
         onChange()
     }
     func setExclusions(_ values: Set<String>) {
@@ -158,7 +172,7 @@ final class ClipboardHistory {
     }
     func setRecording(_ value: Bool) {
         lastChange = board.changeCount
-        recording = value && startupRecovery == nil
+        recording = value && startupDays == nil
         onChange()
     }
     func poll() {
@@ -193,16 +207,13 @@ final class ClipboardHistory {
     }
     func clear() throws {
         entries = []; lastChange = board.changeCount
-        if let recovery = startupRecovery {
-            persistent = recovery.enabled
-            ageDays = min(365, max(1, recovery.days))
+        if let days = startupDays {
+            persistent = true
+            ageDays = min(365, max(1, days))
         }
-        startupRecovery = nil
-        archiveRollback = nil // Explicit Clear authorizes discarding old disk work.
-        storagePending = true; pendingClear = true
+        storageIntent = .delete // Explicit Clear supersedes every restore intent.
         defer { onChange() }
-        try archive.clear()
-        storagePending = false; pendingClear = false
+        try finishArchiveDeletion()
     }
     @discardableResult
     func flushPendingStorage() -> Bool {
@@ -229,34 +240,37 @@ final class ClipboardHistory {
     }
     private func changed() {
         if persistent {
-            storagePending = true
+            if case .idle = storageIntent { storageIntent = .save }
             retryStorage()
         }
         onChange()
     }
+    private func finishArchiveDeletion() throws {
+        try archive.clear()
+        // Clear permits new post-Clear captures; Disable sets persistent=false
+        // first and must never rewrite memory to disk during deletion recovery.
+        storageIntent = persistent && !entries.isEmpty ? .save : .idle
+        if case .save = storageIntent {
+            try archive.save(entries)
+            storageIntent = .idle
+        }
+    }
+    private func reconcileStorage() throws {
+        switch storageIntent {
+        case .idle: return
+        case .delete: try finishArchiveDeletion()
+        case .startup(let days): try configurePersistence(true, ageDays: days, load: true)
+        case .rollback(let original):
+            if original.isEmpty { try archive.clear() }
+            else { try archive.save(original) }
+            storageIntent = .idle
+        case .save:
+            try archive.save(entries)
+            storageIntent = .idle
+        }
+    }
     private func retryStorage() {
-        do {
-            if pendingClear {
-                try archive.clear()
-                pendingClear = false
-                // Copies made after Clear are new work, not permission to
-                // resurrect the discarded archive or bypass its deletion.
-                if persistent && !entries.isEmpty { try archive.save(entries) }
-                storagePending = false
-                onChange()
-                return
-            }
-            if let recovery = startupRecovery {
-                try configurePersistence(recovery.enabled, ageDays: recovery.days, load: true)
-                return
-            }
-            if let rollback = archiveRollback {
-                if rollback.isEmpty { try archive.clear() }
-                else { try archive.save(rollback) }
-                archiveRollback = nil
-            } else { try archive.save(entries) }
-            storagePending = false; pendingClear = false
-        } catch { onError() }
+        do { try reconcileStorage() } catch { onError() }
         onChange()
     }
 }

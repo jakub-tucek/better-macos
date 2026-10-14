@@ -109,6 +109,9 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
         return history.flushPendingStorage()
     }
     func setPersistence(_ enabled: Bool, days: Int? = nil) {
+        // Deliberate Disable revokes disk persistence even when cleanup fails.
+        // Keep that intent across a later module reload/app restart too.
+        if !enabled { defaults.set(false, forKey: "clipboard.persistence") }
         do {
             try history.configurePersistence(enabled, ageDays: days ?? history.ageDays)
             defaults.set(enabled, forKey: "clipboard.persistence")

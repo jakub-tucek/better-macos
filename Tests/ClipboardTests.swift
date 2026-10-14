@@ -19,6 +19,7 @@ private final class FailingClipboardArchive: ClipboardPersistence {
     var failLoad = false
     var commitThenThrow = false
     var failClear = false
+    var clearThenThrow = false
     var loads = 0
     var saves = 0
     func load() throws -> [ClipboardEntry] {
@@ -35,6 +36,83 @@ private final class FailingClipboardArchive: ClipboardPersistence {
     func clear() throws {
         if failing || failClear { throw CocoaError(.fileWriteNoPermission) }
         entries = []
+        if clearThenThrow { throw CocoaError(.fileWriteNoPermission) }
+    }
+}
+
+// Exhaustive short sequences plus a recovery/enable suffix expose latent
+// restore intents, not just the immediate state after a deletion attempt.
+private func runClipboardStorageTransitionTests(date: Date) throws {
+    let actions = ["enable", "load", "disable", "clear", "capture", "pin", "metadata", "blocked", "commit failure", "recover"]
+    for seed in ["rollback", "startup", "active"] {
+        for first in actions { for second in actions { for third in actions {
+            let board = FakeClipboard()
+            let archive = FailingClipboardArchive()
+            let old = ClipboardEntry(id: UUID(), created: date, source: "fixture", text: "disk-only pinned work", image: nil, pinned: true)
+            archive.entries = [old]
+            let history = ClipboardHistory(board: board, archive: archive, now: { date }, source: { "fixture" })
+            archive.commitThenThrow = seed != "active"
+            do { try history.configurePersistence(true, ageDays: 7, load: seed != "rollback") } catch {}
+            archive.commitThenThrow = true; archive.failClear = true
+            var forbidden = Set<UUID>()
+            var deletionRequested = false
+            var valid = true
+            let sequence = [first, second, third, "recover", "enable", "recover"]
+            for (step, action) in sequence.enumerated() {
+                let memoryBefore = history.entries
+                do {
+                    switch action {
+                    case "enable", "load":
+                        try history.configurePersistence(true, ageDays: 7, load: action == "load")
+                    case "disable":
+                        // Disable retains memory: only disk-only history is
+                        // forbidden from resurfacing via obsolete restore work.
+                        forbidden.formUnion(Set(archive.entries.map(\.id)).subtracting(history.entries.map(\.id)))
+                        deletionRequested = true
+                        try history.configurePersistence(false, ageDays: 7)
+                    case "clear":
+                        forbidden.formUnion(archive.entries.map(\.id))
+                        forbidden.formUnion(history.entries.map(\.id))
+                        deletionRequested = true
+                        try history.clear()
+                    case "capture":
+                        history.setRecording(true)
+                        board.put("post-deletion new work \(step)"); history.poll()
+                    case "pin":
+                        if let entry = history.entries.first { history.pin(entry.id) }
+                    case "metadata": history.setExclusions(["unrelated"])
+                    case "blocked":
+                        archive.failing = true; archive.failClear = true
+                        archive.commitThenThrow = false; archive.clearThenThrow = false
+                    case "commit failure":
+                        archive.failing = false; archive.failClear = false
+                        archive.commitThenThrow = true; archive.clearThenThrow = true
+                    case "recover":
+                        archive.failing = false; archive.failClear = false
+                        archive.commitThenThrow = false; archive.clearThenThrow = false
+                        valid = history.flushPendingStorage() && valid
+                    default: fatalError("Unknown transition")
+                    }
+                } catch {
+                    if action == "disable" { valid = valid && history.storagePending && !history.persistent }
+                    if action == "clear" { valid = valid && history.storagePending && history.entries.isEmpty }
+                }
+                if action == "disable" { valid = valid && history.entries == memoryBefore && !history.requestedPersistence }
+                if action == "clear" { valid = valid && history.entries.isEmpty }
+                valid = valid && history.entries.allSatisfy { !forbidden.contains($0.id) }
+                if !history.storagePending {
+                    valid = valid && archive.entries.allSatisfy { !forbidden.contains($0.id) }
+                    if deletionRequested && !history.persistent { valid = valid && archive.entries.isEmpty }
+                }
+                valid = valid && history.entries.count <= 100 &&
+                    history.entries.reduce(0, { $0 + ($1.image?.count ?? 0) }) <= ClipboardHistory.imageBudget
+            }
+            if !deletionRequested {
+                valid = valid && history.entries.contains(where: { $0.id == old.id }) && archive.entries.contains(where: { $0.id == old.id })
+            }
+            expect(valid && !history.storagePending,
+                   "storage intent sequence \(seed): \(first) → \(second) → \(third) preserves deletion and recovery invariants")
+        } } }
     }
 }
 
@@ -165,6 +243,51 @@ func runClipboardTests() throws {
     expect(failing.entries.isEmpty && !recoverable.storagePending, "exclusion purge retries without a new capture")
 
     let savedEntry = ClipboardEntry(id: UUID(), created: date, source: "fixture", text: "preserved startup", image: nil, pinned: true)
+    let disabledArchive = FailingClipboardArchive()
+    disabledArchive.entries = [savedEntry]
+    let disabledHistory = ClipboardHistory(board: FakeClipboard(), archive: disabledArchive, now: { date }, source: { "fixture" })
+    disabledArchive.commitThenThrow = true
+    do { try disabledHistory.configurePersistence(true, ageDays: 2) } catch {}
+    disabledArchive.failClear = true
+    do { try disabledHistory.configurePersistence(false, ageDays: 2) } catch {}
+    expect(disabledHistory.storagePending && disabledHistory.entries.isEmpty,
+           "failed Disable after uncertain enable keeps disk deletion pending")
+    disabledArchive.commitThenThrow = false; disabledArchive.failClear = false
+    expect(disabledHistory.flushPendingStorage() && disabledArchive.entries.isEmpty && !disabledHistory.persistent,
+           "recovered Disable deletes disk history before reporting clean")
+    try disabledHistory.configurePersistence(true, ageDays: 2)
+    expect(disabledHistory.entries.isEmpty && disabledArchive.entries.isEmpty && !disabledHistory.storagePending,
+           "enable after reconciled Disable cannot resurrect superseded pinned archive rollback")
+    try runClipboardStorageTransitionTests(date: date)
+    let disabledDomain = "clipboard-disabled-intent.\(UUID())"
+    let disabledDefaults = UserDefaults(suiteName: disabledDomain)!
+    defer { disabledDefaults.removePersistentDomain(forName: disabledDomain) }
+    let disabledBoard = FakeClipboard()
+    let moduleArchive = FailingClipboardArchive()
+    moduleArchive.entries = [savedEntry]
+    let moduleHistory = ClipboardHistory(board: disabledBoard, archive: moduleArchive, now: { date }, source: { "fixture" })
+    try moduleHistory.configurePersistence(true, ageDays: 7, load: true)
+    moduleHistory.setRecording(true); disabledBoard.put("retained user memory"); moduleHistory.poll()
+    let retainedMemory = moduleHistory.entries
+    disabledDefaults.set(true, forKey: "clipboard.persistence")
+    let disabledModule = ClipboardModule(defaults: disabledDefaults, history: moduleHistory)
+    moduleArchive.failClear = true
+    disabledModule.setPersistence(false)
+    expect(!disabledModule.persistence && !disabledDefaults.bool(forKey: "clipboard.persistence") && moduleHistory.storagePending && moduleHistory.entries == retainedMemory,
+           "failed native Disable preserves memory, revokes persistence and saves disabled startup intent")
+    disabledBoard.put("new work while disabled"); moduleHistory.poll()
+    let memoryAfterDisable = moduleHistory.entries
+    moduleArchive.failClear = false
+    expect(moduleHistory.flushPendingStorage() && moduleArchive.entries.isEmpty && moduleHistory.entries == memoryAfterDisable,
+           "Disable reconciliation deletes disk without rewriting retained or newly captured memory")
+    let reloaded = ClipboardHistory(board: FakeClipboard(), archive: moduleArchive, now: { date }, source: { "fixture" })
+    try reloaded.configurePersistence(disabledDefaults.bool(forKey: "clipboard.persistence"), ageDays: 7, load: true)
+    expect(!reloaded.persistent && reloaded.entries.isEmpty && moduleArchive.entries.isEmpty,
+           "configuration reload cannot revive explicitly disabled disk persistence")
+    try moduleHistory.configurePersistence(true, ageDays: 7)
+    expect(moduleArchive.entries == memoryAfterDisable,
+           "later explicit enable may persist intentionally retained memory after Disable completes")
+    disabledModule.stop()
     for kind in ["text", "pinned text", "pinned image"] {
         for loadOnEnable in [false, true] {
             let clearBoard = FakeClipboard()

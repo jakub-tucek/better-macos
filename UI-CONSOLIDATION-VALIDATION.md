@@ -94,6 +94,45 @@ startup, and quit/unload regressions remain passing. Latest `bash test.sh`:
 app launch/relaunch, device mutation, or push was performed. Parent-arranged
 independent rereview is still pending; this is not a self-certified verdict.
 
+### Disable/rollback follow-up and storage intent audit
+
+Independent rereview found that failed Disable could leave both deletion and
+archive rollback pending. A completed delete then incorrectly reported clean
+while retaining a hidden restore. The exact preexisting pinned archive →
+commit-then-throw enable → failed Disable → recovered flush → enable regression
+failed before this fix (`build/review-fix-disable-red.log`).
+
+Storage intent is now one enum: idle, save, rollback, startup recovery, or delete.
+Clear and Disable replace every prior intent before attempting disk I/O. Disable
+immediately revokes persistence, preserves memory, and saves the disabled launch
+preference even if deletion fails. Deletion failure/commit-then-throw stays
+pending; completed deletion cannot retain rollback/startup work. Clear can still
+persist only newly captured post-Clear work when persistence remains enabled.
+
+| Pending intent | Enable | Clear / Disable | Memory edits | Flush / idle retry |
+| --- | --- | --- | --- | --- |
+| Idle | Load/merge and save; track uncertain failure | Replace with deletion | Save only if persistent | No work |
+| Save | Save configured memory; track failure | Replace with deletion | Keep save intent | Save current bounded memory |
+| Rollback | Restore original archive before load/merge | Discard rollback; delete | Keep rollback intent | Restore preexisting disk work |
+| Startup | Recover load/prune/save before ordinary enable | Discard recovery; delete | Keep recovery; recording remains blocked | Retry startup load/prune/save |
+| Delete | Complete deletion first; never load stale disk | Keep deletion; Disable revokes persistence | Keep deletion, preserving new memory | Delete; optionally save only post-Clear work |
+
+Tests exhaust all **3,000 three-action sequences** across rollback, startup,
+and active-persistence seeds, followed by recovery/enable/recovery to expose
+latent restores. Actions include both enable load modes, Clear, Disable, capture,
+pin, unrelated exclusion metadata, failures before commit, commit-then-throw
+saves/deletes, and successful recovery. Invariants check that discarded identities
+never reappear, clean/off disk is empty after deletion, Disable preserves memory,
+Clear discards memory, history remains bounded, and preexisting pinned work
+survives when no deliberate deletion occurred. Native module regressions also
+cover disabled launch preferences and later explicit re-enable of retained memory.
+
+Latest `bash test.sh`: **3,524 isolated checks and 7 installer scenarios passed**
+(`build/review-fix-disable-green.log`); `git diff --check` passed. Earlier
+Clear, bounded pinned image, startup, rollback, and host quit/unload regressions
+remain passing. No live clipboard/device changes, app launch, or push. These
+results are implementer-run; parent-arranged independent rereview remains pending.
+
 Combined integration: 443 isolated checks and 7 installer scenarios passed.
 Navigation/Windows policy: 451 isolated checks and 7 installer scenarios passed,
 including rename persistence/invalid input/identity preservation, readiness, complete
