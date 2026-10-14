@@ -42,7 +42,7 @@ final class SystemMouseHIDAccess: MouseHIDAccess {
         try connection { handle in
             var value = 0.0
             let result = MouseHIDGetAcceleration(handle, &value)
-            guard result == kIOReturnSuccess, value.isFinite, (0...3).contains(value) else {
+            guard result == kIOReturnSuccess, value.isFinite, SystemMouseBackend.trackingRange.contains(value) else {
                 throw failure("HIDMouseAcceleration read", result)
             }
             return value

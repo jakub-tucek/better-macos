@@ -1,7 +1,7 @@
 import Foundation
 
-/// A capability is a backend guarantee, never inferred from the OS version or
-/// the presence of a preference key. No live backend is qualified yet.
+/// Availability means runtime API reads succeeded, not physical-device
+/// qualification. Never infer mouse-only scope from OS version or preferences.
 protocol MouseSettingsBackend {
     var identifier: String { get }
     var available: Bool { get }
@@ -27,7 +27,8 @@ struct MouseRecovery: Codable {
 protocol MouseRecoveryStore {
     func load() throws -> MouseRecovery?
     /// Persist before returning for process-crash recovery. This contract does
-    /// not promise power-loss durability; qualify that before adding a live writer.
+    /// not promise power-loss durability; the opt-in writer's remaining limits
+    /// are documented in VALIDATION.md.
     func save(_ recovery: MouseRecovery) throws
     func clear() throws
 }

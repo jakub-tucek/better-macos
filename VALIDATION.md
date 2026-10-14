@@ -204,6 +204,9 @@ rollback remaining idle. Review notes also prompted injected-owner capability
 reads, an explicit read/refresh button, actual-current draft initialization while
 preserving unsaved edits, source-contract checks for mouse keys, setter failures
 and malformed read tests. Fixed-point tolerance/range validators are shared.
+Independent GPT-6.1 Sol follow-up review of `f46e1dc..dce9695` returned **CLEAN**,
+with no actionable blockers or warnings. Two minor notes (historical comments
+and a repeated range literal) were aligned with the live opt-in implementation.
 
 ## Initial foundation validation (historical)
 
