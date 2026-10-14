@@ -97,7 +97,7 @@ final class AudioModule {
     private var observed = false
     private var overrides = Set<AudioDirection>()
     private var pending = Set<AudioDirection>()
-    private var bluetoothRequest: (name: String, uid: String?)?
+    private var bluetoothRequest: (name: String, uid: String?, generation: UUID?)?
     private(set) var devices: [AudioDevice] = []
     private(set) var routes: [AudioDirection: String] = [:]
     private(set) var status = "Automatic routing is off"
@@ -115,6 +115,7 @@ final class AudioModule {
     // Fail closed while Bluetooth is connecting or its protection state is unknown.
     var bluetoothProtection: () -> AudioProtectionSnapshot = { .clear }
     var bluetoothRequestIsCurrent: (String) -> Bool = { _ in true }
+    var bluetoothPolicyGeneration: () -> UUID? = { nil }
 
     init(backend: AudioRoutingBackend = CoreAudioBackend(), defaults: UserDefaults = .standard) {
         self.backend = backend; self.defaults = defaults
@@ -206,12 +207,13 @@ final class AudioModule {
     /// Audio rules, manual intent and connected headphones always win.
     func bluetoothConnected(name: String) {
         guard running, !suspendRouting, !(automatic && automaticAllowed) else { return }
-        bluetoothRequest = (name, nil)
+        bluetoothRequest = (name, nil, bluetoothPolicyGeneration())
         poll()
     }
     private func reconcileBluetoothRequest() throws {
         guard let request = bluetoothRequest else { return }
-        guard !(automatic && automaticAllowed), !overrides.contains(.output), bluetoothRequestIsCurrent(request.name) else {
+        guard request.generation == bluetoothPolicyGeneration(), !(automatic && automaticAllowed),
+              !overrides.contains(.output), bluetoothRequestIsCurrent(request.name) else {
             bluetoothRequest = nil; return
         }
         guard !suspendRouting, !outputProtected else { return }
@@ -220,7 +222,7 @@ final class AudioModule {
             bluetoothRequest = nil; return
         }
         let uid = matches[0].uid
-        bluetoothRequest = (request.name, uid)
+        bluetoothRequest = (request.name, uid, request.generation)
         if routes[.output] != uid {
             try backend.select(uid, direction: .output)
             routes[.output] = uid

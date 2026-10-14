@@ -329,6 +329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return bluetooth?.audioProtection ?? (modules.enabled.contains(.bluetooth) ? .unavailable : .clear)
                 }
                 module.bluetoothRequestIsCurrent = { [weak self] name in self?.bluetooth?.audioRequestIsCurrent(name: name) == true }
+                module.bluetoothPolicyGeneration = { [weak self] in self?.bluetooth?.audioPolicyGeneration }
                 module.suspendRouting = guiTestTarget != nil
                 module.automaticAllowed = modules.enabled.contains(.audio)
                 module.start()

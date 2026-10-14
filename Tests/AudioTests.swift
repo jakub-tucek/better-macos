@@ -131,6 +131,7 @@ private func runBluetoothAudioIntegrationTests() {
     audio.setPreferences(["speaker"], direction: .output)
     audio.bluetoothProtection = { bluetooth.audioProtection }
     audio.bluetoothRequestIsCurrent = { bluetooth.audioRequestIsCurrent(name: $0) }
+    audio.bluetoothPolicyGeneration = { bluetooth.audioPolicyGeneration }
     audio.start()
     expect(fake.writes.isEmpty && !bluetooth.audioProtection.ready, "Saved routing waits for Bluetooth startup observation")
     var callbacks = 0
@@ -162,6 +163,22 @@ private func runBluetoothAudioIntegrationTests() {
     expect(fake.routes[.output] == "speaker", "Legacy write retries after transient failure")
     fake.routes[.output] = "builtin"; audio.resume()
     fake.failedWrites = [.output]; audio.bluetoothConnected(name: speaker.name)
+    bluetooth.switchAudioOutput = false; bluetooth.switchAudioOutput = true
+    bluetooth.poll()
+    let downstreamDeadline = Date().addingTimeInterval(2)
+    while bluetooth.isBusy && Date() < downstreamDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+    expect(bluetooth.audioRequestIsCurrent(name: speaker.name), "Downstream cancellation regression restores a fresh eligible Bluetooth observation")
+    fake.failedWrites = []; audio.poll()
+    expect(fake.routes[.output] == "builtin", "Policy generation prevents already-forwarded intent resurrection after off/on and a fresh Bluetooth poll")
+    fake.failedWrites = [.output]; audio.bluetoothConnected(name: speaker.name)
+    bluetooth.autoAddresses = []; bluetooth.autoAddresses = [speaker.address]
+    bluetooth.poll()
+    let targetGenerationDeadline = Date().addingTimeInterval(2)
+    while bluetooth.isBusy && Date() < targetGenerationDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+    fake.failedWrites = []; audio.poll()
+    expect(fake.routes[.output] == "builtin", "Removing and reselecting a target cannot revive forwarded intent from its previous policy lifetime")
+    fake.routes[.output] = "builtin"; audio.resume()
+    fake.failedWrites = [.output]; audio.bluetoothConnected(name: speaker.name)
     audio.select("builtin", direction: .output)
     fake.failedWrites = []; audio.poll()
     expect(fake.routes[.output] == "builtin", "Manual intent cancels queued legacy writes even if the manual write fails")
@@ -191,6 +208,7 @@ private func runBluetoothAudioIntegrationTests() {
     let discoveryAudio = AudioModule(backend: fake, defaults: defaults)
     discoveryAudio.bluetoothProtection = { discoveryBluetooth.audioProtection }
     discoveryAudio.bluetoothRequestIsCurrent = { discoveryBluetooth.audioRequestIsCurrent(name: $0) }
+    discoveryAudio.bluetoothPolicyGeneration = { discoveryBluetooth.audioPolicyGeneration }
     discoveryAudio.start()
     var discoveryCallbacks = 0
     discoveryBluetooth.onAudioOutputRequested = { name in

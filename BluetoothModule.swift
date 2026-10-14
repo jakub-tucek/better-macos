@@ -169,7 +169,10 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     private(set) var radioPoweredOn: Bool?
     private(set) var deviceStates: [String: String] = [:]
     private(set) var lastError: String?
-    var suspendAutomaticReconnection = false
+    var suspendAutomaticReconnection = false {
+        didSet { if suspendAutomaticReconnection { cycleCancellation?.cancel(); clearAudioIntent() } }
+    }
+    private(set) var audioPolicyGeneration = UUID()
     private let backend: BluetoothBackend?
     private let authorizationProvider: () -> CBManagerAuthorization
     private let legacyServiceTakeover: () throws -> Void
@@ -252,6 +255,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         get { Set(defaults.stringArray(forKey: "bluetooth.autoAddresses") ?? []) }
         set {
             cycleCancellation?.cancel()
+            if newValue != autoAddresses { audioPolicyGeneration = UUID() }
             pendingAudioAddresses.formIntersection(newValue)
             pendingAudioName = nil
             defaults.set(newValue.sorted(), forKey: "bluetooth.autoAddresses"); onChange?()
@@ -259,11 +263,11 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
     var protectOtherAudio: Bool {
         get { defaults.bool(forKey: "bluetooth.protectAudio") }
-        set { cycleCancellation?.cancel(); defaults.set(newValue, forKey: "bluetooth.protectAudio") }
+        set { cycleCancellation?.cancel(); audioPolicyGeneration = UUID(); defaults.set(newValue, forKey: "bluetooth.protectAudio") }
     }
     var protectedAudioAddresses: Set<String> {
         get { Set(defaults.stringArray(forKey: "bluetooth.protectedAudioAddresses") ?? []) }
-        set { cycleCancellation?.cancel(); defaults.set(newValue.sorted(), forKey: "bluetooth.protectedAudioAddresses") }
+        set { cycleCancellation?.cancel(); audioPolicyGeneration = UUID(); defaults.set(newValue.sorted(), forKey: "bluetooth.protectedAudioAddresses") }
     }
     var switchAudioOutput: Bool {
         get { defaults.bool(forKey: "bluetooth.switchAudio") }
@@ -275,6 +279,9 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     private func clearAudioIntent() {
+        // Survives replacement of the observation cycle: downstream retry intent
+        // belongs to this policy lifetime, not whichever cycle is current later.
+        audioPolicyGeneration = UUID()
         pendingAudioName = nil
         pendingAudioAddresses.removeAll()
     }
@@ -322,8 +329,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         timer?.invalidate()
         timer = nil
         cycleCancellation?.cancel()
-        pendingAudioName = nil
-        pendingAudioAddresses.removeAll()
+        clearAudioIntent()
         pendingManual = nil
         permissionManager = nil
         onStopped = completion
@@ -384,6 +390,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         guard !stopped else { return }
         guard !permissionRequired else { onError?(ToggleError(message: reconnectSummary)); onChange?(); return }
         pendingManual = .connection(address, connected)
+        clearAudioIntent()
         cycleCancellation?.cancel() // Manual intent takes precedence over later auto targets.
         onChange?()
         startPendingManual()
@@ -393,6 +400,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         guard !stopped else { return }
         guard !permissionRequired else { onError?(ToggleError(message: reconnectSummary)); onChange?(); return }
         pendingManual = .powerOn
+        clearAudioIntent()
         cycleCancellation?.cancel()
         onChange?()
         startPendingManual()
@@ -454,6 +462,9 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         switch result {
         case .success(let updated):
             lastObservation = Date()
+            if devices.contains(where: { old in old.connected && !updated.contains { $0.address == old.address && $0.connected } }) {
+                audioPolicyGeneration = UUID()
+            }
             devices = updated
             pendingAudioAddresses = pendingAudioAddresses.filter { address in
                 updated.contains { $0.address == address && $0.connected } && autoAddresses.contains(address)
