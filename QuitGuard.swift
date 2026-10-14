@@ -120,8 +120,14 @@ final class QuitGuard {
     var enabled: Bool { defaults.bool(forKey: "quitGuard.enabled") }
     var isRunning: Bool { tap.map { CGEvent.tapIsEnabled(tap: $0) } ?? false }
     var duration: Double {
-        get { defaults.double(forKey: "quitGuard.duration") == 2 ? 2 : 3 }
-        set { cancel(); defaults.set(newValue == 2 ? 2 : 3, forKey: "quitGuard.duration"); onChange?() }
+        get {
+            guard defaults.object(forKey: "quitGuard.duration") != nil else { return 3 }
+            return Self.normalizedDuration(defaults.double(forKey: "quitGuard.duration"))
+        }
+        set { cancel(); defaults.set(Self.normalizedDuration(newValue), forKey: "quitGuard.duration"); onChange?() }
+    }
+    private static func normalizedDuration(_ seconds: Double) -> Double {
+        seconds.isFinite ? min(99, max(1, seconds.rounded())) : 3
     }
     private var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
 

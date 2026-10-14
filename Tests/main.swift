@@ -1199,6 +1199,16 @@ let guardDefaults = QuitGuard(defaults: quitDefaults)
 expect(guardDefaults.duration == 3, "Fresh installations use a three-second quit hold")
 guardDefaults.duration = 2
 expect(QuitGuard(defaults: quitDefaults).duration == 2, "Explicit two-second preference survives recreation")
+for seconds in [1.0, 15.0, 99.0] {
+    guardDefaults.duration = seconds
+    expect(QuitGuard(defaults: quitDefaults).duration == seconds, "Quit hold persists \(Int(seconds)) seconds within the 1–99 range")
+}
+guardDefaults.duration = 100
+expect(guardDefaults.duration == 99, "Quit hold clamps values above 99 seconds")
+guardDefaults.duration = 0
+expect(guardDefaults.duration == 1, "Quit hold clamps values below one second")
+guardDefaults.duration = .nan
+expect(guardDefaults.duration == 3, "Non-finite quit duration falls back to the default")
 quitDefaults.removePersistentDomain(forName: quitDefaultsDomain)
 let initialQuitFrame = QuitProgressFrame(startedAt: 10, duration: 3, now: 10)
 let lastQuitFrame = QuitProgressFrame(startedAt: 10, duration: 3, now: 13)

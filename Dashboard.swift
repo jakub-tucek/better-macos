@@ -409,10 +409,17 @@ struct DashboardView: View {
                 Spacer()
                 BlueSwitch(label: "Hold Command Q to quit", isOn: Binding(get: { model.quitGuardEnabled }, set: model.onQuitGuardChanged))
             }
-            Picker("Hold for", selection: Binding(get: { model.quitGuardDuration }, set: model.onQuitGuardDurationChanged)) {
-                Text("2 seconds").tag(2.0)
-                Text("3 seconds").tag(3.0)
-            }.pickerStyle(.segmented)
+            HStack {
+                Text("Hold for")
+                Spacer()
+                TextField("Seconds", value: Binding(get: { model.quitGuardDuration }, set: model.onQuitGuardDurationChanged),
+                          format: .number.precision(.fractionLength(0)))
+                    .textFieldStyle(.roundedBorder).multilineTextAlignment(.trailing).frame(width: 52)
+                    .accessibilityLabel("Quit hold duration in seconds")
+                Text("seconds")
+                Stepper("Quit hold duration", value: Binding(get: { model.quitGuardDuration }, set: model.onQuitGuardDurationChanged),
+                        in: 1...99, step: 1).labelsHidden().fixedSize()
+            }
             Text("A popup names the app while you hold. Release early to cancel. Switching apps or clicking also cancels. Normal save prompts still appear.")
                 .font(.caption).foregroundStyle(.secondary)
             if !model.quitGuardActive {
