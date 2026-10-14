@@ -130,6 +130,7 @@ private func runBluetoothAudioIntegrationTests() {
     audio.automaticAllowed = true
     audio.setPreferences(["speaker"], direction: .output)
     audio.bluetoothProtection = { bluetooth.audioProtection }
+    audio.bluetoothRequestIsCurrent = { bluetooth.audioRequestIsCurrent(name: $0) }
     audio.start()
     expect(fake.writes.isEmpty && !bluetooth.audioProtection.ready, "Saved routing waits for Bluetooth startup observation")
     var callbacks = 0
@@ -146,11 +147,33 @@ private func runBluetoothAudioIntegrationTests() {
     audio.automatic = false
     fake.routes[.output] = "builtin"; audio.resume()
     runner.current = [speaker]
+    fake.failCurrent = true
     bluetooth.poll()
     let legacyDeadline = Date().addingTimeInterval(2)
     while bluetooth.isBusy && Date() < legacyDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
-    expect(callbacks == 2 && fake.routes[.output] == "speaker", "Protected legacy post-connect request reaches the Audio backend when automatic rules are off")
+    expect(callbacks == 2 && fake.routes[.output] == "builtin", "Integrated legacy request defers after a failed current-route read")
+    fake.failCurrent = false; audio.poll()
+    expect(fake.routes[.output] == "speaker", "Legacy post-connect intent retries after observation recovers without reconnecting")
+    fake.routes[.output] = "builtin"; audio.resume()
+    fake.failedWrites = [.output]
+    audio.bluetoothConnected(name: speaker.name)
+    expect(fake.routes[.output] == "builtin", "Failed legacy write preserves current route")
+    fake.failedWrites = []; audio.poll()
+    expect(fake.routes[.output] == "speaker", "Legacy write retries after transient failure")
+    fake.routes[.output] = "builtin"; audio.resume()
+    fake.failedWrites = [.output]; audio.bluetoothConnected(name: speaker.name)
+    audio.select("builtin", direction: .output)
+    fake.failedWrites = []; audio.poll()
+    expect(fake.routes[.output] == "builtin", "Manual intent cancels queued legacy writes even if the manual write fails")
+    fake.failedWrites = [.output]; audio.bluetoothConnected(name: speaker.name)
+    bluetooth.switchAudioOutput = false
+    fake.failedWrites = []; audio.poll()
+    expect(fake.routes[.output] == "builtin", "Bluetooth policy changes cancel queued legacy routing")
+    audio.select("builtin", direction: .output)
+    audio.automatic = false
+    expect(audio.isOverridden(.output), "Turning automatic routing off preserves manual override")
     bluetooth.stop(); audio.stop()
+    defaults.set(true, forKey: "bluetooth.switchAudio")
 
     let entered = DispatchSemaphore(value: 0)
     let release = DispatchSemaphore(value: 0)

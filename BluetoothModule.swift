@@ -195,6 +195,12 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     var available: Bool { backend != nil }
+    func audioRequestIsCurrent(name: String) -> Bool {
+        !stopped && autoEnabled && switchAudioOutput && !suspendAutomaticReconnection && !legacyServicePresent &&
+            cycleCancellation?.isCanceled == false && devices.contains {
+                $0.connected && $0.name == name && autoAddresses.contains($0.address)
+            }
+    }
     var audioProtection: AudioProtectionSnapshot {
         guard !stopped, !permissionRequired, !busy, lastError == nil, !legacyServicePresent,
               let lastObservation, Date().timeIntervalSince(lastObservation) < 10 else { return .unavailable }

@@ -97,6 +97,7 @@ final class AudioModule {
     private var observed = false
     private var overrides = Set<AudioDirection>()
     private var pending = Set<AudioDirection>()
+    private var bluetoothRequest: (name: String, uid: String?)?
     private(set) var devices: [AudioDevice] = []
     private(set) var routes: [AudioDirection: String] = [:]
     private(set) var status = "Automatic routing is off"
@@ -107,13 +108,19 @@ final class AudioModule {
     var suspendRouting = false
     // Fail closed while Bluetooth is connecting or its protection state is unknown.
     var bluetoothProtection: () -> AudioProtectionSnapshot = { .clear }
+    var bluetoothRequestIsCurrent: (String) -> Bool = { _ in true }
 
     init(backend: AudioRoutingBackend = CoreAudioBackend(), defaults: UserDefaults = .standard) {
         self.backend = backend; self.defaults = defaults
     }
     var automatic: Bool {
         get { defaults.bool(forKey: "audio.automatic") }
-        set { defaults.set(newValue, forKey: "audio.automatic"); resume() }
+        set {
+            defaults.set(newValue, forKey: "audio.automatic")
+            bluetoothRequest = nil
+            if newValue { resume() }
+            else { pending.removeAll(); poll() }
+        }
     }
     func preferences(_ direction: AudioDirection) -> [String] { defaults.stringArray(forKey: "audio.\(direction.rawValue).preferences") ?? [] }
     func fallback(_ direction: AudioDirection) -> String { defaults.string(forKey: "audio.\(direction.rawValue).fallback") ?? "" }
@@ -132,10 +139,11 @@ final class AudioModule {
         let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in self?.poll() }
         RunLoop.main.add(timer, forMode: .common); self.timer = timer
     }
-    func stop() { running = false; timer?.invalidate(); timer = nil; onChange = nil }
-    func resume() { overrides.removeAll(); observed = false; poll() }
+    func stop() { running = false; timer?.invalidate(); timer = nil; bluetoothRequest = nil; onChange = nil }
+    func resume() { overrides.removeAll(); bluetoothRequest = nil; observed = false; poll() }
     func select(_ uid: String, direction: AudioDirection) {
         guard running, !suspendRouting else { return }
+        if direction == .output { bluetoothRequest = nil }
         do {
             try backend.select(uid, direction: direction)
             routes[direction] = uid; overrides.insert(direction); pending.remove(direction)
@@ -154,7 +162,10 @@ final class AudioModule {
                 let old = Set(devices.filter { $0.directions.contains(direction) }.map(\.uid))
                 let new = Set(updated.filter { $0.directions.contains(direction) }.map(\.uid))
                 if !observed || old != new { changed.insert(direction); overrides.remove(direction) }
-                else if current[direction] != routes[direction] { overrides.insert(direction); pending.remove(direction) }
+                else if current[direction] != routes[direction] {
+                    overrides.insert(direction); pending.remove(direction)
+                    if direction == .output { bluetoothRequest = nil }
+                }
             }
             devices = updated; routes = current; observed = true
             pending.formUnion(changed)
@@ -168,6 +179,7 @@ final class AudioModule {
                 }
                 if !failures.isEmpty { status = failures.joined(separator: "; ") }
             }
+            try reconcileBluetoothRequest()
         } catch { status = error.localizedDescription; onChange?(); return false }
         onChange?()
         return true
@@ -188,12 +200,25 @@ final class AudioModule {
     /// Audio rules, manual intent and connected headphones always win.
     func bluetoothConnected(name: String) {
         guard running, !suspendRouting, !(automatic && automaticAllowed) else { return }
-        guard poll() else { return }
-        guard !overrides.contains(.output), !outputProtected else { return }
-        let matches = devices.filter { $0.name == name && $0.directions.contains(.output) }
-        guard matches.count == 1 else { return }
-        do { try backend.select(matches[0].uid, direction: .output); routes[.output] = matches[0].uid }
-        catch { status = error.localizedDescription }
-        onChange?()
+        bluetoothRequest = (name, nil)
+        poll()
+    }
+    private func reconcileBluetoothRequest() throws {
+        guard let request = bluetoothRequest else { return }
+        guard !(automatic && automaticAllowed), !overrides.contains(.output), bluetoothRequestIsCurrent(request.name) else {
+            bluetoothRequest = nil; return
+        }
+        guard !suspendRouting, !outputProtected else { return }
+        let matches = devices.filter { $0.name == request.name && $0.directions.contains(.output) }
+        guard matches.count == 1, request.uid == nil || request.uid == matches[0].uid else {
+            bluetoothRequest = nil; return
+        }
+        let uid = matches[0].uid
+        bluetoothRequest = (request.name, uid)
+        if routes[.output] != uid {
+            try backend.select(uid, direction: .output)
+            routes[.output] = uid
+        }
+        bluetoothRequest = nil
     }
 }
