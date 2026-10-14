@@ -15,6 +15,7 @@ enum DashboardTab: String, CaseIterable {
     case mouse = "Mouse"
 
     static var features: [DashboardTab] { allCases.filter { $0 != .modules } }
+    static let quickFeatures: [DashboardTab] = [.monitors, .keepAwake, .audio, .clipboard, .windows]
     var symbol: String {
         switch self {
         case .modules: return "gearshape"
@@ -29,6 +30,66 @@ enum DashboardTab: String, CaseIterable {
         case .clipboard: return "clipboard"
         case .mouse: return "computermouse"
         }
+    }
+}
+
+extension AppModule {
+    var dashboardFeature: DashboardTab {
+        switch self {
+        case .monitors, .arrangement: return .monitors
+        case .bluetooth: return .bluetooth
+        case .audio: return .audio
+        case .spaces: return .spaces
+        case .menuBar: return .menuBar
+        case .quitGuard: return .keyboard
+        case .keepAwake: return .keepAwake
+        case .windows: return .windows
+        case .clipboard: return .clipboard
+        case .mouse: return .mouse
+        }
+    }
+}
+
+/// Context is independent of feature identity: Audio, for example, has two panels.
+struct DashboardNavigation: Equatable {
+    enum Context { case quick, settings }
+    var context: Context = .quick
+    var feature: DashboardTab?
+    private var returnFeature: DashboardTab?
+
+    var isSetup: Bool { context == .settings }
+    mutating func openQuick(_ feature: DashboardTab) {
+        guard DashboardTab.quickFeatures.contains(feature) else { return }
+        context = .quick; self.feature = feature
+    }
+    mutating func openSettings() {
+        if context == .quick { returnFeature = feature }
+        context = .settings; feature = nil
+    }
+    mutating func openSetup(_ feature: DashboardTab) {
+        if context == .quick { returnFeature = self.feature }
+        context = .settings; self.feature = feature == .modules ? nil : feature
+    }
+    mutating func back() {
+        if feature != nil { feature = nil }
+        else if context == .settings { context = .quick; feature = returnFeature }
+    }
+    mutating func show(_ feature: DashboardTab) {
+        if feature == .modules { openSettings() }
+        else if DashboardTab.quickFeatures.contains(feature) { openQuick(feature) }
+        else { openSetup(feature) }
+    }
+    static func launch(arguments: [String]) -> DashboardNavigation {
+        var result = DashboardNavigation()
+        let flags: [(String, DashboardTab)] = [
+            ("--show-bluetooth", .bluetooth), ("--show-monitors", .monitors),
+            ("--show-modules", .modules), ("--show-spaces", .spaces),
+            ("--show-menu-bar", .menuBar), ("--show-keyboard", .keyboard),
+            ("--show-keep-awake", .keepAwake), ("--show-mouse", .mouse),
+            ("--show-audio", .audio), ("--show-clipboard", .clipboard), ("--show-windows", .windows)
+        ]
+        for (flag, feature) in flags where arguments.contains(flag) { result.show(feature) }
+        return result
     }
 }
 
@@ -50,7 +111,12 @@ final class DashboardModel: ObservableObject {
     var onAudioFallback: (String, AudioDirection) -> Void = { _, _ in }
     @Published var enabledModules = Set(AppModule.allCases)
     @Published var stoppingModules = Set<AppModule>()
-    @Published var tab: DashboardTab = .monitors
+    @Published var navigation = DashboardNavigation()
+    // Compatibility for permission callbacks and explicit feature entry points.
+    var tab: DashboardTab {
+        get { navigation.feature ?? .modules }
+        set { navigation.show(newValue) }
+    }
     @Published var monitors: [Monitor] = []
     @Published var monitorBusy = false
     @Published var confirmMonitorDisable = false
@@ -171,6 +237,12 @@ final class DashboardModel: ObservableObject {
     var onInstallUpdate: () -> Void = {}
     var onClose: () -> Void = {}
     var onQuit: () -> Void = {}
+
+    var displayControlsReachable: Bool {
+        !enabledModules.isDisjoint(with: [.monitors, .arrangement]) ||
+        pendingArrangement || disabledMonitorCount > 0 || !countdowns.isEmpty ||
+        monitorBusy || !stoppingModules.isDisjoint(with: [.monitors, .arrangement])
+    }
 
     func updateMouseRecovery(required: Bool, message: String?) {
         mouseRecoveryRequired = required
@@ -307,7 +379,7 @@ struct DashboardView: View {
     @State private var previewMonitor: String?
     @State private var customAwakeDuration = false
     @State private var clipboardExclusionsDraft = ClipboardExclusionsDraft()
-    @State private var lastFeature: DashboardTab = .monitors
+    private var isSetup: Bool { model.navigation.isSetup }
 
     private var disconnectDisablesRule: Bool {
         guard let device = disconnectWarning else { return false }
@@ -320,38 +392,24 @@ struct DashboardView: View {
                 Image(systemName: "slider.horizontal.3").foregroundStyle(.blue)
                 Text("Fix macOS").font(.headline)
                 Spacer()
-                Button {
-                    if model.tab == .modules { model.tab = lastFeature }
-                    else { lastFeature = model.tab; model.tab = .modules }
-                } label: {
-                    Image(systemName: model.tab == .modules ? "gearshape.fill" : "gearshape")
+                Button { model.navigation.openSettings() } label: {
+                    Image(systemName: isSetup ? "gearshape.fill" : "gearshape")
                 }
                 .buttonStyle(.plain).help("Settings and modules")
                 .accessibilityLabel("Settings and modules")
                 Button(action: model.onClose) { Image(systemName: "xmark") }
                     .buttonStyle(.plain).help("Close dashboard")
             }.padding(16)
-            if model.tab != .modules {
-                Menu {
-                    ForEach(DashboardTab.features, id: \.self) { feature in
-                        Button { model.tab = feature } label: {
-                            Label(feature.rawValue, systemImage: feature.symbol)
-                        }
-                    }
-                } label: {
-                    Label(model.tab.rawValue, systemImage: model.tab.symbol)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            HStack {
+                if isSetup || model.navigation.feature != nil {
+                    Button { model.navigation.back() } label: { Label("Back", systemImage: "chevron.left") }
                 }
-                .help("Choose a feature")
-                .accessibilityLabel("Choose a feature: \(model.tab.rawValue)")
-                .padding(.horizontal, 16).padding(.bottom, 12)
-            } else {
-                HStack {
-                    Text("Settings").font(.headline)
-                    Spacer()
-                    Button("Back") { model.tab = lastFeature }
-                }.padding(.horizontal, 16).padding(.bottom, 12)
-            }
+                Text(model.navigation.feature.map { isSetup ? "\($0.rawValue) setup" : $0.rawValue } ?? (isSetup ? "Settings" : "Quick controls")).font(.headline)
+                Spacer()
+                if !isSetup, let feature = model.navigation.feature {
+                    Button("Setup") { model.navigation.openSetup(feature) }
+                }
+            }.padding(.horizontal, 16).padding(.bottom, 12)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
@@ -373,13 +431,15 @@ struct DashboardView: View {
                     if model.mouseRecoveryRequired {
                         Button("Retry restoring original mouse settings", action: model.onRestoreMouse)
                     }
-                    switch model.tab {
+                    if model.navigation.feature == nil {
+                        if isSetup { modules } else { quickHome }
+                    } else { switch model.tab {
                     case .windows:
-                        if let positions = model.windowPositions { WindowPositionsView(module: positions) }
+                        if let positions = model.windowPositions { WindowPositionsView(module: positions, setup: isSetup) }
                         else { disabledModule("Window positions") }
                     case .modules: modules
                     case .monitors:
-                        if !model.enabledModules.isDisjoint(with: [.monitors, .arrangement]) || model.pendingArrangement || model.disabledMonitorCount > 0 { monitors }
+                        if model.displayControlsReachable { monitors }
                         else { disabledModule("Display modules") }
                     case .audio:
                         if model.enabledModules.contains(.audio) { audioControls }
@@ -405,9 +465,9 @@ struct DashboardView: View {
                     case .mouse:
                         if model.enabledModules.contains(.mouse) { mouse }
                         else { disabledModule("Mouse") }
-                    }
+                    } }
                 }.padding(16)
-            }
+            }.id("\(isSetup)-\(model.navigation.feature?.rawValue ?? "home")")
             Divider()
             HStack {
                 Spacer()
@@ -438,15 +498,36 @@ struct DashboardView: View {
         DashboardCard(content: content)
     }
 
+    private var quickHome: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Everyday actions. Use Settings for setup and module switches.")
+                .font(.caption).foregroundStyle(.secondary)
+            ForEach(DashboardTab.quickFeatures, id: \.self) { feature in
+                card {
+                    Button { model.navigation.openQuick(feature) } label: {
+                        HStack {
+                            Label(feature.rawValue, systemImage: feature.symbol)
+                            Spacer()
+                            Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                        }.contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityLabel("Open \(feature.rawValue) quick controls")
+                }
+            }
+        }
+    }
+
     private var audioControls: some View {
         VStack(alignment: .leading, spacing: 14) {
             card {
                 Label("Audio", systemImage: DashboardTab.audio.symbol).font(.headline)
-                DashboardSwitchRow(title: "Automatic routing", isOn: Binding(get: { model.audioAutomatic }, set: model.onAudioAutomatic))
+                if isSetup {
+                    DashboardSwitchRow(title: "Automatic routing", isOn: Binding(get: { model.audioAutomatic }, set: model.onAudioAutomatic))
+                }
                 Text(model.audioStatus).font(.caption).foregroundStyle(.secondary)
                 Button("Resume preferred routes", action: model.onAudioResume)
-                Text("Automatic routing follows saved preferences when devices change. Connected Bluetooth audio stays protected.")
+                if isSetup { Text("Automatic routing follows saved preferences when devices change. Connected Bluetooth audio stays protected.")
                     .font(.caption).foregroundStyle(.secondary)
+                }
             }
             ForEach(AudioDirection.allCases, id: \.self) { direction in
                 card { audioDirectionControls(direction) }
@@ -459,13 +540,14 @@ struct DashboardView: View {
         let preferred = model.audioPreferences[direction] ?? []
         return VStack(alignment: .leading, spacing: 8) {
             Text(direction == .input ? "Microphone" : "Output").font(.headline)
-            Picker("Current", selection: Binding(get: { model.audioRoutes[direction] ?? "" }, set: { model.onAudioSelect($0, direction) })) {
+            if !isSetup { Picker("Current", selection: Binding(get: { model.audioRoutes[direction] ?? "" }, set: { model.onAudioSelect($0, direction) })) {
                 Text("Unavailable").tag("")
                 ForEach(devices) { device in Text("\(device.name) · \(device.uid)").tag(device.uid) }
             }.disabled(devices.isEmpty)
             if devices.isEmpty { Text("No available devices.").font(.caption).foregroundStyle(.secondary) }
             if model.audioOverrides[direction] == true { Text("Manual choice until devices change or you resume preferences.").font(.caption) }
-            DisclosureGroup("Preferred devices and fallback") {
+            }
+            if isSetup {
             VStack(alignment: .leading, spacing: 8) {
             Text("Preference order (highest first)").font(.caption)
             if preferred.isEmpty { Text("No preferred devices saved.").font(.caption).foregroundStyle(.secondary) }
@@ -510,7 +592,7 @@ struct DashboardView: View {
             if model.clipboardStoragePending {
                 Text("Disk cleanup/save pending — retrying. Old disk entries may remain until storage recovers; keep the module enabled.").font(.caption).foregroundStyle(.orange)
             }
-            DisclosureGroup("Retention and exclusions") {
+            if isSetup {
             VStack(alignment: .leading, spacing: 12) {
             DashboardSwitchRow(title: "Save history to disk", isOn: Binding(get: { model.clipboardPersistence }, set: model.onClipboardPersistence))
             Stepper("Retain for \(model.clipboardDays) days", value: Binding(get: { model.clipboardDays }, set: model.onClipboardDays), in: 1...365)
@@ -576,7 +658,7 @@ struct DashboardView: View {
             ? String(format: "%d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60)
             : String(format: "%d:%02d", seconds / 60, seconds % 60)
         return VStack(alignment: .leading, spacing: 14) {
-            card {
+            if !isSetup { card {
                 HStack {
                     Label("Keep awake", systemImage: DashboardTab.keepAwake.symbol).font(.headline)
                     Spacer()
@@ -613,10 +695,11 @@ struct DashboardView: View {
                     Button("Start session", action: model.onKeepAwakeStart).buttonStyle(.borderedProminent)
                     if model.keepAwakeCanStop { Button("Stop", action: model.onKeepAwakeStop) }
                 }
-            }
+            } }
             card {
                 Text("While apps are running").font(.headline)
                 Text("Includes apps running in the background.").font(.caption).foregroundStyle(.secondary)
+                if isSetup {
                 if model.keepAwakeApps.isEmpty { Text("No app rules yet.").font(.caption).foregroundStyle(.secondary) }
                 ForEach(model.keepAwakeApps.keys.sorted(), id: \.self) { id in
                     HStack {
@@ -629,21 +712,25 @@ struct DashboardView: View {
                     }
                 }
                 Button("Add apps…", action: model.onKeepAwakeAddApp)
+                }
                 if !model.keepAwakeAppNames.isEmpty {
                     Text("Requested by: " + model.keepAwakeAppNames.joined(separator: ", ")).font(.caption)
+                } else if !isSetup {
+                    Text(model.keepAwakeApps.isEmpty ? "No app rules yet — add them in Setup." : "No matching apps currently running.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 if model.keepAwakeAppsPaused {
                     Text("Stopped apps stay paused until they exit.").font(.caption)
                     Button("Resume", action: model.onKeepAwakeResume)
                 }
             }
-            card {
+            if isSetup { card {
                 DashboardSwitchRow(title: "Keep display awake", isOn: Binding(get: { model.keepDisplayAwake }, set: model.onKeepDisplayAwakeChanged))
                 Text(model.keepDisplayAwake ? "Keep the computer and display awake until the session ends." : "Keep the computer awake while letting the display sleep.")
                     .font(.caption).foregroundStyle(.secondary)
                 Text("Sleep from the Apple menu and closing the lid still work. Quitting Fix macOS ends the session.")
                     .font(.caption2).foregroundStyle(.secondary)
-            }
+            } }
         }
     }
 
@@ -705,7 +792,7 @@ struct DashboardView: View {
     private var monitors: some View {
         VStack(alignment: .leading, spacing: 14) {
             Label("Monitors", systemImage: DashboardTab.monitors.symbol).font(.headline)
-            if model.enabledModules.contains(.monitors) {
+            if isSetup && model.enabledModules.contains(.monitors) {
                 Picker("Disable mode", selection: Binding(
                     get: { model.confirmMonitorDisable }, set: model.onMonitorDisableModeChanged)) {
                     Text("Dangerously").tag(false)
@@ -770,11 +857,12 @@ struct DashboardView: View {
                     .disabled(busy || !model.displaySupported || model.disabledMonitorCount > 0 || model.pendingArrangement || model.currentLayout.count < 2)
                     .help("Drag screens to arrange your desk")
             }
-            DashboardSwitchRow(title: "Match screen edges", isOn: Binding(
+            if isSetup { DashboardSwitchRow(title: "Match screen edges", isOn: Binding(
                 get: { model.matchScreenEdges }, set: model.onMatchScreenEdgesChanged))
             if model.matchScreenEdges && !model.screenEdgesActive {
                 Text("Paused — waiting for stable displays or Accessibility access.")
                     .font(.caption2).foregroundStyle(.secondary)
+            }
             }
             if model.disabledMonitorCount > 0 {
                 Text("Turn all screens on to arrange.").font(.caption2).foregroundStyle(.secondary)
@@ -812,21 +900,25 @@ struct DashboardView: View {
     private func disabledModule(_ title: String) -> some View {
         card {
             Text("\(title) is off").font(.headline)
-            Button("Enable in settings") { lastFeature = model.tab; model.tab = .modules }
+            Button("Enable in settings") { model.navigation.openSettings() }
         }
     }
 
     private var modules: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Modules").font(.headline)
+            Text("Open a module to configure it. Switches enable or disable background work.")
+                .font(.caption).foregroundStyle(.secondary)
             card {
                 DashboardSwitchRow(title: "Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: model.onLoginChanged))
             }
             ForEach(AppModule.allCases) { module in
                 card {
                     HStack {
-                        Text(module.title).font(.headline)
+                        Button { model.navigation.openSetup(module.dashboardFeature) } label: {
+                            Label(module.title, systemImage: module.dashboardFeature.symbol)
+                        }.buttonStyle(.plain).accessibilityLabel("Set up \(module.title)")
                         Spacer()
+                        Image(systemName: "chevron.right").foregroundStyle(.secondary)
                         BlueSwitch(label: "\(module.title) module", isOn: Binding(
                             get: { model.enabledModules.contains(module) },
                             set: { model.onModuleChanged(module, $0) }))

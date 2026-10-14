@@ -2,6 +2,7 @@ import SwiftUI
 
 struct WindowPositionsView: View {
     @ObservedObject var module: WindowPositions
+    var setup = true
     @State private var name = ""
     @State private var renamingID: String?
     @State private var renameDraft = ""
@@ -19,12 +20,12 @@ struct WindowPositionsView: View {
                 Text("Ready · current desktop only").font(.caption).foregroundStyle(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 8) {
+            if setup { VStack(alignment: .leading, spacing: 8) {
                 TextField("New layout name", text: $name)
                     .onSubmit(save)
                 Button("Save current layout", action: save)
                     .disabled(!module.canCapture || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
+            } }
           }
           DashboardCard {
             if module.layouts.isEmpty {
@@ -41,14 +42,15 @@ struct WindowPositionsView: View {
                         Button("Restore") { module.restore(layout.id) }
                             .disabled(!module.canCapture)
                             .accessibilityLabel("Restore \(layout.name)")
-                        Menu {
+                        if setup { Menu {
                             Button("Rename…") { renameDraft = layout.name; renamingID = layout.id }
                             Button("Delete", role: .destructive) { module.delete(layout.id) }
                         } label: { Image(systemName: "ellipsis.circle") }
                         .menuStyle(.borderlessButton).fixedSize()
                         .accessibilityLabel("Options for \(layout.name)")
+                        }
                     }
-                    if renamingID == layout.id {
+                    if setup && renamingID == layout.id {
                         HStack {
                             TextField("Layout name", text: $renameDraft).onSubmit(rename)
                             Button("Save", action: rename)
@@ -61,8 +63,8 @@ struct WindowPositionsView: View {
             }
             Text(module.summary).font(.caption).textSelection(.enabled)
           }
-          DashboardCard {
-            DisclosureGroup("Advanced") {
+           if setup { DashboardCard {
+                DisclosureGroup("Advanced") {
                 VStack(alignment: .leading, spacing: 12) {
                     DashboardSwitchRow(title: "Restore after reconnect or wake", isOn: $module.automatic)
                     DashboardSwitchRow(title: "Pause automatic restoration", isOn: $module.paused)
@@ -76,8 +78,8 @@ struct WindowPositionsView: View {
                     Text("Exact app and window-title matches only. Ambiguous, untitled, and unsupported windows are skipped.")
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(.top, 8)
-            }
-          }
+           } }
+        }
         }
     }
 

@@ -127,14 +127,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async { [weak self] in self?.bluetooth?.requestBluetoothAccess() }
         }
         // Saved gesture activation waits for the watchdog and settled displays.
+        model.navigation = DashboardNavigation.launch(arguments: CommandLine.arguments)
         if CommandLine.arguments.contains("--show-dashboard") {
-            model.tab = CommandLine.arguments.contains("--show-monitors") ? .monitors : .bluetooth
-            if CommandLine.arguments.contains("--show-modules") { model.tab = .modules }
-            if CommandLine.arguments.contains("--show-spaces") { model.tab = .spaces }
-            if CommandLine.arguments.contains("--show-menu-bar") { model.tab = .menuBar }
-            if CommandLine.arguments.contains("--show-keyboard") { model.tab = .keyboard }
-            if CommandLine.arguments.contains("--show-keep-awake") { model.tab = .keepAwake }
-            if CommandLine.arguments.contains("--show-mouse") { model.tab = .mouse }
             DispatchQueue.main.async { [weak self] in self?.showDashboard() }
         }
     }

@@ -18,6 +18,26 @@ A macOS menu-bar app for managing monitors, Bluetooth connections, and desktop s
 
 Enable or disable each module from the **gear icon**. Disabled modules stop background work and release their state; your settings stay saved.
 
+### Quick controls and Settings
+
+The native **430 × 580** popover opens on **Quick controls**, with direct icon-labelled
+cards for Monitors, Keep awake, Audio, Clipboard, and Windows. Each opens a focused
+everyday panel: switch/restore displays and enter the arrangement editor; start,
+extend, stop or resume awake sessions; switch microphone/output; open searchable
+clipboard history and copy entries; or restore saved window layouts. **Back** returns
+home. There is no top-level feature dropdown.
+
+The **gear** opens **Settings**: module setup buttons with independent enable switches,
+launch at login, diagnostics, and updates. Setup includes Bluetooth reconnect targets
+and policies (plus manual device actions), animations, Mouse tuning, Keyboard's
+1–99-second quit hold, Menu bar setup, Audio preferences/fallbacks, Windows save,
+rename, delete, exclusions and automatic restore, Keep awake app rules/display
+defaults, Clipboard retention/exclusions, and monitor safety/screen-edge preferences.
+**Setup** in a quick panel opens that module's configuration directly. Setup **Back**
+returns to the Settings list; Settings **Back** restores the prior quick panel (or
+home). Recovery/error actions stay available, and disabled modules remain reachable
+with an **Enable in settings** action. Toggles do not dismiss the popover.
+
 ## Install from source
 
 Requires Apple Silicon, macOS 15+, Xcode Command Line Tools (`xcode-select --install`), and [Homebrew](https://brew.sh).

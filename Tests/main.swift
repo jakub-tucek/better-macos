@@ -129,9 +129,82 @@ windowBackend.permitted = false
 expect(!windowModule.canCapture, "revoked window permission disables primary actions")
 windowBackend.permitted = true
 expect(Set(DashboardTab.features) == Set(DashboardTab.allCases.filter { $0 != .modules }) && DashboardTab.features.contains(.mouse),
-       "feature chooser includes every feature including Mouse, with Settings separate")
+       "settings setup list includes every feature including Mouse")
 expect(DashboardTab.features.allSatisfy { !$0.symbol.isEmpty } && DashboardTab.keepAwake.symbol == "pill.fill",
        "feature navigation provides icons and Keep awake shares the pill symbol")
+expect(DashboardTab.quickFeatures == [.monitors, .keepAwake, .audio, .clipboard, .windows],
+       "quick home contains everyday actions, not configuration-only modules")
+expect(Set(AppModule.allCases.map(\.dashboardFeature)) == Set(DashboardTab.features),
+       "Settings module setup buttons cover every feature without a dropdown")
+var navigation = DashboardNavigation.launch(arguments: ["app", "--show-dashboard"])
+expect(navigation.context == .quick && navigation.feature == nil, "default launch opens quick home")
+navigation.openQuick(.audio)
+expect(navigation.context == .quick && navigation.feature == .audio, "home opens focused Audio quick controls")
+navigation.openSettings()
+expect(navigation.context == .settings && navigation.feature == nil, "gear opens Settings list, not feature dropdown")
+navigation.openSetup(.audio)
+expect(navigation.isSetup && navigation.feature == .audio, "same module has a separate setup context")
+navigation.back()
+expect(navigation.isSetup && navigation.feature == nil, "setup Back returns to Settings list")
+navigation.back()
+expect(!navigation.isSetup && navigation.feature == .audio, "Settings Back restores prior quick panel")
+navigation.back()
+expect(navigation.context == .quick && navigation.feature == nil, "quick Back returns home")
+navigation.openQuick(.mouse)
+expect(navigation.feature == nil, "configuration-only modules cannot enter quick context")
+navigation.openSettings()
+navigation.openSettings()
+navigation.back()
+expect(!navigation.isSetup && navigation.feature == nil, "repeated gear preserves home return target")
+navigation.openQuick(.keepAwake)
+navigation.openSetup(.keepAwake)
+navigation.back()
+navigation.back()
+expect(!navigation.isSetup && navigation.feature == .keepAwake, "direct Setup returns through Settings to prior quick panel")
+for feature in DashboardTab.features {
+    navigation.show(feature)
+    expect(navigation.feature == feature && navigation.isSetup == !DashboardTab.quickFeatures.contains(feature),
+           "explicit entry uses appropriate context for \(feature.rawValue)")
+}
+let launchFlags: [(String, DashboardTab)] = [
+    ("--show-monitors", .monitors), ("--show-bluetooth", .bluetooth),
+    ("--show-spaces", .spaces), ("--show-menu-bar", .menuBar),
+    ("--show-keyboard", .keyboard), ("--show-keep-awake", .keepAwake),
+    ("--show-mouse", .mouse), ("--show-audio", .audio),
+    ("--show-clipboard", .clipboard), ("--show-windows", .windows)
+]
+for (flag, feature) in launchFlags {
+    let launched = DashboardNavigation.launch(arguments: ["app", "--show-dashboard", flag])
+    expect(launched.feature == feature && launched.isSetup == !DashboardTab.quickFeatures.contains(feature),
+           "launch flag \(flag) retains explicit feature entry")
+}
+let modulesLaunch = DashboardNavigation.launch(arguments: ["--show-modules"])
+expect(modulesLaunch.isSetup && modulesLaunch.feature == nil, "show-modules opens Settings root")
+let navigationModel = DashboardModel()
+navigationModel.enabledModules = []
+for feature in DashboardTab.quickFeatures {
+    navigationModel.navigation.openQuick(feature)
+    expect(navigationModel.navigation.feature == feature, "disabled \(feature.rawValue) remains navigable")
+    navigationModel.navigation.openSettings()
+    navigationModel.navigation.back()
+    expect(navigationModel.navigation.feature == feature && !navigationModel.navigation.isSetup,
+           "disabled-module Enable in settings retains quick return target")
+}
+expect(!navigationModel.displayControlsReachable, "fully disabled idle display modules show enable guidance")
+navigationModel.pendingArrangement = true
+expect(navigationModel.displayControlsReachable, "pending layout recovery stays reachable with modules disabled")
+navigationModel.pendingArrangement = false
+navigationModel.disabledMonitorCount = 1
+expect(navigationModel.displayControlsReachable, "disabled display recovery stays reachable")
+navigationModel.disabledMonitorCount = 0
+navigationModel.countdowns = ["layout": 10]
+expect(navigationModel.displayControlsReachable, "in-progress confirmation remains reachable")
+navigationModel.countdowns = [:]
+navigationModel.stoppingModules = [.arrangement]
+expect(navigationModel.displayControlsReachable, "in-progress module restoration remains reachable")
+navigationModel.stoppingModules = []
+navigationModel.monitorBusy = true
+expect(navigationModel.displayControlsReachable, "in-flight display change cannot disappear behind disabled guidance")
 windowModule.restore(windowModule.selected)
 expect(windowBackend.moves == [CGRect(x: 500, y: 325, width: 500, height: 400)], "restore clamps to available bounds")
 windowBackend.items.append(windowBackend.items[0])

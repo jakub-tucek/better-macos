@@ -6,17 +6,18 @@ QuitGuard's 1–99-second controls, and reversible canceled-quit cleanup remain.
 
 ## Panel audit
 
-- Navigation: icon-labelled feature chooser, including Mouse; Settings behind the
-  gear, returning to the previously selected feature. No crowded tab strip.
+- Navigation: Quick controls home with direct icon-labelled cards and focused panels;
+  separate gear-opened Settings module/setup list. No top-level dropdown or tab strip.
 - Shared components: compact `DashboardCard` and right-aligned
   `DashboardSwitchRow`, reusing the accessible `BlueSwitch` implementation.
-- Audio: current microphone/output and Resume remain visible; ordered preferences
-  and fallback are disclosures. Empty-device and manual-choice states are explicit.
+- Audio: current microphone/output and Resume are quick actions; automatic routing,
+  ordered preferences and fallback live in setup. Empty/manual-choice states remain.
 - Clipboard: recording, count, Open/Clear, and pending cleanup remain visible;
-  retention/exclusions are collapsed, retaining unencrypted-storage warnings.
+  retention/exclusions are setup-only, retaining unencrypted-storage warnings.
 - Mouse: Apply, Read current, capability failures, and original-value Restore remain
   visible; unsupported wheel controls are collapsed and explicitly unavailable.
-- Keep awake: timed/app controls preserved, empty app rules explained, pill symbol
+- Keep awake: timed/app session controls are quick; app rules/display defaults are setup;
+  empty app rules explained, pill symbol
   shared by navigation, panel, and the active menu-bar status item.
 - Keyboard: full duration controls, permission settings, and Retry preserved.
 - Menu bar: consistent heading/switches; setup instructions and reveal action stay
@@ -27,8 +28,8 @@ QuitGuard's 1–99-second controls, and reversible canceled-quit cleanup remain.
   primary; protection/output policy is collapsed with headphone detection retained.
 - Animations: primary switch/restart warning and busy state remain visible; detailed
   affected effects and desktop-switch settings are collapsed.
-- Windows: named capture, saved layout summaries, per-row Restore, secondary
-  Rename/Delete, and advanced automation/exclusions; rename preserves identity,
+- Windows: quick saved-layout Restore; setup has named capture, summaries, Restore,
+  Rename/Delete, and automation/exclusions; rename preserves identity,
   geometry, and persisted automatic selection.
 - Settings: module switches, login preference, updates, and diagnostics retained.
   Global recovery buttons stay outside feature disclosures and disabled modules.
@@ -40,6 +41,35 @@ still require manual acceptance. Mouse wheel interception remains blocked becaus
 reliable source attribution is unavailable; no scroll event tap is installed.
 
 ## Validation and review status
+
+### Quick controls / Settings replacement
+
+Default launch (including `--show-dashboard` alone) now shows Quick controls home.
+The five cards open Monitors, Keep awake, Audio, Clipboard, and Windows quick panels.
+Gear opens a separate Settings list with module setup buttons and persistent,
+accessible enable switches. Configuration-only features do not appear on quick home.
+Quick **Back** returns home; setup **Back** returns Settings; Settings **Back** restores
+the prior quick panel/home. Direct **Setup** takes the same return path. Context and
+feature identity are separate, so Audio/Windows/etc. can have both views without
+cloning their policy controls. Navigation resets scroll position per destination.
+
+Explicit `--show-monitors`, `--show-keep-awake`, `--show-audio`, `--show-clipboard`,
+and `--show-windows` select quick panels. `--show-bluetooth`, `--show-spaces`,
+`--show-menu-bar`, `--show-keyboard`, and `--show-mouse` select setup panels;
+`--show-modules` selects Settings. Permission callbacks retain appropriate setup
+entry. Disabled modules remain navigable; pending layout/disabled-display recovery,
+countdowns, busy changes and stopping display modules cannot hide display controls.
+Global animation/menu-bar/mouse recovery and error actions remain outside panels.
+
+Validation logs: `build/quick-settings-build.log`, `build/quick-settings-test.log`.
+Native warnings-as-errors build and full `bash test.sh` run passed: **3,573 isolated
+checks and 7 installer scenarios**; `git diff --check` passed. Navigation
+regressions cover classification, context transitions, flags, disabled-module return
+paths and in-progress display recovery.
+No app launch/quit, live clipboard/audio/mouse/window mutation, or push was performed.
+Visual, accessibility and physical-device acceptance remain manual. Tool discovery
+found no agent-spawning tool; **independent read-only GPT-6.1 Sol review is pending
+and must be arranged by the parent**, not inferred from implementer test results.
 
 Review P1 follow-up: a host-side termination barrier now rejects dashboard
 mutations (including animation/module transactions, Mouse Apply, Clipboard
