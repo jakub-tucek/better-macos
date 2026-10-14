@@ -16,8 +16,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var item: NSStatusItem!
     private var recovering = false
     private var screenObserver: NSObjectProtocol?
+    private var guiTestTarget: String?
+    private var guiTestStarted = false
+    private var guiTestFinished = false
+    private var guiTestOriginalOutput: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if let index = CommandLine.arguments.firstIndex(of: "--test-connect-in-gui"), index + 1 < CommandLine.arguments.count {
+            guiTestTarget = CommandLine.arguments[index + 1]
+            bluetooth.suspendAutomaticReconnection = true
+        }
+        if let index = CommandLine.arguments.firstIndex(of: "--preserve-audio-output"), index + 1 < CommandLine.arguments.count {
+            guiTestOriginalOutput = CommandLine.arguments[index + 1]
+        }
         configureActions()
         safety.onStatusChanged = { [weak self] status in
             guard let self else { return }
@@ -52,6 +63,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshBluetooth()
         displayRefresh.requestRefresh()
         bluetooth.start()
+        if CommandLine.arguments.contains("--request-bluetooth-access") {
+            DispatchQueue.main.async { [weak self] in self?.bluetooth.requestBluetoothAccess() }
+        }
         // No graphics transactions, gesture taps, or automatic restore at launch.
         if CommandLine.arguments.contains("--show-dashboard") {
             model.tab = .bluetooth
@@ -67,6 +81,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onAutoDeviceChanged = { [weak self] address, enabled in self?.bluetooth.setAutoReconnect(enabled, for: address) }
         model.onManualConnection = { [weak self] in self?.bluetooth.toggleConnection($0) }
         model.onAutomaticReconnectChanged = { [weak self] in self?.bluetooth.autoEnabled = $0 }
+        model.onBluetoothPowerOn = { [weak self] in self?.bluetooth.turnBluetoothOn() }
+        model.onBluetoothAccessRequested = { [weak self] in self?.bluetooth.requestBluetoothAccess() }
         model.onProtectAudioChanged = { [weak self] enabled in self?.bluetooth.protectOtherAudio = enabled; self?.refreshBluetooth() }
         model.onSwitchAudioChanged = { [weak self] enabled in self?.bluetooth.switchAudioOutput = enabled; self?.refreshBluetooth() }
         model.onProtectedDeviceChanged = { [weak self] address, enabled in
@@ -129,11 +145,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.automaticReconnectEnabled = bluetooth.autoEnabled
         model.bluetoothAvailable = bluetooth.available
         model.bluetoothBusy = bluetooth.isBusy
+        model.bluetoothManualBusy = bluetooth.isManualBusy
+        model.bluetoothRadioOn = bluetooth.radioPoweredOn
+        model.bluetoothPermissionRequired = bluetooth.permissionRequired
+        model.bluetoothDeviceStates = bluetooth.deviceStates
         model.bluetoothSummary = bluetooth.reconnectSummary
         model.protectOtherAudio = bluetooth.protectOtherAudio
         model.switchAudioOutput = bluetooth.switchAudioOutput
         model.protectedAudioAddresses = bluetooth.protectedAudioAddresses
         model.legacyServicePresent = bluetooth.legacyServicePresent
+        if let data = bluetooth.diagnostics() { UserDefaults.standard.set(data, forKey: "bluetooth.lastSnapshot") }
+        checkGUIBluetoothTest()
+    }
+
+    private func checkGUIBluetoothTest() {
+        guard let name = guiTestTarget, !guiTestFinished, !bluetooth.permissionRequired,
+              bluetooth.radioPoweredOn == true, let device = bluetooth.devices.first(where: { $0.name == name }) else { return }
+        if !guiTestStarted {
+            guiTestStarted = true
+            // Runs under the GUI's actual TCC identity, not Terminal's access.
+            bluetooth.requestConnection(true, address: device.address)
+            return
+        }
+        guard !bluetooth.isBusy, !bluetooth.isManualBusy else { return }
+        guiTestFinished = true
+        let result: [String: Any] = ["device": name, "connected": device.connected,
+                                   "error": bluetooth.lastError ?? "", "context": "running-gui",
+                                   "updatedAt": ISO8601DateFormatter().string(from: Date())]
+        if let data = try? JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]) {
+            UserDefaults.standard.set(data, forKey: "bluetooth.guiTestResult")
+        }
+        if let originalOutput = guiTestOriginalOutput, let audio = CommandRunner.find("SwitchAudioSource") {
+            recoveryQueue.async {
+                let runner = CommandRunner()
+                if (try? runner.run(audio, ["-c", "-t", "output"]).trimmingCharacters(in: .whitespacesAndNewlines)) != originalOutput {
+                    _ = try? runner.run(audio, ["-t", "output", "-s", originalOutput])
+                }
+            }
+        }
     }
 
     private func refreshPreferences() {

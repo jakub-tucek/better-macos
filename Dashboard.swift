@@ -24,6 +24,10 @@ final class DashboardModel: ObservableObject {
     @Published var automaticReconnectEnabled = false
     @Published var bluetoothAvailable = false
     @Published var bluetoothBusy = false
+    @Published var bluetoothManualBusy = false
+    @Published var bluetoothRadioOn: Bool?
+    @Published var bluetoothPermissionRequired = false
+    @Published var bluetoothDeviceStates: [String: String] = [:]
     @Published var bluetoothSummary = "Loading devices…"
     @Published var protectOtherAudio = true
     @Published var switchAudioOutput = true
@@ -42,6 +46,8 @@ final class DashboardModel: ObservableObject {
     var onAutoDeviceChanged: (String, Bool) -> Void = { _, _ in }
     var onManualConnection: (String) -> Void = { _ in }
     var onAutomaticReconnectChanged: (Bool) -> Void = { _ in }
+    var onBluetoothPowerOn: () -> Void = {}
+    var onBluetoothAccessRequested: () -> Void = {}
     var onProtectAudioChanged: (Bool) -> Void = { _ in }
     var onSwitchAudioChanged: (Bool) -> Void = { _ in }
     var onProtectedDeviceChanged: (String, Bool) -> Void = { _, _ in }
@@ -221,10 +227,17 @@ struct DashboardView: View {
                     Spacer()
                     BlueSwitch(label: "Enable automatic reconnection", isOn: Binding(
                         get: { model.automaticReconnectEnabled }, set: model.onAutomaticReconnectChanged))
-                        .disabled(!model.bluetoothAvailable || model.legacyServicePresent)
+                        .disabled(!model.bluetoothAvailable || model.legacyServicePresent || model.bluetoothPermissionRequired)
                 }
                 Text("Checks every 5 seconds. Pausing keeps your device selections.")
                     .font(.caption).foregroundStyle(.secondary)
+                if model.bluetoothPermissionRequired {
+                    Button("Allow Bluetooth access…", action: model.onBluetoothAccessRequested)
+                    Text("macOS permission is separate from the radio being on. Rebuilt ad-hoc apps may need permission granted again.")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else if model.bluetoothRadioOn == false {
+                    Button("Turn Bluetooth on", action: model.onBluetoothPowerOn).disabled(model.bluetoothManualBusy)
+                }
                 if model.legacyServicePresent {
                     Button("Take over existing service…") { showLegacyWarning = true }.disabled(model.bluetoothBusy)
                 }
@@ -244,6 +257,9 @@ struct DashboardView: View {
                                 Circle().fill(device.connected ? Color.green : Color.gray).frame(width: 5, height: 5)
                                 Text(device.connected ? "Connected" : "Disconnected").font(.caption).foregroundStyle(.secondary)
                             }
+                            if let state = model.bluetoothDeviceStates[device.address], !state.isEmpty {
+                                Text(state).font(.caption2).foregroundStyle(.orange).lineLimit(3)
+                            }
                         }
                         Spacer(minLength: 4)
                         Button(device.connected ? "Disconnect" : "Connect") {
@@ -251,13 +267,13 @@ struct DashboardView: View {
                                 disconnectWarning = device
                                 showDisconnectWarning = true
                             } else { model.onManualConnection(device.address) }
-                        }.controlSize(.small).frame(width: 78).disabled(model.bluetoothBusy)
+                        }.controlSize(.small).frame(width: 78).disabled(model.bluetoothPermissionRequired || model.bluetoothManualBusy || model.bluetoothRadioOn == false)
                         BlueSwitch(label: "Automatically reconnect \(device.name)", isOn: model.autoReconnectBinding(for: device.address))
-                            .disabled(!model.bluetoothAvailable)
+                            .disabled(!model.bluetoothAvailable || model.bluetoothPermissionRequired)
                     }
                     if device.address != model.devices.last?.address { Divider() }
                 }
-                if model.devices.isEmpty { Text("No paired devices found yet.").font(.caption).foregroundStyle(.secondary) }
+                if model.devices.isEmpty { Text(model.bluetoothPermissionRequired ? "Grant Bluetooth access to show your paired devices." : "No paired devices found yet.").font(.caption).foregroundStyle(.secondary) }
             }
             card {
                 HStack {

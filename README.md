@@ -71,6 +71,23 @@ Unplugging or restarting WindowServer while screens are off can prevent recovery
 
 ## Bluetooth
 
+**First grant macOS Bluetooth access to Mac Utils.** Use **Allow Bluetooth
+access…** in the dashboard, or **System Settings → Privacy & Security → Bluetooth**.
+Terminal permission is not app permission: terminal diagnostics can succeed while
+the GUI is denied. The app now distinguishes permission denial from radio power.
+
+By default, local builds are ad-hoc signed; recompiling changes their code hash
+and may invalidate an existing permission grant. After the final build, grant
+access again. For stable identity across updates, optionally use a legitimate
+installed signing identity:
+
+```sh
+MAC_UTILS_SIGNING_IDENTITY="Your Apple Development signing identity" bash build.sh
+```
+
+Signing keys remain in Keychain and are not exported or committed. Mac Utils
+does not edit the TCC database or grant itself permissions.
+
 - Open the **Bluetooth** tab and turn on the switch beside each device you want
   to **reconnect automatically**. These switches select reconnect rules; they do
   not represent whether a device is connected right now.
@@ -85,6 +102,15 @@ Unplugging or restarting WindowServer while screens are off can prevent recovery
 - **Advanced headphone detection** marks known audio devices to protect even
   before macOS registers their audio output.
 - Bluetooth commands run on a background queue, with timeouts—not on the UI thread.
+- A failed target does not stop attempts for other selected devices. Failed
+  devices back off for 30 seconds. Connection attempts allow up to 35 seconds,
+  long enough for macOS's normal Bluetooth page timeout.
+- Connect/Disconnect requests are queued during discovery instead of discarded.
+  Manual requests take priority over later auto-connect targets. An already
+  in-flight OS connection may finish before the queued request starts.
+- Radio-off, connecting, unavailable-device errors, and audio-priority waits are
+  visible in the dashboard. **Turn Bluetooth on** enables the radio explicitly;
+  the app never powers it off automatically.
 - By default, other connected Bluetooth audio devices pause reconnection. Audio
   is checked again after connecting before switching the output, protecting
   headphones that arrived during the connection attempt.
@@ -128,9 +154,24 @@ bash test.sh                         # isolated tests; no hardware changes
 APP="build/Mac Utils.app/Contents/MacOS/MacUtils"
 "$APP" --status                      # monitors
 "$APP" --bluetooth-status            # paired devices; observation only
+"$APP" --bluetooth-app-status        # actual running GUI snapshot and errors
 "$APP" --spaces-status               # Accessibility permission
 "$APP" --restore                     # restore app-disabled monitors
 ```
+
+Real Bluetooth-module test, using a paired device that is powered on and nearby:
+
+```sh
+"$APP" --test-bluetooth-connect "Your Audio Device Name"
+# Optional controlled disconnect/reconnect; restricted to recognized audio devices:
+"$APP" --test-bluetooth-connect "Your Audio Device Name" --cycle
+```
+
+Quit the GUI before this test to avoid competing reconnect loops. It exercises
+the dashboard's queued connection action, verifies the real connected state,
+preserves reconnect selections, and restores the original audio output if macOS
+automatically changed it. It never disconnects input devices. Running GUI
+diagnostics contain device names and remain in local preferences, not the repo.
 
 Hardware tests are currently blocked by the safety hold. When the private-API
 behavior has been diagnosed and verified, these commands exercise real displays:

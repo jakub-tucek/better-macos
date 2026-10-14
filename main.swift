@@ -33,6 +33,66 @@ if let index = CommandLine.arguments.firstIndex(of: "--watchdog") {
         let backend = BluetoothBackend(runner: CommandRunner(), blueutil: path, audioTool: CommandRunner.find("SwitchAudioSource"))
         for device in try backend.devices() { print("\(device.connected ? "●" : "○") \(device.name)") }
     } catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
+} else if CommandLine.arguments.contains("--bluetooth-app-status") {
+    guard let data = UserDefaults.standard.data(forKey: "bluetooth.lastSnapshot") else {
+        fputs("The GUI has not published a Bluetooth snapshot yet.\n", stderr); exit(1)
+    }
+    print(String(decoding: data, as: UTF8.self))
+} else if let index = CommandLine.arguments.firstIndex(of: "--test-bluetooth-connect"), index + 1 < CommandLine.arguments.count {
+    let domain = "mac-utils.bluetooth-test.\(UUID().uuidString)"
+    let preferences = UserDefaults(suiteName: domain)!
+    preferences.set(false, forKey: "bluetooth.autoEnabled")
+    preferences.set([], forKey: "bluetooth.autoAddresses")
+    var originalOutput: String?
+    let runner = CommandRunner()
+    let audio = CommandRunner.find("SwitchAudioSource")
+    do {
+        defer {
+            preferences.removePersistentDomain(forName: domain)
+            if let audio, let originalOutput,
+               (try? runner.run(audio, ["-c", "-t", "output"]).trimmingCharacters(in: .whitespacesAndNewlines)) != originalOutput {
+                _ = try? runner.run(audio, ["-t", "output", "-s", originalOutput])
+            }
+        }
+        guard let blue = CommandRunner.find("blueutil") else { throw ToggleError(message: "blueutil missing") }
+        let backend = BluetoothBackend(runner: runner, blueutil: blue, audioTool: audio)
+        let name = CommandLine.arguments[index + 1]
+        guard !["keyboard", "mouse", "trackpad"].contains(where: { name.localizedCaseInsensitiveContains($0) }) else {
+            throw ToggleError(message: "Hardware tests refuse to disconnect input devices.")
+        }
+        let matches = try backend.devices().filter { $0.name == name }
+        guard matches.count == 1 else { throw ToggleError(message: "Choose exactly one paired device name") }
+        let target = matches[0]
+        if let audio { originalOutput = try runner.run(audio, ["-c", "-t", "output"]).trimmingCharacters(in: .whitespacesAndNewlines) }
+        if target.connected && CommandLine.arguments.contains("--cycle") {
+            guard let audio, try runner.run(audio, ["-a", "-t", "output"]).split(separator: "\n").map(String.init).contains(target.name) else {
+                throw ToggleError(message: "Disconnect/reconnect tests are restricted to currently recognized AUDIO devices.")
+            }
+            _ = try backend.setConnected(false, address: target.address)
+            print("Hardware disconnect verified: \(name)")
+        }
+        let module = BluetoothModule(defaults: preferences, backend: backend, importLegacyConfiguration: false)
+        func awaitIdle() throws {
+            let deadline = Date().addingTimeInterval(50)
+            while module.isBusy && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
+            guard !module.isBusy else { throw ToggleError(message: "Module did not become idle") }
+        }
+        module.poll()
+        try awaitIdle()
+        // Exercise the exact dashboard action while real discovery is in flight.
+        module.poll()
+        if module.devices.first(where: { $0.address == target.address })?.connected == true {
+            module.requestConnection(true, address: target.address)
+        } else {
+            module.toggleConnection(target.address)
+        }
+        try awaitIdle()
+        guard module.devices.first(where: { $0.address == target.address })?.connected == true else {
+            throw ToggleError(message: module.lastError ?? "Real module connection verification failed")
+        }
+        print("Actual BluetoothModule queued-connect verified: \(name)")
+        print(String(decoding: module.diagnostics() ?? Data(), as: UTF8.self))
+    } catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
 } else if CommandLine.arguments.contains("--spaces-status") {
     print("Accessibility permission: \(AXIsProcessTrusted() ? "granted" : "not granted")")
 } else if CommandLine.arguments.contains("--enable-login") {

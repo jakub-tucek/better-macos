@@ -15,7 +15,10 @@ xcrun swiftc -swift-version 5 -warnings-as-errors -O -target arm64-apple-macos15
     DisplayController.swift DisplayRefreshGate.swift SafetyWatchdog.swift Dashboard.swift AppDelegate.swift CommandRunner.swift BluetoothModule.swift \
     SpacesModule.swift Vendor/strafe/Swift/*.swift main.swift \
     build/objects/*.o -framework AppKit -framework ServiceManagement \
-    -framework SwiftUI -framework ApplicationServices -framework CoreGraphics -framework CoreFoundation -framework IOKit \
+    -framework SwiftUI -framework CoreBluetooth -framework ApplicationServices -framework CoreGraphics -framework CoreFoundation -framework IOKit \
     -o "$APP/Contents/MacOS/MacUtils"
-codesign --force --sign - "$APP"
+codesign --force --sign "${MAC_UTILS_SIGNING_IDENTITY:--}" "$APP"
+if [[ -z "${MAC_UTILS_SIGNING_IDENTITY:-}" ]]; then
+    echo "Ad-hoc signing: macOS Bluetooth access may need granting again after rebuilds."
+fi
 echo "Built: $APP"

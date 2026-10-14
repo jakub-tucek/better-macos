@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import CStrafe
+import CoreBluetooth
 
 if let index = CommandLine.arguments.firstIndex(of: "--watchdog"), index + 1 < CommandLine.arguments.count {
     exit(SafetyWatchdog.run(directory: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true)))
@@ -33,19 +34,24 @@ final class FakeRunner: CommandRunning {
     var commands: [[String]] = []
     var headphonesArrive = false
     var failConnect = false
+    var failedAddresses = Set<String>()
+    var powerOn = true
     var failAudioObservation = false
     var failDeviceObservation = false
 
     func run(_ executable: String, _ arguments: [String]) throws -> String {
         commands.append([executable] + arguments)
         switch arguments.first {
+        case "--power":
+            if arguments.count > 1 { powerOn = arguments[1] == "1" }
+            return powerOn ? "1" : "0"
         case "--paired":
             if failDeviceObservation { throw ToggleError(message: "Observation failed") }
             let json = current.map { ["address": $0.address, "name": $0.name, "connected": $0.connected] as [String: Any] }
             return String(decoding: try JSONSerialization.data(withJSONObject: json), as: UTF8.self)
         case "--connect", "--disconnect":
-            if failConnect { throw ToggleError(message: "Connection failed") }
             let address = arguments[1]
+            if failConnect || failedAddresses.contains(address) { throw ToggleError(message: "Connection failed") }
             current = current.map { device in
                 device.address == address ? BluetoothDevice(address: device.address, name: device.name, connected: arguments[0] == "--connect") : device
             }
@@ -139,6 +145,21 @@ do {
     _ = try backend(manual).setConnected(false, address: speaker.address)
     expect(manual.current.first?.connected == false, "Manual connect/disconnect works without audio switching")
     expect(manual.audioSwitches.isEmpty, "Manual connection does not silently change audio")
+
+    let multiple = FakeRunner()
+    multiple.current.append(BluetoothDevice(address: headphones.address, name: headphones.name, connected: false))
+    multiple.failedAddresses = [speaker.address]
+    var multipleConfig = config
+    multipleConfig.autoAddresses = [speaker.address, headphones.address]
+    multipleConfig.switchAudioOutput = false
+    let multipleDevices = try backend(multiple).reconcile(multipleConfig)
+    expect(multipleDevices.first(where: { $0.address == headphones.address })?.connected == true,
+           "An unreachable first target does not starve another available target")
+
+    let poweredOff = FakeRunner()
+    poweredOff.powerOn = false
+    _ = try backend(poweredOff).reconcile(config)
+    expect(poweredOff.connections.isEmpty, "A powered-off Bluetooth radio never starts connection attempts")
 } catch { fputs("Unexpected failure: \(error)\n", stderr); exit(1) }
 
 let testDomain = "mac-utils.tests.\(UUID().uuidString)"
@@ -147,7 +168,8 @@ testDefaults.set([speaker.address], forKey: "bluetooth.autoAddresses")
 testDefaults.set(false, forKey: "bluetooth.autoEnabled")
 let moduleRunner = FakeRunner()
 moduleRunner.current = [BluetoothDevice(address: speaker.address, name: speaker.name, connected: true)]
-let testModule = BluetoothModule(defaults: testDefaults, backend: backend(moduleRunner), importLegacyConfiguration: false)
+let testModule = BluetoothModule(defaults: testDefaults, backend: backend(moduleRunner), importLegacyConfiguration: false,
+                                 authorizationProvider: { .allowedAlways })
 func waitForModule() {
     let deadline = Date().addingTimeInterval(2)
     while testModule.isBusy && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
@@ -158,8 +180,25 @@ waitForModule()
 testModule.toggleConnection(speaker.address)
 waitForModule()
 let selectionPreserved = testModule.autoAddresses.contains(speaker.address)
+testModule.poll()
+testModule.toggleConnection(speaker.address)
+waitForModule()
+let queuedClickConnected = testModule.devices.first(where: { $0.address == speaker.address })?.connected == true
 testDefaults.removePersistentDomain(forName: testDomain)
 expect(selectionPreserved, "Manual connection actions do not silently rewrite auto-reconnect choices")
+expect(queuedClickConnected, "A manual Connect click during discovery is queued, never silently dropped")
+let deniedRunner = FakeRunner()
+let deniedModule = BluetoothModule(backend: backend(deniedRunner), importLegacyConfiguration: false, authorizationProvider: { .denied })
+deniedModule.poll()
+expect(deniedRunner.commands.isEmpty, "Denied GUI Bluetooth access never launches misleading blueutil queries")
+expect(deniedModule.radioPoweredOn == nil && deniedModule.reconnectSummary.contains("Bluetooth access required"),
+       "Permission denial is not misreported as a powered-off radio")
+expect(CommandRunner.timeout(for: "/opt/homebrew/bin/blueutil", arguments: ["--connect", "fixture"]) > 15,
+       "Bluetooth connection timeout permits the OS's normal page timeout")
+do {
+    let stdout = try CommandRunner().run("/usr/bin/python3", ["-c", "import sys; print('[1,2]'); print('warning on stderr', file=sys.stderr)"])
+    expect(stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "[1,2]", "Stderr warnings cannot corrupt successful JSON output")
+} catch { expect(false, "Command output integration test failed: \(error)") }
 
 _ = NSApplication.shared
 expect(BluetoothPresentation.summary(enabled: true, selected: [], devices: [speaker]).contains("Choose devices"),

@@ -5,16 +5,37 @@ protocol CommandRunning {
     func run(_ executable: String, _ arguments: [String]) throws -> String
 }
 
+private final class CapturedOutput: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored = Data()
+    func set(_ data: Data) { lock.lock(); stored = data; lock.unlock() }
+    func get() -> Data { lock.lock(); defer { lock.unlock() }; return stored }
+}
+
 /// Commands run only on a background queue, with argument arrays (never a shell).
 struct CommandRunner: CommandRunning {
+    static func timeout(for executable: String, arguments: [String]) -> TimeInterval {
+        // A normal Bluetooth page timeout is slightly longer than 15 seconds.
+        // Do not kill a legitimate connection just before the OS reports it.
+        URL(fileURLWithPath: executable).lastPathComponent == "blueutil" && arguments.first == "--connect" ? 35 : 15
+    }
+
     func run(_ executable: String, _ arguments: [String]) throws -> String {
         let process = Process()
         let output = Pipe()
+        let errors = Pipe()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
         process.standardOutput = output
-        process.standardError = output
+        process.standardError = errors
         try process.run()
+        let stdout = CapturedOutput()
+        let stderr = CapturedOutput()
+        let readers = DispatchGroup()
+        readers.enter()
+        DispatchQueue.global().async { stdout.set(output.fileHandleForReading.readDataToEndOfFile()); readers.leave() }
+        readers.enter()
+        DispatchQueue.global().async { stderr.set(errors.fileHandleForReading.readDataToEndOfFile()); readers.leave() }
         let timeout = DispatchWorkItem {
             guard process.isRunning else { return }
             process.terminate()
@@ -22,13 +43,16 @@ struct CommandRunner: CommandRunning {
                 if process.isRunning { kill(process.processIdentifier, SIGKILL) }
             }
         }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 15, execute: timeout)
+        let seconds = Self.timeout(for: executable, arguments: arguments)
+        DispatchQueue.global().asyncAfter(deadline: .now() + seconds, execute: timeout)
         defer { timeout.cancel() }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        let text = String(decoding: data, as: UTF8.self)
+        readers.wait()
+        let text = String(decoding: stdout.get(), as: UTF8.self)
+        let errorText = String(decoding: stderr.get(), as: UTF8.self)
         guard process.terminationStatus == 0 else {
-            throw ToggleError(message: "\(URL(fileURLWithPath: executable).lastPathComponent) failed: \(text.trimmingCharacters(in: .whitespacesAndNewlines))")
+            let detail = (errorText.isEmpty ? text : errorText).trimmingCharacters(in: .whitespacesAndNewlines)
+            throw ToggleError(message: "\(URL(fileURLWithPath: executable).lastPathComponent) failed (exit \(process.terminationStatus)): \(detail.isEmpty ? "device unavailable or command timed out after \(Int(seconds))s" : detail)")
         }
         return text
     }
