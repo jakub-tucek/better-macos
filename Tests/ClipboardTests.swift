@@ -183,6 +183,7 @@ func runClipboardTests() throws {
     let defaults = UserDefaults(suiteName: domain)!
     defer { defaults.removePersistentDomain(forName: domain) }
     let module = ClipboardModule(defaults: defaults, history: failedLoad)
+    expect(module.persistence, "native persistence switch shows requested On during failed startup")
     module.setRetentionDays(3)
     expect(failing.entries == [savedEntry] && failedLoad.storagePending, "native module retention action preserves archive during failed startup")
     failing.failLoad = false; failedLoad.poll()
@@ -195,6 +196,17 @@ func runClipboardTests() throws {
     failing.failing = false
     expect(host.finishClipboardTermination(approved: true) && failing.entries.isEmpty, "host quit approves only after late cleanup succeeds")
     module.stop()
+
+    let switchArchive = FailingClipboardArchive()
+    switchArchive.entries = [savedEntry]; switchArchive.failLoad = true
+    let switchHistory = ClipboardHistory(board: board, archive: switchArchive, now: { date }, source: { app })
+    do { try switchHistory.configurePersistence(true, ageDays: 1, load: true) } catch {}
+    let switchModule = ClipboardModule(defaults: defaults, history: switchHistory)
+    defaults.set(true, forKey: "clipboard.persistence")
+    switchModule.setPersistence(!switchModule.persistence)
+    expect(!switchModule.persistence && !defaults.bool(forKey: "clipboard.persistence") && switchArchive.entries.isEmpty && !switchHistory.storagePending,
+           "switch Off after failed startup explicitly deletes archive and saves disabled preference")
+    switchModule.stop()
 
     failing.entries = [savedEntry]
     let quitHistory = ClipboardHistory(board: board, archive: failing, now: { date }, source: { app })

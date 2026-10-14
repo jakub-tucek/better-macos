@@ -51,8 +51,8 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
     private var rows: [ClipboardEntry] = []
     var onChange: () -> Void = {}
     var onError: (String) -> Void = { _ in }
-    var persistence: Bool { history.persistent }
-    var requestedPersistence: Bool { history.requestedPersistence }
+    // The switch reflects user intent even while startup recovery is pending.
+    var persistence: Bool { history.requestedPersistence }
     var days: Int { history.ageDays }
     var exclusions: String { history.exclusions.sorted().joined(separator: ", ") }
 
@@ -116,7 +116,7 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
         } catch { onError("Clipboard archive could not be saved or removed.") }
         onChange()
     }
-    func setRetentionDays(_ days: Int) { setPersistence(requestedPersistence, days: days) }
+    func setRetentionDays(_ days: Int) { setPersistence(persistence, days: days) }
     func setExclusions(_ value: String) {
         let values = Set(value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
         defaults.set(value, forKey: "clipboard.exclusions")
