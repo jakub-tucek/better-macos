@@ -287,10 +287,14 @@ final class DisplayController {
         }
     }
 
-    private func plannedLayout(excluding: String? = nil) throws -> [(UInt32, DisplayPosition)]? {
-        guard let data = defaults.data(forKey: "savedLayout") else { return nil }
-        let baseline = try JSONDecoder().decode([DisplayPosition].self, from: data)
+    private func plannedLayout(excluding: String? = nil, preview: Bool = false) throws -> [(UInt32, DisplayPosition)]? {
+        let data = defaults.data(forKey: "savedLayout")
+        let baseline: [DisplayPosition]
+        if preview && disabledUUIDs.isEmpty { baseline = try currentLayout() }
+        else if let data { baseline = try JSONDecoder().decode([DisplayPosition].self, from: data) }
+        else { return nil }
         let active = try activeIDs()
+        guard active.allSatisfy({ CGDisplayIsInMirrorSet($0) == 0 }) else { return nil }
         var ids: [String: UInt32] = [:]
         for id in active {
             guard let key = uuid(for: id) else { return nil }
@@ -311,12 +315,33 @@ final class DisplayController {
         if Set(ids.keys) == savedKeys {
             return baseline.compactMap { position in ids[position.uuid].map { ($0, position) } }
         }
-        let preferred = defaults.string(forKey: "savedMainUUID") ?? baseline.first(where: { $0.x == 0 && $0.y == 0 })?.uuid
+        let preferred = (preview && disabledUUIDs.isEmpty ? nil : defaults.string(forKey: "savedMainUUID")) ?? baseline.first(where: { $0.x == 0 && $0.y == 0 })?.uuid
         let currentMain = uuid(for: CGMainDisplayID())
         let anchor = [preferred, currentMain].compactMap { $0 }.first(where: { ids[$0] != nil }) ??
             baseline.filter { ids[$0.uuid] != nil }.sorted { ($0.x, $0.y, $0.uuid) < ($1.x, $1.y, $1.uuid) }.first?.uuid
         guard let anchor, let plan = DisplayTopology.plan(baseline, active: Set(ids.keys), anchor: anchor) else { return nil }
         return plan.compactMap { position in ids[position.uuid].map { ($0, position) } }
+    }
+
+    func currentLayout() throws -> [DisplayPosition] {
+        try activeIDs().map { id in
+            guard let key = uuid(for: id) else { throw ToggleError(message: "Cannot identify display") }
+            let bounds = CGDisplayBounds(id)
+            return DisplayPosition(uuid: key, x: Int32(bounds.minX), y: Int32(bounds.minY),
+                                   width: Int32(bounds.width), height: Int32(bounds.height))
+        }
+    }
+
+    /// Capture previews during the deferred display refresh, never during rendering.
+    /// Uses the same planner and saved baseline as the real disable transaction.
+    func layoutPreviews() throws -> [String: [DisplayPosition]] {
+        var result: [String: [DisplayPosition]] = [:]
+        for position in try currentLayout() {
+            if let plan = try plannedLayout(excluding: position.uuid, preview: true) {
+                result[position.uuid] = plan.map { $0.1 }
+            }
+        }
+        return result
     }
 
     func status() -> String {

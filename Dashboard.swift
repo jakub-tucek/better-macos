@@ -19,6 +19,8 @@ final class DashboardModel: ObservableObject {
     @Published var watchdogStatus = "Starting recovery watchdog…"
     @Published var countdowns: [String: Int] = [:]
     @Published var disabledMonitorCount = 0
+    @Published var currentLayout: [DisplayPosition] = []
+    @Published var layoutPreviews: [String: [DisplayPosition]] = [:]
     @Published var devices: [BluetoothDevice] = []
     @Published var selectedAddresses = Set<String>()
     @Published var automaticReconnectEnabled = false
@@ -91,11 +93,66 @@ struct BlueSwitch: View {
     }
 }
 
+/// A snapshot-only map: geometry reads and layout planning happen outside SwiftUI.
+struct MonitorLayoutMap: View {
+    let positions: [DisplayPosition]
+    let monitors: [Monitor]
+    var selected: String? = nil
+    var onSelect: ((String) -> Void)? = nil
+
+    private var bounds: CGRect {
+        positions.reduce(CGRect.null) { result, position in
+            result.union(CGRect(x: Int(position.x), y: Int(position.y),
+                                width: Int(position.width ?? 0), height: Int(position.height ?? 0)))
+        }
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            if positions.isEmpty || bounds.isNull || bounds.width <= 0 || bounds.height <= 0 {
+                Text("Waiting for display layout…").font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                let scale = min((geometry.size.width - 12) / bounds.width, (geometry.size.height - 12) / bounds.height)
+                let left = (geometry.size.width - bounds.width * scale) / 2
+                let top = (geometry.size.height - bounds.height * scale) / 2
+                ZStack(alignment: .topLeading) {
+                    ForEach(positions, id: \.uuid) { position in
+                        let monitor = monitors.first { $0.uuid == position.uuid }
+                        let width = CGFloat(position.width ?? 0) * scale
+                        let height = CGFloat(position.height ?? 0) * scale
+                        let name = monitor?.name ?? "Display"
+                        let tile = VStack(spacing: 2) {
+                            Image(systemName: monitor?.isBuiltIn == true ? "laptopcomputer" : "display")
+                            Text(name).font(.system(size: 9, weight: .medium)).lineLimit(2).multilineTextAlignment(.center)
+                        }
+                        .padding(3)
+                        .frame(width: max(1, width - 2), height: max(1, height - 2))
+                        .background(selected == position.uuid ? Color.blue.opacity(0.3) : Color.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 5))
+                        .overlay(RoundedRectangle(cornerRadius: 5).stroke(selected == position.uuid ? Color.blue : Color.secondary.opacity(0.5), lineWidth: selected == position.uuid ? 2 : 1))
+                        .help(name)
+                        Group {
+                            if let onSelect {
+                                Button { onSelect(position.uuid) } label: { tile }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel("Preview turning off \(name)")
+                            } else { tile.accessibilityLabel(name) }
+                        }
+                        .offset(x: left + (CGFloat(position.x) - bounds.minX) * scale,
+                                y: top + (CGFloat(position.y) - bounds.minY) * scale)
+                    }
+                }.frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
+            }
+        }.frame(height: 145)
+    }
+}
+
 struct DashboardView: View {
     @ObservedObject var model: DashboardModel
     @State private var disconnectWarning: BluetoothDevice?
     @State private var showDisconnectWarning = false
     @State private var showLegacyWarning = false
+    @State private var previewMonitor: String?
 
     private var disconnectDisablesRule: Bool {
         guard let device = disconnectWarning else { return false }
@@ -181,8 +238,19 @@ struct DashboardView: View {
     private var monitors: some View {
         VStack(alignment: .leading, spacing: 14) {
             heading("Displays", detail: "Blue means enabled. Disabling a screen removes it from the desktop.")
-            Text("Smart arrangement closes gaps while keeping connected screens aligned. Turning screens back on restores their saved positions.")
-                .font(.caption).foregroundStyle(.secondary)
+            if !model.countdowns.isEmpty {
+                card {
+                    ForEach(model.countdowns.keys.sorted(), id: \.self) { uuid in
+                        Text("Restoring \(model.monitors.first(where: { $0.uuid == uuid })?.name ?? "display") in \(model.countdowns[uuid] ?? 0)s")
+                            .font(.caption).foregroundStyle(.orange)
+                        HStack {
+                            Button("Keep disabled") { model.onKeepDisabled(uuid) }.disabled(model.monitorBusy)
+                            Button("Restore now", action: model.onRestoreAll).disabled(model.monitorBusy || model.displaySettling)
+                        }
+                    }
+                }
+            }
+            arrangementPreview
             card {
                 ForEach(model.monitors, id: \.uuid) { monitor in
                     HStack(spacing: 10) {
@@ -198,13 +266,6 @@ struct DashboardView: View {
                             get: { monitor.enabled }, set: { model.onMonitorChanged(monitor.uuid, $0) }))
                             .disabled(model.displaySettling || model.monitorBusy || !model.displaySupported || monitor.id == nil || (monitor.enabled && model.activeMonitorCount <= 1))
                     }
-                    if let seconds = model.countdowns[monitor.uuid] {
-                        HStack {
-                            Text("Restoring in \(max(seconds, 0))s").font(.caption).foregroundStyle(.orange)
-                            Spacer()
-                            Button("Keep disabled") { model.onKeepDisabled(monitor.uuid) }.disabled(model.monitorBusy)
-                        }
-                    }
                     if monitor.uuid != model.monitors.last?.uuid { Divider() }
                 }
             }
@@ -214,6 +275,52 @@ struct DashboardView: View {
                 .disabled(model.displaySettling || model.monitorBusy || model.disabledMonitorCount == 0)
             Text("The last usable display is protected. Quit restores screens disabled by this app.")
                 .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private var arrangementPreview: some View {
+        let selected = model.monitors.first { $0.uuid == previewMonitor && $0.enabled }
+        let proposal = selected.flatMap { model.layoutPreviews[$0.uuid] }
+        let busy = model.displaySettling || model.monitorBusy
+        return card {
+            HStack {
+                Label("Smart arrangement", systemImage: "rectangle.3.group").font(.headline)
+                Spacer()
+                Text("Automatic").font(.caption2).foregroundStyle(.blue)
+            }
+            Text("Click a screen to preview turning it off. Nothing changes until you apply.")
+                .font(.caption).foregroundStyle(.secondary)
+            Text("Current layout").font(.caption).bold()
+            MonitorLayoutMap(positions: model.currentLayout, monitors: model.monitors,
+                             selected: selected?.uuid, onSelect: { previewMonitor = $0 })
+                .disabled(busy)
+            if let selected {
+                HStack {
+                    Text("Without \(selected.name)").font(.caption).bold()
+                    Spacer()
+                    Button("Cancel") { previewMonitor = nil }.controlSize(.small)
+                }
+                if let proposal {
+                    MonitorLayoutMap(positions: proposal, monitors: model.monitors)
+                    Text("Remaining screens close the gap. Connected screens keep their alignment.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Apply — turn off \(selected.name)") {
+                        model.onMonitorChanged(selected.uuid, false)
+                        previewMonitor = nil
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(busy || !model.displaySupported || !model.countdowns.isEmpty)
+                    Text("Restores after 20 seconds unless you choose Keep disabled.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    Text(model.activeMonitorCount <= 1 ? "The last usable screen cannot be turned off." :
+                         "No reliable preview for this arrangement. Check display mirroring, connections, and resolution.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            } else {
+                Text("Turning screens back on restores their saved positions. The switches below apply changes directly.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
         }
     }
 

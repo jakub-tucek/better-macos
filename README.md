@@ -69,6 +69,10 @@ WindowServer. The live incident's root cause has not yet been confirmed.
   Ambiguous diagonal layouts, new/unplugged screens, or changed resolutions skip
   automatic compaction. The original full arrangement is restored when possible.
   Disable and compact-position changes commit together in a session-only transaction.
+- The **Smart arrangement** card shows a clickable map of the current screens.
+  Select a screen to see the proposed layout without it, then choose **Apply**.
+  Selecting or canceling a preview never changes a display. The switches remain
+  direct actions; applied disables still have the 20-second restore countdown.
 - Resolution, brightness and color profiles are not changed. Disable mirroring
   before using monitor toggles.
 

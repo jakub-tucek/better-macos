@@ -80,7 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // No graphics transactions, gesture taps, or automatic restore at launch.
         if CommandLine.arguments.contains("--show-dashboard") {
-            model.tab = .bluetooth
+            model.tab = CommandLine.arguments.contains("--show-monitors") ? .monitors : .bluetooth
             DispatchQueue.main.async { [weak self] in self?.showDashboard() }
         }
     }
@@ -153,6 +153,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.activeMonitorCount = (try? controller.activeIDs().count) ?? 0
         model.displaySupported = controller.supported && safety.isReady
         model.disabledMonitorCount = controller.disabledUUIDs.count
+        model.currentLayout = (try? controller.currentLayout()) ?? []
+        model.layoutPreviews = (try? controller.layoutPreviews()) ?? [:]
     }
 
     private func refreshBluetooth() {
