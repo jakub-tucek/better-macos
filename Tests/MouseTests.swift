@@ -6,9 +6,13 @@ private final class FakeMouseBackend: MouseSettingsBackend {
     var value = MouseOriginalSettings(acceleration: .absent, speed: .number(1.25))
     var writes = 0
     var failApply = false
+    var failRead = false
     var failRestore = false
     var beforeWrite: () -> Void = {}
-    func read() throws -> MouseOriginalSettings { value }
+    func read() throws -> MouseOriginalSettings {
+        if failRead { throw MouseModule.unavailable }
+        return value
+    }
     func apply(acceleration: Bool, speed: Double) throws {
         beforeWrite()
         writes += 1
@@ -41,7 +45,7 @@ private final class FakeMouseRecovery: MouseRecoveryStore {
 func testMouseControls() throws {
     let backend = FakeMouseBackend()
     let recovery = FakeMouseRecovery()
-    let module = MouseModule(backend: backend, recovery: recovery)
+    var module = MouseModule(backend: backend, recovery: recovery)
     let original = backend.value
     backend.beforeWrite = { expect(recovery.pending?.original == original, "Mouse original is journaled before any mutation") }
     try module.apply(acceleration: false, speed: 2)
@@ -70,11 +74,15 @@ func testMouseControls() throws {
     backend.failRestore = false
     try relaunched.stop()
     expect(backend.value == original && recovery.pending == nil, "Relaunch recovers original absent-key state")
+    module = relaunched
     backend.failApply = false
     try module.apply(acceleration: true, speed: 2)
     recovery.failClear = true
     do { try module.stop(); expect(false, "Journal deletion failure must throw") } catch {}
     expect(recovery.pending != nil && backend.value == original, "Failed journal deletion remains retryable after successful restoration")
+    let beforeRetry = backend.writes
+    do { try module.apply(acceleration: false, speed: 1); expect(false, "Failed cleanup must block changes") } catch {}
+    expect(backend.writes == beforeRetry && !module.active, "Same-instance journal cleanup failure enters recovery-only mode")
     recovery.failClear = false
     try module.stop()
     backend.available = false
@@ -90,6 +98,42 @@ func testMouseControls() throws {
     do { try module.stop(); expect(false, "Mismatched backend must throw") } catch {}
     expect(backend.writes == beforeUnavailable && recovery.pending != nil, "Recovery refuses a different backend and retains its journal")
     expect(!MouseModule().available, "Production mouse controls fail closed without hardware qualification")
+
+    recovery.pending = nil
+    try module.stop()
+    backend.failRead = true
+    do { try module.apply(acceleration: false, speed: 2); expect(false, "Snapshot failure must throw") } catch {}
+    expect(backend.writes == beforeUnavailable && recovery.pending == nil, "Snapshot failure prevents journaling and mutation")
+    backend.failRead = false
+    backend.beforeWrite = {}
+    for baseline in [MouseOriginalSettings(acceleration: .boolean(false), speed: .absent),
+                     MouseOriginalSettings(acceleration: .absent, speed: .absent)] {
+        backend.value = baseline
+        try module.apply(acceleration: true, speed: 2)
+        try module.stop()
+        expect(backend.value == baseline, "Restoration preserves explicit false and absent tracking independently")
+    }
+
+    try module.apply(acceleration: true, speed: 2)
+    backend.failApply = true
+    backend.failRestore = true
+    do { try module.apply(acceleration: false, speed: 3); expect(false, "Active update must fail") } catch {}
+    let afterFailedUpdate = backend.writes
+    do { try module.apply(acceleration: true, speed: 1); expect(false, "Failed active rollback must block changes") } catch {}
+    expect(backend.writes == afterFailedUpdate && !module.active && module.hasSessionChanges,
+           "Failed rollback of an active update blocks same-instance writes and retains ownership")
+    backend.failApply = false
+    backend.failRestore = false
+    try module.stop()
+
+    try module.apply(acceleration: true, speed: 2)
+    let savedJournal = recovery.pending
+    recovery.pending = nil
+    let beforeMissing = backend.writes
+    do { try module.apply(acceleration: false, speed: 1); expect(false, "Missing active baseline must throw") } catch {}
+    expect(backend.writes == beforeMissing && recovery.pending == nil, "Missing active journal cannot recapture modified values as originals")
+    recovery.pending = savedJournal
+    try module.stop()
 
     let wheel = MouseScrollSample(vertical: 1.5, horizontal: 0)
     let reversed = MouseScrollPolicy.transform(wheel, source: .verifiedWheel, enabled: true, reverse: true, speed: 2)
@@ -124,6 +168,53 @@ func testMouseControls() throws {
     try Data("broken journal".utf8).write(to: url)
     do { _ = try reopened.load(); expect(false, "Corrupt journal must throw") } catch {}
     expect(FileManager.default.fileExists(atPath: url.path), "Corrupt recovery data is retained, never silently replaced")
+    let corruptModule = MouseModule(backend: backend, recovery: reopened)
+    let beforeCorrupt = backend.writes
+    do { try corruptModule.apply(acceleration: false, speed: 2); expect(false, "Corrupt baseline must block apply") } catch {}
+    expect(backend.writes == beforeCorrupt, "Corrupt recovery blocks new pointer mutations")
     try reopened.clear()
     expect(!FileManager.default.fileExists(atPath: url.path), "Successful recovery removes the disk journal")
+
+    let domain = "mouse-lifecycle-tests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: domain)!
+    defer { defaults.removePersistentDomain(forName: domain) }
+    let settings = ModuleSettings(defaults: defaults)
+    settings.set(.mouse, enabled: false)
+    let hostBackend = FakeMouseBackend()
+    let hostRecovery = FakeMouseRecovery()
+    let hostOriginal = hostBackend.value
+    hostRecovery.pending = MouseRecovery(backend: hostBackend.identifier, original: hostOriginal)
+    hostBackend.value.speed = .number(3)
+    let lifecycle = MouseLifecycle(settings: settings, makeModule: {
+        MouseModule(backend: hostBackend, recovery: hostRecovery)
+    })
+    let model = DashboardModel()
+    lifecycle.onChange = { model.mouseRecoveryRequired = lifecycle.recoveryRequired }
+    lifecycle.start()
+    expect(hostBackend.value == hostOriginal && lifecycle.module == nil && !model.mouseRecoveryRequired,
+           "Host startup restores a journal while Mouse is disabled and leaves the owner unloaded")
+    expect(lifecycle.setEnabled(true) && settings.enabled.contains(.mouse), "Host enable persists the module choice")
+    try lifecycle.module!.apply(acceleration: false, speed: 2)
+    hostBackend.failRestore = true
+    expect(!lifecycle.setEnabled(false) && settings.enabled.contains(.mouse) && lifecycle.module != nil && model.mouseRecoveryRequired,
+           "Failed host disable retains the live owner and enabled choice and publishes retry state")
+    expect(!lifecycle.prepareToQuit(), "Host defers quit while its own changes cannot be restored")
+    hostBackend.failRestore = false
+    lifecycle.restore()
+    expect(!model.mouseRecoveryRequired && lifecycle.errorMessage == nil && hostBackend.value == hostOriginal,
+           "Successful host retry restores originals and clears published recovery state")
+    expect(lifecycle.prepareToQuit(), "Host permits quit after restoration succeeds")
+    expect(lifecycle.setEnabled(false) && !settings.enabled.contains(.mouse) && lifecycle.module == nil,
+           "Successful host disable persists Off and releases the owner")
+
+    hostRecovery.pending = MouseRecovery(backend: "unsupported", original: hostOriginal)
+    lifecycle.start()
+    expect(model.mouseRecoveryRequired && lifecycle.module == nil, "Unsupported historical recovery is surfaced even while disabled")
+    expect(lifecycle.prepareToQuit() && lifecycle.setEnabled(false) && hostRecovery.pending != nil,
+           "Unsupported historical recovery preserves its journal without trapping quit or disable")
+    try Data("broken journal".utf8).write(to: url)
+    let corruptLifecycle = MouseLifecycle(settings: settings, makeModule: { MouseModule(backend: hostBackend, recovery: reopened) })
+    corruptLifecycle.start()
+    expect(corruptLifecycle.recoveryRequired && corruptLifecycle.prepareToQuit() && FileManager.default.fileExists(atPath: url.path),
+           "Corrupt historical journal remains visible and retained while allowing normal host exit")
 }

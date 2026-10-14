@@ -26,7 +26,8 @@ struct MouseRecovery: Codable {
 
 protocol MouseRecoveryStore {
     func load() throws -> MouseRecovery?
-    /// Must durably save before returning; failures must prevent all OS writes.
+    /// Persist before returning for process-crash recovery. This contract does
+    /// not promise power-loss durability; qualify that before adding a live writer.
     func save(_ recovery: MouseRecovery) throws
     func clear() throws
 }
@@ -55,6 +56,7 @@ private struct UnqualifiedMouseBackend: MouseSettingsBackend {
     func restore(_ original: MouseOriginalSettings) throws { throw MouseModule.unavailable }
 }
 
+/// One host owner calls this synchronously on the main thread.
 final class MouseModule {
     static let pointerLimitation = "Unavailable: mouse-only acceleration and tracking changes have not been verified on Tahoe. Candidate preferences apply to all mice, not individual devices."
     static let scrollLimitation = "Unavailable: public scroll events do not reliably identify the physical device. Continuous/discrete flags are not proof of a mouse. All scrolling passes through unchanged; no event tap is installed."
@@ -62,7 +64,10 @@ final class MouseModule {
         userInfo: [NSLocalizedDescriptionKey: "Mouse controls require a verified mouse-only backend."])
     private let backend: MouseSettingsBackend
     private let recovery: MouseRecoveryStore
-    private(set) var active = false
+    private enum State { case idle, active, recoveryRequired }
+    private var state = State.idle
+    var active: Bool { state == .active }
+    private(set) var hasSessionChanges = false
     var available: Bool { backend.available }
 
     convenience init() {
@@ -78,7 +83,14 @@ final class MouseModule {
 
     func apply(acceleration: Bool, speed: Double) throws {
         guard available, speed.isFinite, (0.1...3).contains(speed) else { throw Self.unavailable }
-        let pending = try recovery.load()
+        guard state != .recoveryRequired else { throw Self.unavailable }
+        let pending: MouseRecovery?
+        do { pending = try recovery.load() }
+        catch { state = .recoveryRequired; throw error }
+        if hasSessionChanges && (pending == nil || pending?.backend != backend.identifier) {
+            state = .recoveryRequired
+            throw Self.unavailable
+        }
         // A pending journal after relaunch is recovery-only, never a new baseline.
         guard pending == nil || active else {
             throw NSError(domain: "MouseControls", code: 2, userInfo: [NSLocalizedDescriptionKey: "Restore the previous mouse settings before applying new changes."])
@@ -87,8 +99,9 @@ final class MouseModule {
             try recovery.save(MouseRecovery(backend: backend.identifier, original: backend.read()))
         }
         do {
+            hasSessionChanges = true // A throwing backend may already have changed one key.
             try backend.apply(acceleration: acceleration, speed: speed)
-            active = true
+            state = .active
         } catch {
             let applyError = error
             do { try stop() }
@@ -102,11 +115,79 @@ final class MouseModule {
 
     /// Called on disable, exit and startup. Failed restores retain the journal.
     func stop() throws {
-        guard let pending = try recovery.load() else { active = false; return }
+        state = .recoveryRequired
+        guard let pending = try recovery.load() else {
+            guard !hasSessionChanges else {
+                throw NSError(domain: "MouseControls", code: 4, userInfo: [NSLocalizedDescriptionKey: "The recovery journal is missing for this session's mouse changes."])
+            }
+            state = .idle
+            return
+        }
         guard pending.backend == backend.identifier, available else { throw Self.unavailable }
         try backend.restore(pending.original)
         try recovery.clear()
-        active = false
+        hasSessionChanges = false
+        state = .idle
+    }
+}
+
+/// Shared host policy for startup, module toggles, retry and termination. Tests
+/// exercise this exact owner without starting AppKit or other modules.
+final class MouseLifecycle {
+    private let settings: ModuleSettings
+    private let makeModule: () -> MouseModule
+    private(set) var module: MouseModule?
+    private(set) var recoveryRequired = false
+    private(set) var errorMessage: String?
+    var onChange: () -> Void = {}
+
+    init(settings: ModuleSettings, makeModule: @escaping () -> MouseModule = { MouseModule() }) {
+        self.settings = settings
+        self.makeModule = makeModule
+    }
+
+    func start() {
+        restore()
+        reconcile()
+    }
+
+    func reconcile() {
+        if settings.enabled.contains(.mouse) {
+            if module == nil { module = makeModule() }
+        } else if module?.hasSessionChanges != true { module = nil }
+        onChange()
+    }
+
+    @discardableResult func setEnabled(_ enabled: Bool) -> Bool {
+        if !enabled {
+            restore()
+            guard module?.hasSessionChanges != true else { return false }
+        }
+        settings.set(.mouse, enabled: enabled)
+        reconcile()
+        return true
+    }
+
+    func restore() {
+        do {
+            try (module ?? makeModule()).stop()
+            recoveryRequired = false
+            errorMessage = nil
+        } catch {
+            recoveryRequired = true
+            errorMessage = error.localizedDescription
+            if module?.hasSessionChanges != true {
+                errorMessage = "Mouse recovery data could not be restored by this build: \(error.localizedDescription) The journal is retained. You can disable Mouse or quit normally."
+            }
+        }
+        onChange()
+    }
+
+    func prepareToQuit() -> Bool {
+        restore()
+        // Historical/corrupt metadata must not prevent other modules' cleanup
+        // or trap this build in the app when it cannot perform recovery.
+        return module?.hasSessionChanges != true
     }
 }
 

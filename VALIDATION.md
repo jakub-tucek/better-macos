@@ -174,8 +174,17 @@ shows disabled controls with scope and reasons. The injected pointer transaction
 captures original absent/value states before writes; repeated changes retain the
 first baseline; partial failures roll back; failed rollback or journal deletion
 retains recovery. Startup/disable/quit attempt restoration and report failure.
+The host's injected lifecycle coordinator is tested with isolated preferences:
+disabled startup recovery, failed disable retaining the enabled choice and owner,
+retry state publication, and quit after success/failure. Unrestorable historical
+or corrupt journals stay visible and retained but do not block normal quit or
+module disable. This session's unresolved writes remain owned until recovery.
+Failed cleanup enters recovery-only state and blocks subsequent writes, including
+same-instance updates. Missing active journals cannot become a new baseline.
 The production backend deliberately refuses all writes, including recovery from
 an unrecognized backend. No current production operation creates a journal.
+File persistence currently covers process-crash recovery, not a verified
+power-loss durability guarantee; qualification of a live writer must address that.
 
 Policy tests use only fake backends and temporary files. Wheel policy transforms
 only an explicitly verified wheel source, and passes unknown/trackpad, momentum,
@@ -188,6 +197,13 @@ crash recovery with real settings, real wheel attribution, natural-trackpad
 direction, momentum, horizontal/modifier scrolling and event-count preservation.
 No actual pointer settings were changed, no synthetic input was posted, and no
 user app was launched/relaunched or quit for this increment. The existing suite
-launches disposable watchdog fixtures. `bash test.sh` passed: **230 isolated
-checks** (31 new Mouse assertions) and **7 installer scenarios**; the signed app
+launches disposable watchdog fixtures. `bash test.sh` passed: **247 isolated
+checks** (48 new Mouse assertions) and **7 installer scenarios**; the signed app
 build compiles the host UI. 4A and 4B remain incomplete.
+
+Independent read-only adversarial reviews (Codex and OpenCode) of the feature
+commit found three warnings: recovery-state reuse after failed cleanup, impossible
+historical recovery blocking quit, and missing host lifecycle coverage. The
+follow-up fix addresses all three with the regression scenarios above. DRY review
+found no existing generic transaction helper to reuse; hardware/source attribution
+and power-loss durability remain explicit qualification limitations.
