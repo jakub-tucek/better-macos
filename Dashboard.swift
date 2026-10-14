@@ -221,6 +221,30 @@ struct BlueSwitch: View {
     }
 }
 
+/// Shared compact sections and trailing switches keep feature panels consistent.
+struct DashboardCard<Content: View>: View {
+    let content: Content
+    init(@ViewBuilder content: () -> Content) { self.content = content() }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) { content }
+            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+struct DashboardSwitchRow: View {
+    let title: String
+    var accessibilityTitle: String? = nil
+    @Binding var isOn: Bool
+    var body: some View {
+        HStack {
+            Text(title)
+            Spacer()
+            BlueSwitch(label: accessibilityTitle ?? title, isOn: $isOn)
+        }
+    }
+}
+
 /// A snapshot-only map: geometry reads and layout planning happen outside SwiftUI.
 struct MonitorLayoutMap: View {
     let positions: [DisplayPosition]
@@ -359,7 +383,7 @@ struct DashboardView: View {
                         else { disabledModule("Display modules") }
                     case .audio:
                         if model.enabledModules.contains(.audio) { audioControls }
-                        else { Text("Enable Audio in Settings and modules.") }
+                        else { disabledModule("Audio") }
                     case .bluetooth:
                         if model.enabledModules.contains(.bluetooth) { bluetooth }
                         else { disabledModule("Bluetooth reconnect") }
@@ -386,8 +410,6 @@ struct DashboardView: View {
             }
             Divider()
             HStack {
-                BlueSwitch(label: "Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: model.onLoginChanged))
-                Text("Launch at login").font(.caption)
                 Spacer()
                 Button("Quit", action: model.onQuit).disabled(model.monitorBusy)
             }.padding(14)
@@ -413,24 +435,22 @@ struct DashboardView: View {
     }
 
     private func card<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 12, content: content)
-            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+        DashboardCard(content: content)
     }
 
     private var audioControls: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Automatic audio routing")
-                Spacer()
-                BlueSwitch(label: "Automatic audio routing", isOn: Binding(get: { model.audioAutomatic }, set: model.onAudioAutomatic))
+        VStack(alignment: .leading, spacing: 14) {
+            card {
+                Label("Audio", systemImage: DashboardTab.audio.symbol).font(.headline)
+                DashboardSwitchRow(title: "Automatic routing", isOn: Binding(get: { model.audioAutomatic }, set: model.onAudioAutomatic))
+                Text(model.audioStatus).font(.caption).foregroundStyle(.secondary)
+                Button("Resume preferred routes", action: model.onAudioResume)
+                Text("Automatic routing follows saved preferences when devices change. Connected Bluetooth audio stays protected.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
-            Text(model.audioStatus).font(.caption).foregroundStyle(.secondary)
-            Text("Preferences apply on device changes or Resume. Connected Bluetooth audio is protected.").font(.caption)
             ForEach(AudioDirection.allCases, id: \.self) { direction in
-                audioDirectionControls(direction)
+                card { audioDirectionControls(direction) }
             }
-            Button("Resume preferred routes", action: model.onAudioResume)
         }
     }
 
@@ -442,9 +462,13 @@ struct DashboardView: View {
             Picker("Current", selection: Binding(get: { model.audioRoutes[direction] ?? "" }, set: { model.onAudioSelect($0, direction) })) {
                 Text("Unavailable").tag("")
                 ForEach(devices) { device in Text("\(device.name) · \(device.uid)").tag(device.uid) }
-            }
-            if model.audioOverrides[direction] == true { Text("Manual override until this device list changes or Resume.").font(.caption) }
+            }.disabled(devices.isEmpty)
+            if devices.isEmpty { Text("No available devices.").font(.caption).foregroundStyle(.secondary) }
+            if model.audioOverrides[direction] == true { Text("Manual choice until devices change or you resume preferences.").font(.caption) }
+            DisclosureGroup("Preferred devices and fallback") {
+            VStack(alignment: .leading, spacing: 8) {
             Text("Preference order (highest first)").font(.caption)
+            if preferred.isEmpty { Text("No preferred devices saved.").font(.caption).foregroundStyle(.secondary) }
             ForEach(Array(preferred.enumerated()), id: \.element) { index, uid in
                 HStack {
                     Text("\(index + 1). \(devices.first { $0.uid == uid }?.name ?? "Unavailable") · \(uid)").lineLimit(2)
@@ -468,39 +492,38 @@ struct DashboardView: View {
                     Text("Unavailable · \(uid)").tag(uid)
                 }
             }
-            Divider()
+            }.padding(.top, 8)
+            }
         }
     }
 
     private var clipboard: some View {
         card {
-            HStack {
-                Text("Record clipboard history")
-                Spacer()
-                BlueSwitch(label: "Record clipboard history", isOn: Binding(get: { model.clipboardRecording }, set: model.onClipboardRecording))
-            }
+            Label("Clipboard", systemImage: DashboardTab.clipboard.symbol).font(.headline)
+            DashboardSwitchRow(title: "Record clipboard history", isOn: Binding(get: { model.clipboardRecording }, set: model.onClipboardRecording))
             Text("\(model.clipboardCount) entries · ⌘⇧V to search").font(.caption)
             HStack {
                 Button("Open history", action: model.onClipboardOpen)
-                Button("Clear history", action: model.onClipboardClear)
+                Button("Clear history", role: .destructive, action: model.onClipboardClear)
             }
-            Text("Starts paused each launch. Up to 100 entries, 64 KB per text, PNG images up to 4 MB (32 MB total). Selection copies; paste normally in your app.").font(.caption)
-            HStack {
-                Text("Save history to disk")
-                Spacer()
-                BlueSwitch(label: "Save clipboard history to disk", isOn: Binding(get: { model.clipboardPersistence }, set: model.onClipboardPersistence))
-            }
-            Stepper("Retain for \(model.clipboardDays) days", value: Binding(get: { model.clipboardDays }, set: model.onClipboardDays), in: 1...365)
-            Text("Pins bypass age expiry, but count and image caps still apply. Disk history is local and unencrypted. Turning disk history off deletes its archive.").font(.caption)
+            Text("Starts paused each launch. Selecting an entry copies it; paste normally in your app.").font(.caption).foregroundStyle(.secondary)
             if model.clipboardStoragePending {
                 Text("Disk cleanup/save pending — retrying. Old disk entries may remain until storage recovers; keep the module enabled.").font(.caption).foregroundStyle(.orange)
             }
+            DisclosureGroup("Retention and exclusions") {
+            VStack(alignment: .leading, spacing: 12) {
+            DashboardSwitchRow(title: "Save history to disk", isOn: Binding(get: { model.clipboardPersistence }, set: model.onClipboardPersistence))
+            Stepper("Retain for \(model.clipboardDays) days", value: Binding(get: { model.clipboardDays }, set: model.onClipboardDays), in: 1...365)
+            Text("Pins bypass age expiry, but count and image caps still apply. Disk history is local and unencrypted. Turning disk history off deletes its archive.").font(.caption)
+            Text("Up to 100 entries, 64 KB per text, and 4 MB per PNG image (32 MB total).").font(.caption).foregroundStyle(.secondary)
             TextField("Excluded app bundle IDs, comma separated", text: Binding(get: {
                 clipboardExclusionsDraft.text(applied: model.clipboardExclusions)
             }, set: { clipboardExclusionsDraft.edited = $0 }))
                 .onSubmit(applyClipboardExclusions)
             Button("Apply exclusions", action: applyClipboardExclusions)
             Text("Exclusions use the foreground app at capture time and remove its existing entries. Concealed, transient, and autogenerated clipboard formats are skipped.").font(.caption)
+            }.padding(.top, 8)
+            }
         }
     }
 
@@ -512,23 +535,24 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 14) {
             card {
                 Label("Acceleration and tracking", systemImage: "computermouse").font(.headline)
-                Text("Session-wide for devices using HIDMouseAcceleration, not per-device. Trackpad-specific keys are never written. Hardware behavior and reconnect still need verification.").font(.caption).foregroundStyle(.secondary)
+                Text("All-mice runtime controls · hardware behavior needs verification.").font(.caption).foregroundStyle(.secondary)
                 if let error = model.mouseCapabilityError { Text(error).font(.caption).foregroundStyle(.orange) }
-                Text("All-mice controls · no per-device support").font(.caption)
-                HStack {
-                    Text("Acceleration")
-                    Spacer()
-                    BlueSwitch(label: "Mouse acceleration", isOn: $model.mouseAcceleration)
-                }
+                DashboardSwitchRow(title: "Acceleration", accessibilityTitle: "Mouse acceleration", isOn: $model.mouseAcceleration)
+                    .disabled(model.mouseCapabilityError != nil || model.mouseRecoveryRequired)
                 Slider(value: $model.mouseTracking, in: SystemMouseBackend.trackingRange) { Text("Tracking") }
+                    .disabled(model.mouseCapabilityError != nil || model.mouseRecoveryRequired)
                 Text(String(format: "Tracking: %.2f", model.mouseTracking)).font(.caption)
                 Text("Proposed settings — applied together only when you click Apply.").font(.caption)
-                Button("Read current settings", action: model.onRefreshMouse)
-                Button("Apply mouse settings", action: model.onApplyMouse).disabled(model.mouseCapabilityError != nil || model.mouseRecoveryRequired)
-                if model.mouseOverrideActive { Button("Restore original mouse settings", action: model.onRestoreMouse) }
+                HStack {
+                    Button("Apply mouse settings", action: model.onApplyMouse).disabled(model.mouseCapabilityError != nil || model.mouseRecoveryRequired)
+                    Button("Read current", action: model.onRefreshMouse)
+                }
+                if model.mouseOverrideActive && !model.mouseRecoveryRequired { Button("Restore original mouse settings", action: model.onRestoreMouse) }
                 Text("Nothing changes until Apply. These runtime settings are restored on disable or quit, not saved as system preferences.").font(.caption)
             }
             card {
+              DisclosureGroup("Wheel scrolling · unavailable") {
+                VStack(alignment: .leading, spacing: 12) {
                 Text("Separate wheel scrolling").font(.headline)
                 Text(MouseModule.scrollLimitation).font(.caption).foregroundStyle(.secondary)
                 HStack {
@@ -538,6 +562,9 @@ struct DashboardView: View {
                 }
                 Text("Wheel speed: unavailable").foregroundStyle(.secondary)
                 Text("Trackpad, momentum, horizontal and modifier-assisted scrolling retain their existing behavior.").font(.caption)
+                Text("Uses mouse-specific runtime keys, never trackpad-specific keys. No per-device controls or automatic reapply after reconnect.").font(.caption).foregroundStyle(.secondary)
+                }
+              }
             }
         }
     }
@@ -590,6 +617,7 @@ struct DashboardView: View {
             card {
                 Text("While apps are running").font(.headline)
                 Text("Includes apps running in the background.").font(.caption).foregroundStyle(.secondary)
+                if model.keepAwakeApps.isEmpty { Text("No app rules yet.").font(.caption).foregroundStyle(.secondary) }
                 ForEach(model.keepAwakeApps.keys.sorted(), id: \.self) { id in
                     HStack {
                         VStack(alignment: .leading) {
@@ -610,11 +638,7 @@ struct DashboardView: View {
                 }
             }
             card {
-                HStack {
-                    Text("Keep display awake")
-                    Spacer()
-                    BlueSwitch(label: "Keep display awake", isOn: Binding(get: { model.keepDisplayAwake }, set: model.onKeepDisplayAwakeChanged))
-                }
+                DashboardSwitchRow(title: "Keep display awake", isOn: Binding(get: { model.keepDisplayAwake }, set: model.onKeepDisplayAwakeChanged))
                 Text(model.keepDisplayAwake ? "Keep the computer and display awake until the session ends." : "Keep the computer awake while letting the display sleep.")
                     .font(.caption).foregroundStyle(.secondary)
                 Text("Sleep from the Apple menu and closing the lid still work. Quitting Fix macOS ends the session.")
@@ -625,11 +649,8 @@ struct DashboardView: View {
 
     private var keyboard: some View {
         card {
-            HStack {
-                Text("Hold ⌘Q to quit")
-                Spacer()
-                BlueSwitch(label: "Hold Command Q to quit", isOn: Binding(get: { model.quitGuardEnabled }, set: model.onQuitGuardChanged))
-            }
+            Label("Keyboard", systemImage: DashboardTab.keyboard.symbol).font(.headline)
+            DashboardSwitchRow(title: "Hold ⌘Q to quit", accessibilityTitle: "Hold Command Q to quit", isOn: Binding(get: { model.quitGuardEnabled }, set: model.onQuitGuardChanged))
             HStack {
                 Text("Hold for")
                 Spacer()
@@ -663,20 +684,13 @@ struct DashboardView: View {
     private var menuBar: some View {
         VStack(alignment: .leading, spacing: 14) {
             card {
-                HStack {
-                    Text("Compact spacing")
-                    Spacer()
-                    BlueSwitch(label: "Compact menu-bar spacing", isOn: Binding(get: { model.compactMenuBar }, set: model.onCompactMenuBarChanged))
-                }
+                Label("Menu bar", systemImage: DashboardTab.menuBar.symbol).font(.headline)
+                DashboardSwitchRow(title: "Compact spacing", accessibilityTitle: "Compact menu-bar spacing", isOn: Binding(get: { model.compactMenuBar }, set: model.onCompactMenuBarChanged))
                 Text("Experimental. Restart affected apps or log out to apply. Turning off restores your original spacing.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             card {
-                HStack {
-                    Text("Hide extra icons")
-                    Spacer()
-                    BlueSwitch(label: "Hide extra menu-bar icons", isOn: Binding(get: { model.menuBarHiding }, set: model.onMenuBarHidingChanged))
-                }
+                DashboardSwitchRow(title: "Hide extra icons", accessibilityTitle: "Hide extra menu-bar icons", isOn: Binding(get: { model.menuBarHiding }, set: model.onMenuBarHidingChanged))
                 Text("Hold ⌘ and drag the divider left of the chevron. Move less-used icons left of the divider; keep Fix macOS and essential icons to its right.")
                     .font(.caption).foregroundStyle(.secondary)
                 if model.menuBarHiding {
@@ -690,6 +704,7 @@ struct DashboardView: View {
 
     private var monitors: some View {
         VStack(alignment: .leading, spacing: 14) {
+            Label("Monitors", systemImage: DashboardTab.monitors.symbol).font(.headline)
             if model.enabledModules.contains(.monitors) {
                 Picker("Disable mode", selection: Binding(
                     get: { model.confirmMonitorDisable }, set: model.onMonitorDisableModeChanged)) {
@@ -714,6 +729,7 @@ struct DashboardView: View {
             }
             if model.enabledModules.contains(.arrangement) { arrangementPreview }
             card {
+                if model.monitors.isEmpty { Text("No displays available yet.").font(.caption).foregroundStyle(.secondary) }
                 ForEach(model.monitors, id: \.uuid) { monitor in
                     HStack(spacing: 10) {
                         Image(systemName: monitor.isBuiltIn ? "laptopcomputer" : "display")
@@ -736,6 +752,7 @@ struct DashboardView: View {
             }
             if model.monitorBusy { ProgressView("Applying display change…").controlSize(.small) }
             if model.displaySettling { Text("Waiting for display connections to settle…").font(.caption).foregroundStyle(.secondary) }
+            if !model.displaySupported { Text("Display controls are unavailable until recovery monitoring is ready.").font(.caption).foregroundStyle(.secondary) }
             Button(model.pendingArrangement ? "Restore previous layout" : "Enable all disabled displays", action: model.onRestoreAll)
                 .disabled(model.displaySettling || model.monitorBusy || (model.disabledMonitorCount == 0 && !model.pendingArrangement))
         }
@@ -753,12 +770,8 @@ struct DashboardView: View {
                     .disabled(busy || !model.displaySupported || model.disabledMonitorCount > 0 || model.pendingArrangement || model.currentLayout.count < 2)
                     .help("Drag screens to arrange your desk")
             }
-            HStack {
-                Text("Match screen edges").font(.subheadline)
-                Spacer()
-                BlueSwitch(label: "Match screen edges", isOn: Binding(
-                    get: { model.matchScreenEdges }, set: model.onMatchScreenEdgesChanged))
-            }
+            DashboardSwitchRow(title: "Match screen edges", isOn: Binding(
+                get: { model.matchScreenEdges }, set: model.onMatchScreenEdgesChanged))
             if model.matchScreenEdges && !model.screenEdgesActive {
                 Text("Paused — waiting for stable displays or Accessibility access.")
                     .font(.caption2).foregroundStyle(.secondary)
@@ -799,13 +812,16 @@ struct DashboardView: View {
     private func disabledModule(_ title: String) -> some View {
         card {
             Text("\(title) is off").font(.headline)
-            Button("Enable in settings") { model.tab = .modules }
+            Button("Enable in settings") { lastFeature = model.tab; model.tab = .modules }
         }
     }
 
     private var modules: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Modules").font(.headline)
+            card {
+                DashboardSwitchRow(title: "Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: model.onLoginChanged))
+            }
             ForEach(AppModule.allCases) { module in
                 card {
                     HStack {
@@ -840,6 +856,7 @@ struct DashboardView: View {
     private var bluetooth: some View {
         VStack(alignment: .leading, spacing: 14) {
             card {
+                Label("Bluetooth", systemImage: DashboardTab.bluetooth.symbol).font(.headline)
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Automatic reconnection").font(.headline)
@@ -876,18 +893,12 @@ struct DashboardView: View {
                 if model.devices.isEmpty { Text(model.bluetoothPermissionRequired ? "Grant Bluetooth access to show your paired devices." : "No paired devices found yet.").font(.caption).foregroundStyle(.secondary) }
             }
             card {
-                HStack {
-                    Text("Don’t interrupt other Bluetooth audio").font(.system(size: 12))
-                    Spacer()
-                    BlueSwitch(label: "Pause reconnection while other Bluetooth audio is connected", isOn: Binding(
-                        get: { model.protectOtherAudio }, set: model.onProtectAudioChanged))
-                }
-                HStack {
-                    Text("Use reconnected speakers as audio output").font(.system(size: 12))
-                    Spacer()
-                    BlueSwitch(label: "Switch audio output after safe reconnection", isOn: Binding(
-                        get: { model.switchAudioOutput }, set: model.onSwitchAudioChanged))
-                }
+              DisclosureGroup("Audio protection and output") {
+                VStack(alignment: .leading, spacing: 12) {
+                DashboardSwitchRow(title: "Protect other Bluetooth audio", accessibilityTitle: "Pause reconnection while other Bluetooth audio is connected", isOn: Binding(
+                    get: { model.protectOtherAudio }, set: model.onProtectAudioChanged))
+                DashboardSwitchRow(title: "Use reconnected speakers as output", accessibilityTitle: "Switch audio output after safe reconnection", isOn: Binding(
+                    get: { model.switchAudioOutput }, set: model.onSwitchAudioChanged))
                 DisclosureGroup("Advanced headphone detection") {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Always protect these devices as audio, even before macOS registers their audio output.")
@@ -903,6 +914,8 @@ struct DashboardView: View {
                         }
                     }.padding(.top, 8)
                 }.font(.caption)
+                }.padding(.top, 8)
+              }
             }
         }
     }
@@ -944,19 +957,19 @@ struct DashboardView: View {
     private var spaces: some View {
         VStack(alignment: .leading, spacing: 14) {
             card {
-                HStack {
-                    Text("Limit animations").font(.headline)
-                    Spacer()
-                    BlueSwitch(label: "Limit animations", isOn: Binding(
-                        get: { model.animationsEnabled }, set: model.onAnimationsChanged))
-                        .disabled(model.animationsBusy)
-                }
+                Label("Animations", systemImage: DashboardTab.spaces.symbol).font(.headline)
+                DashboardSwitchRow(title: "Limit animations", isOn: Binding(
+                    get: { model.animationsEnabled }, set: model.onAnimationsChanged))
+                    .disabled(model.animationsBusy)
+                if model.animationsBusy { ProgressView("Saving animation settings…").controlSize(.small) }
+                DisclosureGroup("Affected animations") {
                 VStack(alignment: .leading, spacing: 8) {
                     animationScope("Dock", detail: "Reveal delay, sliding, bouncing, magnification")
                     animationScope("Minimize & restore", detail: "Scale instead of Genie")
                     animationScope("Finder & windows", detail: "Opening, closing, resizing")
                     animationScope("Scrolling", detail: "AppKit smooth scrolling")
                     animationScope("Window tiling", detail: "Experimental animation suppression")
+                }
                 }
                 Text("Dock and Finder restart when changed. Relaunch other apps; tiling may need a new login. Effects vary by app.")
                     .font(.caption).foregroundStyle(.secondary)

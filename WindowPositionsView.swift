@@ -8,6 +8,7 @@ struct WindowPositionsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+          DashboardCard {
             Label("Window positions", systemImage: DashboardTab.windows.symbol).font(.headline)
             if !module.permitted {
                 Text("Accessibility access is required to save and restore windows.").font(.caption)
@@ -24,7 +25,8 @@ struct WindowPositionsView: View {
                 Button("Save current layout", action: save)
                     .disabled(!module.canCapture || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            Divider()
+          }
+          DashboardCard {
             if module.layouts.isEmpty {
                 Text("No saved layouts yet.").foregroundStyle(.secondary)
             } else {
@@ -58,11 +60,12 @@ struct WindowPositionsView: View {
                 }
             }
             Text(module.summary).font(.caption).textSelection(.enabled)
-
+          }
+          DashboardCard {
             DisclosureGroup("Advanced") {
                 VStack(alignment: .leading, spacing: 12) {
-                    switchRow("Restore after reconnect or wake", value: $module.automatic)
-                    switchRow("Pause automatic restoration", value: $module.paused)
+                    DashboardSwitchRow(title: "Restore after reconnect or wake", isOn: $module.automatic)
+                    DashboardSwitchRow(title: "Pause automatic restoration", isOn: $module.paused)
                     Picker("Automatic layout", selection: $module.selected) {
                         Text("Use unique matching layout").tag("")
                         ForEach(module.layouts) { Text($0.name).tag($0.id) }
@@ -74,14 +77,7 @@ struct WindowPositionsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }.padding(.top, 8)
             }
-        }
-    }
-
-    private func switchRow(_ label: String, value: Binding<Bool>) -> some View {
-        HStack {
-            Text(label)
-            Spacer()
-            BlueSwitch(label: label, isOn: value)
+          }
         }
     }
 
