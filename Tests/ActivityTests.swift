@@ -150,23 +150,7 @@ private func runActivityNativeWindowTests() {
     expect(presented.count == 1 && presented[0].title == "Fix macOS — Activity" && presented[0].styleMask.contains(.resizable), "activity action creates a dedicated resizable native window through injected presentation")
     presented[0].close(); model.onOpenActivity()
     expect(presented.count == 2 && presented[0] === presented[1] && journal.entries.count == 1, "activity reopen reuses its native window and retains session history")
-    for _ in 0..<60 { journal.record(.awakeStart(10), trigger: .user, result: .completed) }
-    let content = presented[0].contentView!
-    content.layoutSubtreeIfNeeded()
-    RunLoop.main.run(until: Date().addingTimeInterval(0.1))
-    func scrollViews(_ view: NSView) -> [NSScrollView] {
-        (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
-    }
-    let scrolls = scrollViews(content)
-    expect(!scrolls.isEmpty, "activity native hosting mounts its scrollable history")
-    if let scroll = scrolls.first {
-        scroll.contentView.scroll(to: NSPoint(x: 0, y: 250)); scroll.reflectScrolledClipView(scroll.contentView)
-        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
-        journal.record(.awakeStop, trigger: .user, result: .completed)
-        content.layoutSubtreeIfNeeded()
-        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
-        expect(scroll.contentView.bounds.minY > 100, "activity native history reading is not reset to top when a new entry arrives")
-    }
+    runActivityScrollTests(journal: journal, window: presented[0])
     presented[0].close()
     withExtendedLifetime(host) {}
 }

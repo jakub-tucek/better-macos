@@ -11,7 +11,7 @@ source Scripts/clipboard-package.sh
 clipboard_package_test debug
 clipboard_package_build release
 xcrun swiftc -swift-version 5 -warnings-as-errors -target arm64-apple-macos15.0 \
-    Sources/Core/ActivityJournal.swift Sources/SharedUI/ActivityView.swift Tests/ActivityTests.swift \
+    Sources/Core/ActivityJournal.swift Sources/SharedUI/ActivityView.swift Tests/ActivityTests.swift Tests/ActivityScrollTests.swift \
     Sources/Core/Diagnostics.swift Sources/Core/LoginDiagnostics.swift Tests/DiagnosticsTests.swift \
     Sources/App/LoginService.swift Tests/LoginServiceTests.swift Sources/Features/KeepAwake/KeepAwakeFeature.swift Sources/Features/KeepAwake/KeepAwakePresentation.swift Tests/KeepAwakeFeatureTests.swift \
     -I "$CLIPBOARD_PACKAGE_MODULES" "$CLIPBOARD_PACKAGE_ARCHIVE" \

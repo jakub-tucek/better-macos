@@ -58,10 +58,16 @@ Triggers are **You**, **Automatic**, or **Recovery**. The journal does not yet c
 all features or every possible OS effect. Login, Audio, Mouse, Clipboard and other
 feature-policy entries are outside this first slice.
 
-The view retains row identities and expanded details. It follows incoming rows
-only while at the top. While reading older rows, native scroll-target anchoring
-keeps the reading position and a Show latest action is available. The 300-entry
-cap still applies while reading; evicted history cannot be preserved indefinitely.
+The view retains native row identities and expanded details. Immediately before
+each update, the native viewport captures its top visible row ID and the offset
+within that row. After synchronous native measurement/layout it restores both;
+it follows incoming rows only if it was already at the top. Show latest explicitly
+resets to the top. There is no delayed scroll correction or lazy height estimate.
+If a row shrinks past the old within-row offset, the offset clamps to its remaining
+bottom. If the anchor is evicted, the nearest surviving older row is preferred,
+then the nearest surviving newer row, aligned to its top. Native viewport bounds
+can clamp that position near the document end. If no old rows survive, it resets
+to the top. The 300-entry cap still applies while reading.
 
 ## Implementation and verification
 
@@ -69,7 +75,9 @@ cap still applies while reading; evicted history cannot be preserved indefinitel
 owned. The host injects one journal into owners. `ActivityPresentation` in
 `Sources/SharedUI/ActivityView.swift` observes it separately from Dashboard, so
 journal updates do not refresh every Settings/widget consumer. Native window
-composition stays in `AppDelegate`. SwiftUI local state uses `StoredState`.
+composition stays in `AppDelegate`. The native viewport owns disclosure state and
+selectable text views; it does not rebuild existing rows on publication. Existing
+SwiftUI `StoredState` semantics elsewhere are unchanged.
 
 No file I/O, database, actor hops, diagnostic-worker subscription, raw JSON parsing,
 flush or quit veto is involved. The journal is observational: host admission,
@@ -91,6 +99,11 @@ separate user-authorized acceptance. No prior relaunch authorization is extended
 by adding this feature.
 
 ### Frozen-revision isolated evidence · 2026-10-15
+
+**Historical passing evidence with a subsequent independent review concern.**
+The offset-only scroll assertion below did not establish stable row identity
+across batched insertions. See the reproduced failure and correction below;
+these older counts are not acceptance of the corrected implementation.
 
 Implementation **`0a7be84b48a2a3078069ef5190eb38ce4484a4f2`**, based on
 `778f078`, passed one complete
@@ -133,3 +146,25 @@ revision. No production app launch/quit/relaunch/install, live log read, permiss
 mutation, registration or device action was performed. **Independent review is
 still required before integration.** Live keyboard/VoiceOver, visual interaction
 and physical hardware acceptance remain open as described above.
+
+### Independent review: batched insertion displaced the reader
+
+Independent review reported **CONCERNS**, not CLEAN. Its read-only native fixture
+showed that the old SwiftUI lazy scroll-target implementation compensated two
+insertions by 166 points but then left the offset unchanged when seven new rows
+grew the document by 581 points. Remaining below the top did not mean the same
+row was still visible. The old `offset > 100` test had a coverage gap.
+
+The reproduction was copied into this implementation worktree without editing
+the reviewer's worktree. `activity-scroll-red.log` reproduces exactly
+`insertedHeight=581.0 offsetCompensation=0.0` after the two-row case passed.
+The correction replaces the lazy scroll heuristic with bounded native rows and
+explicit pre-mutation row-ID/relative-offset capture and synchronous layout.
+`Tests/ActivityScrollTests.swift` now asserts actual row identity and relative
+offset after 2/7-row batches, successive publications, disclosure/width/wrapping
+changes, terminal detail updates, surviving/evicted anchors at the cap, explicit
+Show latest, top-follow, and Clear. Native row/disclosure identity is also checked.
+There are no production dispatch delays, timers or eventual-correction guesses.
+
+This correction still requires independent follow-up review before integration;
+the earlier review concern is not superseded merely by implementer test results.
