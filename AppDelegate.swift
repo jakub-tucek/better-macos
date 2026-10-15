@@ -155,7 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         item.button?.action = #selector(toggleDashboard)
         popover.behavior = .transient
         popover.animates = false
-        popover.contentSize = NSSize(width: 430, height: 580)
+        popover.contentSize = NSSize(width: 390, height: 580)
         popover.contentViewController = NSHostingController(rootView: QuickActionsView(model: model))
         updateModules()
         if animations.recoveryRequired {
@@ -646,7 +646,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         guard let button = item.button, !popover.isShown else { return }
         model.popupHeight = min(650, max(260, (button.window?.screen?.visibleFrame.height ?? 700) - 80))
-        popover.contentSize = NSSize(width: 430, height: model.popupHeight)
+        popover.contentSize = NSSize(width: 390, height: model.popupHeight)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
     }

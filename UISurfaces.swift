@@ -155,6 +155,7 @@ final class UISettingsStore {
 
 struct SafetyAlerts: View {
     @ObservedObject var model: DashboardModel
+    var showAwakeSession = true
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !model.watchdogReady {
@@ -178,7 +179,7 @@ struct SafetyAlerts: View {
                 }
                 Button("Restore displays now", action: model.onRestoreAll).disabled(model.monitorBusy || model.displaySettling)
             }
-            if model.keepAwakeCanStop || model.keepAwakeProtectionFailed {
+            if (showAwakeSession && model.keepAwakeCanStop) || model.keepAwakeProtectionFailed {
                 HStack {
                     Text(model.keepAwakeProtectionFailed ? "Keep awake needs retry" : "Keep awake active")
                     Spacer()
@@ -285,33 +286,126 @@ struct QuickActionsView: View {
                 } else { Button("Edit") { editor.begin(model.widgetLayout) } }
                 Button { model.onOpenSettings(nil) } label: { Image(systemName: "gearshape") }
                     .accessibilityLabel("Settings")
-            }.padding(16)
+            }.padding(.horizontal, 14).padding(.vertical, 10)
             Divider()
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    SafetyAlerts(model: model)
+                VStack(alignment: .leading, spacing: 0) {
+                    SafetyAlerts(model: model, showAwakeSession: editor.draft != nil || !entries.contains { $0.known == .keepAwake && model.enabledModules.contains(.keepAwake) })
+                        .padding(.horizontal, 14)
                     if editor.draft != nil {
                         WidgetEditor(layout: Binding(get: { editor.draft ?? model.widgetLayout }, set: { editor.draft = $0 }), model: model)
+                            .padding(14)
                     } else {
                         if model.launchWidget != nil {
                             Button("Dismiss temporary launch action") { model.launchWidget = nil }.font(.caption)
                         }
                         ForEach(entries) { entry in
                             QuickWidget(model: model, entry: entry)
+                            Divider().padding(.leading, 14)
                         }
                         if entries.isEmpty {
-                            Text("Your quick actions, your choice.").font(.headline)
-                            Button("Add quick actions") { editor.begin(model.widgetLayout) }
-                            Button("Run setup", action: model.onRunSetup)
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Your quick actions, your choice.").font(.headline)
+                                Button("Add quick actions") { editor.begin(model.widgetLayout) }
+                                Button("Run setup", action: model.onRunSetup)
+                            }.padding(14)
                         }
                     }
-                }.padding(16)
+                }
             }
             Divider()
-            HStack { Spacer(); Button("Quit", action: model.onQuit).disabled(model.monitorBusy) }.padding(12)
-        }.frame(width: 430, height: model.popupHeight)
+            HStack { Spacer(); Button("Quit", action: model.onQuit).disabled(model.monitorBusy) }.padding(.horizontal, 14).padding(.vertical, 8)
+        }.frame(width: 390, height: model.popupHeight)
             .background(Color(nsColor: .windowBackgroundColor))
+            .controlSize(.small)
             .onExitCommand(perform: model.onClose)
+    }
+}
+
+/// The popup and its isolated tests use the same action seam. Feature callbacks
+/// remain responsible for host admission, assertion ownership and recovery.
+struct AwakeSessionActions {
+    let model: DashboardModel
+    static let presets = [15, 30, 45, 60, 120]
+    var status: String {
+        if model.keepAwakeProtectionFailed { return "Protection needs retry" }
+        if model.keepAwakeRemaining > 0 {
+            let seconds = Int(ceil(model.keepAwakeRemaining))
+            return String(format: "%d:%02d remaining", seconds / 60, seconds % 60)
+        }
+        return model.keepAwakeActive ? "Active · app rules" : "Inactive"
+    }
+    func start(minutes: Int) {
+        guard model.enabledModules.contains(.keepAwake), !model.stoppingModules.contains(.keepAwake),
+              (5...1440).contains(minutes) else { return }
+        model.onKeepAwakeMinutesChanged(minutes)
+        model.onKeepAwakeStart()
+    }
+}
+
+struct AwakeSessionWidget: View {
+    @ObservedObject var model: DashboardModel
+    let expanded: Bool
+    @State private var custom = false
+    private var actions: AwakeSessionActions { AwakeSessionActions(model: model) }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(actions.status).monospacedDigit()
+                    .foregroundStyle(model.keepAwakeProtectionFailed ? Color.orange : model.keepAwakeActive ? .blue : .secondary)
+                    .accessibilityLabel("Keep awake: \(actions.status)")
+                Spacer()
+                if model.keepAwakeCanStop || model.keepAwakeProtectionFailed {
+                    Button("End session", action: model.onKeepAwakeStop)
+                        .buttonStyle(.borderedProminent).tint(.blue)
+                        .accessibilityLabel("End keep awake session and pause current app rules")
+                }
+            }
+            if model.keepAwakeRemaining > 0 {
+                HStack {
+                    Button("+15 min", action: model.onKeepAwakeExtend)
+                        .disabled(model.keepAwakeRemaining >= 86400 || model.stoppingModules.contains(.keepAwake))
+                    Spacer()
+                    if model.keepAwakeProtectionFailed {
+                        Button("Retry session") { actions.start(minutes: model.keepAwakeMinutes) }
+                    }
+                }
+            } else {
+                HStack(spacing: 5) {
+                    ForEach(AwakeSessionActions.presets, id: \.self) { minutes in
+                        Button("\(minutes)") { actions.start(minutes: minutes) }
+                            .accessibilityLabel("Start keep awake for \(minutes) minutes")
+                            .help("Start a \(minutes)-minute session")
+                    }
+                    Text("min").foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    Button { custom.toggle() } label: { Image(systemName: "ellipsis") }
+                        .accessibilityLabel("Custom keep awake duration")
+                }.disabled(model.stoppingModules.contains(.keepAwake))
+                if custom || expanded {
+                    HStack {
+                        Stepper("\(model.keepAwakeMinutes) min", value: Binding(get: { model.keepAwakeMinutes }, set: model.onKeepAwakeMinutesChanged), in: 5...1440, step: 5)
+                            .accessibilityLabel("Custom duration in minutes")
+                        Button("Start") { actions.start(minutes: model.keepAwakeMinutes) }
+                    }.disabled(model.stoppingModules.contains(.keepAwake))
+                }
+            }
+            DashboardSwitchRow(title: "Keep display awake", isOn: Binding(get: { model.keepDisplayAwake }, set: model.onKeepDisplayAwakeChanged))
+                .disabled(model.stoppingModules.contains(.keepAwake))
+            if !model.keepAwakeAppNames.isEmpty {
+                Text("Requested by: " + model.keepAwakeAppNames.joined(separator: ", "))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            if model.keepAwakeAppsPaused {
+                HStack {
+                    Text("App rules paused").foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Resume", action: model.onKeepAwakeResume)
+                        .accessibilityLabel("Resume keep awake app rules")
+                        .disabled(model.stoppingModules.contains(.keepAwake))
+                }
+            }
+        }
     }
 }
 
@@ -321,14 +415,24 @@ struct QuickWidget: View {
     @State private var disconnect: BluetoothDevice?
     var body: some View {
         if let kind = entry.known {
-            DashboardCard {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Label(kind.title, systemImage: kind.feature.symbol).font(.headline)
+                    HStack(spacing: 7) {
+                        Image(systemName: kind.feature.symbol).foregroundStyle(.blue).frame(width: 18)
+                        Text(kind.title).font(.system(size: 12, weight: .semibold))
+                    }
                     Spacer()
-                    Button("Set up") { model.onOpenSettings(SettingsGroup.forFeature(kind.feature)) }.font(.caption)
+                    Button { model.onOpenSettings(SettingsGroup.forFeature(kind.feature)) } label: {
+                        Image(systemName: "gearshape").foregroundStyle(.secondary)
+                    }.buttonStyle(.plain).help("\(kind.title) settings")
+                        .accessibilityLabel("\(kind.title) settings")
                 }
                 if !model.enabledModules.contains(kind.module) {
-                    Text("Feature is off. Set up to enable it; adding a widget does not enable anything.").font(.caption)
+                    HStack {
+                        Text("Feature is off").foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Set up") { model.onOpenSettings(SettingsGroup.forFeature(kind.feature)) }
+                    }
                 } else {
                     switch kind {
                     case .keepAwake: awake
@@ -340,6 +444,10 @@ struct QuickWidget: View {
                     }
                 }
             }
+            .font(.system(size: 12))
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .contain)
             .alert("Disconnect device?", isPresented: Binding(get: { disconnect != nil }, set: { if !$0 { disconnect = nil } })) {
                 Button("Disconnect", role: .destructive) {
                     if let disconnect {
@@ -352,25 +460,7 @@ struct QuickWidget: View {
         }
     }
     private var awake: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                if model.keepAwakeRemaining > 0 {
-                    Text("\(Int(ceil(model.keepAwakeRemaining / 60))) min remaining").monospacedDigit()
-                } else { Text("\(model.keepAwakeMinutes) min · \(model.keepDisplayAwake ? "Display awake" : "Display may sleep")").font(.caption) }
-                Spacer()
-                if model.keepAwakeCanStop { Button("Stop", action: model.onKeepAwakeStop) }
-                else { Button("Start", action: model.onKeepAwakeStart) }
-            }
-            if entry.expanded {
-                Picker("Duration", selection: Binding(get: { model.keepAwakeMinutes }, set: model.onKeepAwakeMinutesChanged)) {
-                    ForEach(Array(Set([15, 30, 45, 60, 120, model.keepAwakeMinutes])).sorted(), id: \.self) { Text("\($0) minutes").tag($0) }
-                }
-                Toggle("Keep display awake", isOn: Binding(get: { model.keepDisplayAwake }, set: model.onKeepDisplayAwakeChanged))
-                if model.keepAwakeRemaining > 0 { Button("+15 min", action: model.onKeepAwakeExtend).disabled(model.keepAwakeRemaining >= 86400) }
-                if !model.keepAwakeAppNames.isEmpty { Text("Apps: " + model.keepAwakeAppNames.joined(separator: ", ")).font(.caption) }
-                if model.keepAwakeAppsPaused { Button("Resume app rules", action: model.onKeepAwakeResume) }
-            }
-        }
+        AwakeSessionWidget(model: model, expanded: entry.expanded)
     }
     private var audio: some View {
         VStack(alignment: .leading, spacing: 8) {
