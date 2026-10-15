@@ -1,0 +1,5 @@
+# Whitespace hygiene only. Expanding this requires a separate, reviewed style change.
+--rules trailingSpace,consecutiveBlankLines,linebreakAtEndOfFile
+--swift-version 5
+--language-mode 5
+--exclude Vendor,build,.build,.swiftpm,.git,worktrees,.worktrees,generated,Generated

@@ -1,0 +1,46 @@
+[
+  {
+    "text": "                guard AXValueGetValue(p as! AXValue, .cgPoint, &point), AXValueGetValue(s as! AXValue, .cgSize, &size) else { return nil }",
+    "violation": {
+      "reason": "Force casts should be avoided",
+      "ruleDescription": "Force casts should be avoided",
+      "ruleIdentifier": "force_cast",
+      "ruleName": "Force Cast",
+      "severity": "error",
+      "location": { "line": 338, "character": 41, "file": "WindowPositions.swift" }
+    }
+  },
+  {
+    "text": "                guard AXValueGetValue(p as! AXValue, .cgPoint, &point), AXValueGetValue(s as! AXValue, .cgSize, &size) else { return nil }",
+    "violation": {
+      "reason": "Force casts should be avoided",
+      "ruleDescription": "Force casts should be avoided",
+      "ruleIdentifier": "force_cast",
+      "ruleName": "Force Cast",
+      "severity": "error",
+      "location": { "line": 338, "character": 91, "file": "WindowPositions.swift" }
+    }
+  },
+  {
+    "text": "        return AXValueGetValue(actualP as! AXValue, .cgPoint, &actualPoint) && AXValueGetValue(actualS as! AXValue, .cgSize, &actualSize) && actualPoint == point && actualSize == size",
+    "violation": {
+      "reason": "Force casts should be avoided",
+      "ruleDescription": "Force casts should be avoided",
+      "ruleIdentifier": "force_cast",
+      "ruleName": "Force Cast",
+      "severity": "error",
+      "location": { "line": 401, "character": 40, "file": "WindowPositions.swift" }
+    }
+  },
+  {
+    "text": "        return AXValueGetValue(actualP as! AXValue, .cgPoint, &actualPoint) && AXValueGetValue(actualS as! AXValue, .cgSize, &actualSize) && actualPoint == point && actualSize == size",
+    "violation": {
+      "reason": "Force casts should be avoided",
+      "ruleDescription": "Force casts should be avoided",
+      "ruleIdentifier": "force_cast",
+      "ruleName": "Force Cast",
+      "severity": "error",
+      "location": { "line": 401, "character": 104, "file": "WindowPositions.swift" }
+    }
+  }
+]

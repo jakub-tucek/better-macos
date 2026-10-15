@@ -1,0 +1,22 @@
+# Deliberately small baseline: no naming, line-length or layout churn.
+# Keep rules SourceKit-free: scripts/dev uses --disable-sourcekit for CLT hosts.
+baseline: .swiftlint-baseline.json
+only_rules:
+  - duplicate_imports
+  - force_cast
+  - force_try
+  - fatal_error_message
+  - unused_optional_binding
+
+included:
+  - .
+excluded:
+  - Vendor
+  - build
+  - .build
+  - .swiftpm
+  - .git
+  - worktrees
+  - .worktrees
+  - generated
+  - Generated

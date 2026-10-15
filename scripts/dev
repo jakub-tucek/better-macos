@@ -1,0 +1,77 @@
+#!/bin/bash
+# Development only. Installation and build.sh do not depend on these tools.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+source "$ROOT/scripts/dev-tools.env"
+TOOLS="$ROOT/build/dev-tools"
+
+fail() { echo "dev: $*" >&2; exit 1; }
+
+check_version() {
+    local binary="$1" expected="$2" actual
+    [[ -x "$binary" ]] || fail "Missing $binary; run bash scripts/dev bootstrap."
+    if [[ "$(basename "$binary")" == swiftlint ]]; then
+        actual="$("$binary" version)" || fail "Cannot run $binary."
+    else
+        actual="$("$binary" --version)" || fail "Cannot run $binary."
+    fi
+    [[ "$actual" == "$expected" ]] || fail "Version mismatch: $binary reports '$actual', expected '$expected'. Remove that tool's version directory and bootstrap again."
+}
+
+install_tool() (
+    # Subshell keeps the temporary-directory trap local to this installation.
+    local name="$1" version="$2" url="$3" sha="$4" destination stage actual
+    destination="$TOOLS/$name-$version"
+    if [[ -e "$destination" ]]; then
+        check_version "$destination/$name" "$version"
+        echo "$name $version already installed."
+        exit 0
+    fi
+    mkdir -p "$TOOLS"
+    stage="$(mktemp -d "$TOOLS/.download.XXXXXX")"
+    trap 'rm -rf "$stage"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    curl --fail --location --proto '=https' --proto-redir '=https' --tlsv1.2 \
+        --retry 2 --connect-timeout 20 --max-time 300 --output "$stage/archive.zip" "$url"
+    actual="$(shasum -a 256 "$stage/archive.zip" | awk '{print $1}')"
+    [[ "$actual" == "$sha" ]] || fail "SHA-256 mismatch for $name; refusing to extract or execute download."
+    mkdir "$stage/unpacked"
+    # Retain the release contents (including SwiftLint's license), not a global install.
+    unzip -q "$stage/archive.zip" -d "$stage/unpacked"
+    check_version "$stage/unpacked/$name" "$version"
+    # Refuse a concurrent install rather than nesting directories with mv.
+    [[ ! -e "$destination" ]] || fail "Concurrent install at $destination; retry bootstrap."
+    mv "$stage/unpacked" "$destination"
+    echo "Installed $name $version in $destination"
+)
+
+LINT="$TOOLS/swiftlint-$SWIFTLINT_VERSION/swiftlint"
+FORMAT="$TOOLS/swiftformat-$SWIFTFORMAT_VERSION/swiftformat"
+
+case "${1:-help}" in
+    bootstrap)
+        [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] || fail "Supported development host: Apple Silicon macOS."
+        xcrun --find swiftc >/dev/null || fail "Install/select Apple Command Line Tools first."
+        install_tool swiftlint "$SWIFTLINT_VERSION" "$SWIFTLINT_URL" "$SWIFTLINT_SHA256"
+        install_tool swiftformat "$SWIFTFORMAT_VERSION" "$SWIFTFORMAT_URL" "$SWIFTFORMAT_SHA256"
+        ;;
+    lint)
+        check_version "$LINT" "$SWIFTLINT_VERSION"
+        # All configured rules are SwiftSyntax-only. Avoid SourceKit loading on CLT.
+        exec "$LINT" lint --strict --no-cache --disable-sourcekit --config "$ROOT/.swiftlint.yml"
+        ;;
+    format-check)
+        check_version "$FORMAT" "$SWIFTFORMAT_VERSION"
+        exec "$FORMAT" --lint . --config "$ROOT/.swiftformat" --cache ignore
+        ;;
+    build)
+        exec bash "$ROOT/build.sh"
+        ;;
+    help|--help|-h)
+        echo "Usage: bash scripts/dev {bootstrap|build|lint|format-check}"
+        echo "Checks never rewrite sources. Build does not require bootstrap."
+        ;;
+    *) fail "Unknown command '$1'; use bash scripts/dev help." ;;
+esac
