@@ -51,6 +51,19 @@ Signing-identity changes automatically rebuild. See [core regression evidence](R
 [unreleased notes](RELEASE-NOTES-1.0-DRAFT.md). Native/hardware acceptance, final
 documentation/versioning and publication remain open; historical counts below are unchanged.
 
+### Combined SwiftPM and CLT compatibility · `dff0491` · 2026-10-15
+
+Clean sequential standalone CLT 27 and Xcode 27 runs at
+`dff0491fa1ad3ce32a37f6009c75ce882ccefeae` each passed **4,226 legacy checks**,
+**10 Swift Testing tests in three suites**, **13 mocked installer scenarios**,
+compiler/build fixtures and real/relocated-bundle checks. Strict ad-hoc signatures,
+notices, arm64/macOS 15+/SDK 27 metadata and embedded revision matched. Lint/format
+across 42 files and offline tooling fixtures passed under both toolchains.
+The earlier standalone-CLT `StateMacro` build gap is resolved for these tested tools,
+not every declared minimum Swift version. See [combined compatibility evidence](docs/validation/clt-compatibility.md#combined-main-integration)
+for exact toolchain/log paths, preserved failures and deferred installer preflight.
+Native/hardware acceptance and final release/publication gates remain open.
+
 ## How to read the historical records
 
 The sections below retain evidence from earlier increments. Counts, “latest/final”

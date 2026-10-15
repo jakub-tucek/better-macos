@@ -11,8 +11,8 @@ Keep the concise README and its install command. This plan promises no release d
 | Priority | Work | Done when |
 | --- | --- | --- |
 | 0 | Finish release safety | Core fixes and watchdog/corrupt-journal regressions are reviewed and integrated through `dc96e9c`; complete native acceptance and record remaining hardware gaps at the tested revision. |
-| 1 | Documentation and developer baseline (partial) | Pinned SwiftLint/SwiftFormat, bootstrap, checks and developer guide are integrated; resolve compiler compatibility and finish the documentation map/moves below. |
-| 2 | One SwiftPM slice and source organization (partial) | Clipboard policy is extracted and statically linked with named tests; wider source organization remains pending. Preserve app/helper behavior and packaging; resolve the separate CLT app-build gap. |
+| 1 | Documentation and developer baseline (partial) | Pinned tools/commands and CLT 27/Xcode 27 compatibility are verified; finish the documentation map/moves and establish a tested minimum toolchain. |
+| 2 | One SwiftPM slice and source organization (partial) | Clipboard policy is extracted and statically linked with named tests; combined clean CLT 27/Xcode 27 suites pass. Wider source organization remains pending; preserve app/helper behavior and packaging. |
 | 3 | Built-in feature registration | Register multiple different features through a small host interface without changing persisted IDs, shared ownership or drain/veto behavior. |
 | 4 | Test migration and CI | Run named isolated suites and shell/process regressions as PR gates; prove clean and incremental builds agree. |
 | 5 | Native UI automation, if needed | Add a separate full-Xcode GUI job only for acceptance gaps that require app-driving tests. |
@@ -72,8 +72,9 @@ mode for release reproducibility; do not claim byte-identical output across SDKs
 
 - Implemented: [developer commands](docs/development.md), repository-local verified
   SwiftLint **0.65.1** and SwiftFormat **0.63.1**, non-mutating checks, narrow lint
-  baseline, `.editorconfig` and offline tooling regressions. Standalone CLT 27.0's
-  `SwiftUIMacros.StateMacro` app-build failure remains under diagnosis, not a pass.
+  baseline, `.editorconfig` and offline tooling regressions. The standalone CLT 27.0
+  `StateMacro` failure is resolved through the explicit public `StoredState` wrapper;
+  [combined clean CLT/Xcode evidence](docs/validation/clt-compatibility.md#combined-main-integration) is recorded at `dff0491`.
   The first SwiftPM policy slice and ten named tests in three suites are implemented;
   further source/document moves, suite migration and CI below remain pending.
 - Document a tested compiler/SDK baseline. Today's scripts use Swift **5 language

@@ -4,7 +4,7 @@
 - For feature ownership, shared dependencies, UI entry points or cleanup, read
   [MODULES.md](MODULES.md). Built-in features are compiled into one app, not runtime plugins.
 - For developer commands and pinned lint/format tools, read [docs/development.md](docs/development.md),
-  including the open standalone-CLT `StateMacro` build gap. For Clipboard policy
+  including [tested CLT state compatibility](docs/validation/clt-compatibility.md). For Clipboard policy
   ownership and named suites, read [docs/swiftpm.md](docs/swiftpm.md). Further source
   moves, feature registration and CI remain proposed in [ROADMAP.md](ROADMAP.md).
 - For testing or release claims, read [VALIDATION.md](VALIDATION.md) and its linked
@@ -29,6 +29,7 @@ files are at the root; `MouseHID/` is the C boundary and `Tests/` holds test sea
 SwiftPM alone compiles `Sources/Features/Clipboard/Policy`; app/legacy tests import
 and statically link `ClipboardPolicy`, never compile its sources manually. Update
 explicit inputs in build/test scripts only for sources outside that package.
+Use `StoredState` for existing SwiftUI local state; preserve its public-wrapper semantics.
 `build.sh` produces `build/Fix macOS.app`; signing uses `MAC_UTILS_SIGNING_IDENTITY`
 or local Git `macutils.signingIdentity`, otherwise ad-hoc. Preserve bundle notices,
 strict signature verification and staged replacement/rollback.

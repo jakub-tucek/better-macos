@@ -5,12 +5,13 @@
 Use Apple Silicon macOS; the app targets **arm64 / macOS 15+**. That deployment
 target is not a claim that every compiler/SDK combination builds the app.
 
-Tested on 2026-10-15 at `a90cf68` on macOS 26.6.2 arm64:
+Combined SwiftPM/state-compatibility source tested on 2026-10-15 at `dff0491`
+on macOS 26.6.2 arm64 (earlier source evidence at `a90cf68` is retained separately):
 
 | Selected developer tools | Compiler / SDK | Result |
 | --- | --- | --- |
-| Xcode 27.0 (`27A266a`) | Apple Swift 6.4 (`swiftlang-6.4.0.34.1`), macOS SDK 27.0 | Clean build/full suite, lint and format-check pass. |
-| Standalone CLT 27.0 (`27.0.0.0.1788430756`) | Same compiler version and SDK | Clean build/full suite, lint and format-check pass. |
+| Xcode 27.0 (`27A266a`) | Apple Swift 6.4 (`swiftlang-6.4.0.34.1`), macOS SDK 27.0 | Clean combined build/full suite: 4,226 legacy checks + 10 policy tests/3 suites + 13 installer scenarios; lint/format and tooling fixtures pass. |
+| Standalone CLT 27.0 (`27.0.0.0.1788430756`) | Same compiler version and SDK | Same clean combined checks pass, without Xcode plugin borrowing or SDK fallback. |
 
 `build.sh` and `test.sh` use **Swift 5 language mode** (`-swift-version 5`), not a
 Swift 5 compiler. Swift 6 strict concurrency is not adopted. The [Clipboard policy
@@ -116,4 +117,6 @@ across 36 files, and offline tooling regressions passed. `Tests/packaging.sh` pa
 against the existing signed `dc96e9c` bundle, not a fresh tooling-revision build.
 Production sources/build scripts are unchanged. No full feature suite, app build,
 install/launch or live OS mutation was performed for this tooling integration;
-the standalone-CLT build gap above remains open.
+the standalone-CLT build gap remained open at that revision. See the later
+[combined compatibility record](validation/clt-compatibility.md#combined-main-integration)
+for its resolution and current limits.

@@ -4,15 +4,17 @@ Requires Apple Silicon and macOS 15+. The manifest declares Swift tools 6.0
 (Xcode 16 generation); Swift **5 language mode** remains in use and the helper
 selects `--build-system native`. Only Apple Swift 6.4 has been validated here,
 including standalone CLT package builds/tests; Swift 6.0 is a declared minimum,
-not a locally validated toolchain. The installed CLT's default macOS 27 SDK cannot compile
-the app's existing SwiftUI `@State` declarations (`SwiftUIMacros` is missing), also
+not a locally validated toolchain. At extraction baseline `35fc4df`, CLT's default
+macOS 27 SDK could not compile the app's SwiftUI `@State` declarations (`SwiftUIMacros` was missing), also
 reproducible with a standalone SwiftUI typecheck unrelated to the package. This
 environment failure is not a requirement for full Xcode or a change to app sources.
 The same standalone SwiftUI typecheck succeeds with the installed macOS 26.5 SDK
 selected through `SDKROOT`, but the full app then hits a SwiftUI type-check budget
 failure in `MonitorLayoutMap`. Building an unmodified `dc96e9c` source snapshot
-reproduced that same failure. Neither pre-existing CLT/SDK problem is changed here;
-no SDK version is hardcoded into the build scripts.
+reproduced that same failure. Those pre-existing CLT/SDK problems were unchanged by
+the extraction; no SDK version was hardcoded. The subsequent `StoredState` integration
+resolves the SDK 27 app-build gap with the package retained; see
+[combined compatibility evidence](validation/clt-compatibility.md#combined-main-integration).
 
 `Package.swift` defines one static `ClipboardPolicy` product and one test target.
 [ClipboardHistory.swift](../Sources/Features/Clipboard/Policy/ClipboardHistory.swift)

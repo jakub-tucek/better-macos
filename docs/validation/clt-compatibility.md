@@ -92,3 +92,49 @@ checks only compiler presence before those operations.
 The available CLT SDK 26.5 passes the minimal original fixture but the unchanged
 full app encountered a type-checking timeout at `Dashboard.swift:364`; selecting
 an older SDK silently is neither implemented nor considered validated.
+
+## Combined main integration
+
+Reviewed CLEAN source commits `a90cf68` and `885b235` were integrated as `030fd45`
+and `dff0491`, preserving ClipboardPolicy's sole SwiftPM compilation ownership,
+module/static archive inputs and the three explicit C objects. The `test.sh`
+conflict combined the state/compiler fixtures with those package inputs. The
+development-guide conflict retained the named policy suites and minimum-toolchain
+limits. The packaging compiler-input fixture stubs the new compatibility script
+only in its fake source tree; the real `test.sh` still executes the compiler fixture.
+
+Both complete runs tested **`dff0491fa1ad3ce32a37f6009c75ce882ccefeae`**, starting
+without `build/`, sequentially, with scoped `DEVELOPER_DIR`, explicitly unset
+`SDKROOT` and `MAC_UTILS_SIGNING_IDENTITY=-`. Pre-existing build outputs were moved
+to an invocation-owned temporary directory, not deleted. No shared-build race,
+global tool selection, SDK fallback or plugin borrowing was used.
+
+| Combined source | Developer tools / Swift / SDK | Complete result |
+| --- | --- | --- |
+| `dff0491` | Standalone CLT 27 / Apple Swift 6.4 / SDK 27.0 | 4,226 legacy checks + 10 Swift Testing tests in three suites + 13 mocked installer scenarios; compiler, package/build and packaging fixtures pass |
+| `dff0491` | Xcode 27 / Apple Swift 6.4 / SDK 27.0 | Same complete checks pass |
+
+Each run also verified strict ad-hoc signature, complete project/vendor notices,
+no dynamic ClipboardPolicy/Testing dependency, relocated bundle integrity and
+matching revision metadata. Both binaries are arm64, minimum macOS 15.0, SDK 27.0,
+version `0.4`, build `4`. Both include all six mounted native state checks and the
+production duration-editor/host/setup regressions, with isolated backends/fixtures.
+
+Ignored root logs `clt-integration-clt.log` and `clt-integration-xcode.log` record
+HEAD, developer directory, resolved compiler path/version, SDK path/version,
+architecture, full suite and bundle metadata. Corresponding
+`clt-integration-{clt,xcode}-tooling.log` files record passing lint/format checks
+across **42 files** and offline tooling fixtures under both toolchains, reusing
+the preserved pinned tools. `clt-integration-storage.log` records the temporary
+location retaining the original outputs and CLT build; the final Xcode build is
+in `build/`. SwiftPM's known native-engine deprecation warning remains visible.
+All eleven shell files passed `bash -n`; 60 local links/anchors across the six
+status/evidence documents and `git diff --check` passed. README is unchanged.
+
+Only Swift 6.4 was tested: the manifest's tools-6.0 minimum is not validated here.
+The earlier failures above and revision-bound extraction evidence remain historical.
+The installer/source-aware preflight remains deferred as described above, not a
+new release blocker. No real app launch/quit/install, live preferences/devices,
+permissions, version bump, push/tag or release was performed. This documentation
+commit does not claim a final artifact at its own revision; native/hardware and
+publication gates remain open.
