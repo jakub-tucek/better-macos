@@ -3,7 +3,8 @@
 ## Production scope
 
 Implemented B–D from [UI-UX-PLAN.md](UI-UX-PLAN.md). The user waived the preview
-approval gate. Independent review is still required; this record is not acceptance.
+approval gate. Parent-session independent review reports **CLEAN** at `7e3974cd`;
+native acceptance remains partial. This record is not full acceptance.
 
 - Direct, screen-bounded widget popup; separate reusable/resizable Settings window.
 - Six typed widgets with compact/expanded treatments, editor drafts, gallery,
@@ -180,5 +181,60 @@ were clicked or that VoiceOver/keyboard traversal works. E remains **open**:
 - Live asynchronous quit veto/cancellation with the replacement UI open.
 
 These checks must be deliberate and coordinated with the user; do not infer success
-from isolated test counts. Parent-session independent review and safe relaunch are
-still pending.
+from isolated test counts. See the subsequent review and release evidence below.
+
+## CLEAN review and safe native release pass — 2026-10-15
+
+The parent session supplied a CLEAN production UI review at
+`7e3974cd51e156c000101346f3068a44b868e800`, with prior findings resolved.
+The 3,780 isolated / seven installer checks above are the existing evidence, not
+a new run in this pass. No production code changed and the full suite was not repeated.
+
+### Completed
+
+- Sent normal AppleScript Quit to bundle ID `io.github.jakub-tucek.mac-utils`.
+  It returned successfully; `pgrep -fl 'fix-mac-os|Fix macOS'` then found neither
+  the GUI nor watchdog process. No kill, forced quit, or veto bypass was used.
+- Ran `bash build.sh` from the main checkout at the reviewed revision. Compilation
+  with warnings as errors, signing, and strict signature verification succeeded.
+- Relaunched `build/Fix macOS.app --show-dashboard`. Read-only
+  `NSRunningApplication`/bundle inspection confirmed the checkout's app and embedded
+  revision `7e3974cd51e156c000101346f3068a44b868e800`.
+- After a second successful normal quit and process-exit verification, launched with
+  `--show-modules` (the existing General Settings route). CG window metadata showed
+  one on-screen app-owned window, ID 9629, 680 × 480 at global top-left (3519, 30).
+  Its bounds fit the right-hand 1920 × 1200 display. No window was resized or moved.
+- Reopening that same running app retained PID 81892 and window ID 9629 with the
+  same bounds. This verifies retention across app reopen, **not** repeated gear-click
+  Settings reuse, sidebar traversal, or preservation of a live editor draft.
+- Normally quit again, verified both processes gone, and relaunched with
+  `--show-dashboard` as the final requested route, rather than leaving Settings open.
+  Final process check found GUI PID 85539 and watchdog PID 85545; bundle inspection
+  again confirmed the reviewed embedded revision. The final documentation-only
+  commit does not change that running executable revision.
+- `git diff --check` passed. Existing preferences were not intentionally edited;
+  no feature controls, setup Finish, permission controls, or hardware actions were
+  invoked. No clipboard contents/history were read or written by this acceptance
+  pass, and no screenshot of any app or desktop was captured. Normal app lifecycle
+  and enabled background modules were not suppressed or reconfigured.
+
+### Blocked / not accepted
+
+The native helper's `AXIsProcessTrusted()` was false. Read-only AX window inspection
+returned `-25211` (`AXError.apiDisabled`). `CGPreflightScreenCaptureAccess()` was
+also false, so no capture was attempted and no permission request was made. No
+System Events automation, synthetic clicks, permission escalation, or external
+application inspection was used.
+
+The popup was requested at launch/reopen, but there was no app-owned on-screen popup
+in the subsequent CG metadata sample; the app reported inactive. This does **not**
+establish whether the transient popup appeared then dismissed, or establish popup
+geometry, focus transfer, clipping, or rendering correctness. Final launch route is
+popup; persistent visible popup state cannot be confirmed from this environment.
+
+Live Settings content/gear reuse, popup/widget interactions, wizard traversal,
+keyboard/VoiceOver, focus, resizing, drag/drop, short-screen scrolling and visual
+appearance remain unverified. Wizard Finish, real permission flows, feature actions,
+quit veto/cancellation and hardware recovery were deliberately not exercised.
+No release-critical rendering defect could be confirmed with these restricted
+observations; that is not a clean visual inspection. E remains **partial/open**.

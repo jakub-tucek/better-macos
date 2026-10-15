@@ -1,9 +1,11 @@
 # UI/UX redesign plan
 
-Status: production replacement implemented for B–D; independent review and live
-native acceptance remain pending. The first independent review blocked activation
-ordering, outcome reporting, and interaction evidence; follow-up fixes are implemented
-and await independent re-review. The user explicitly waived preview approval and
+Status: production replacement implemented for B–D; parent-session independent review
+reports CLEAN at `7e3974cd`. Native acceptance E is partial/open: signed rebuild,
+normal quit/relaunch, and Settings window metadata were checked; live AX and capture
+inspection were blocked by existing permissions. The first independent review blocked
+activation ordering, outcome reporting, and interaction evidence; follow-up fixes
+passed the subsequent parent review. The user explicitly waived preview approval and
 requested immediate UI replacement. This document retains the agreed requirements;
 see [validation evidence and open acceptance checks](UI-REPLACEMENT-VALIDATION.md).
 
@@ -225,7 +227,13 @@ in isolated worktrees after the shared navigation/state decisions settle.
   text size, long labels, narrow screens, light/dark appearance, and scroll density.
   Test live safe actions plus existing quit-veto/cancellation and display recovery.
   **Accept:** record evidence and unresolved hardware limitations; do not claim
-  usability solely from state-model test counts.
+   usability solely from state-model test counts.
+  **2026-10-15 partial evidence:** normal quit/process-exit checks, signed build at
+  `7e3974cd`, Settings launch/bounded window metadata, and final popup-route relaunch
+  completed. AX returned `apiDisabled`; screen-capture preflight was false. No grants
+  were requested. Popup visibility/geometry, Settings gear reuse and content,
+  widget/wizard interaction and the manual/hardware criteria remain open; see the
+  release-pass section in [validation](UI-REPLACEMENT-VALIDATION.md).
 
 ## 5. Test and review checklist
 
