@@ -76,7 +76,9 @@ func runDiagnosticsTests() throws {
     expect(filesystem.data[old] == nil, "global retention reaps owned dead-process logs")
     filesystem.fail = true
     let failedSink = RotatingDiagnosticSink(directory: directory, session: UUID().uuidString, pid: 123, files: filesystem)
-    Diagnostics(sink: failedSink).emit("test", "no_directory")
+    let failedLogger = Diagnostics(sink: failedSink)
+    failedLogger.emit("test", "no_directory")
+    expect(failedLogger.flushForTesting(), "test-only failed preparation flush completes")
     expect(filesystem.data.count == 4, "directory preparation failure does not create logs or escape")
 
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("fixmacos-diagnostic-tests-\(UUID().uuidString)", isDirectory: true)

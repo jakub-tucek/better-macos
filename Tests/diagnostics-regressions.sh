@@ -10,4 +10,12 @@ if grep -E 'flushForTesting|queue\.sync' Sources/App/main.swift Sources/App/Safe
     echo 'FAIL: safety entry must never await diagnostic delivery' >&2
     exit 1
 fi
+if grep -R 'flushForTesting(' Sources --include='*.swift' | grep -v 'func flushForTesting('; then
+    echo 'FAIL: production must never call diagnostic test flush' >&2
+    exit 1
+fi
+if grep 'queue\.sync' Sources/Core/Diagnostics.swift; then
+    echo 'FAIL: diagnostic delivery must never synchronously await its worker' >&2
+    exit 1
+fi
 echo 'PASS: safety helper/watchdog entries contain no diagnostic flush or synchronous queue wait'

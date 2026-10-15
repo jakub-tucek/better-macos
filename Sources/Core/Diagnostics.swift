@@ -20,6 +20,18 @@ struct DiagnosticEvent: Encodable {
 
 protocol DiagnosticSink { func write(_ line: Data) throws }
 
+/// Construct paths/backends on the drain worker too, not the safety entry caller.
+private final class DeferredDiagnosticSink: DiagnosticSink {
+    private let makeSink: () -> DiagnosticSink
+    private var sink: DiagnosticSink?
+    init(_ makeSink: @escaping () -> DiagnosticSink) { self.makeSink = makeSink }
+    func write(_ line: Data) throws {
+        let current = sink ?? makeSink()
+        sink = current
+        try current.write(line)
+    }
+}
+
 /// A filesystem seam lets failure/rotation tests run without the production directory.
 protocol DiagnosticFiles {
     func prepare(_ directory: URL) throws
@@ -244,17 +256,20 @@ final class Diagnostics {
             }
             let item = pending.removeFirst()
             admission.unlock()
-            var fields = item.fields
-            if item.category == "process", item.event == "startup", let startupMetadata {
-                fields.merge(startupMetadata()) { original, _ in original }
+            // A continuously busy drain must not accumulate Foundation autoreleases.
+            autoreleasepool {
+                var fields = item.fields
+                if item.category == "process", item.event == "startup", let startupMetadata {
+                    fields.merge(startupMetadata()) { original, _ in original }
+                }
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                let record = DiagnosticEvent(timestamp: formatter.string(from: item.date), session: session, pid: pid,
+                                             category: item.category, event: item.event, severity: item.outcome == "failure" ? "error" : "info",
+                                             outcome: item.outcome, operation: item.operation, durationMS: item.durationMS, fields: fields)
+                // Logging failure must never veto feature work or recursively log itself.
+                if var data = try? JSONEncoder().encode(record) { data.append(10); try? sink?.write(data) }
             }
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            let record = DiagnosticEvent(timestamp: formatter.string(from: item.date), session: session, pid: pid,
-                                         category: item.category, event: item.event, severity: item.outcome == "failure" ? "error" : "info",
-                                         outcome: item.outcome, operation: item.operation, durationMS: item.durationMS, fields: fields)
-            // Logging failure must never veto feature work or recursively log itself.
-            if var data = try? JSONEncoder().encode(record) { data.append(10); try? sink?.write(data) }
             admission.lock(); outstanding -= 1; admission.broadcast(); admission.unlock()
         }
     }
@@ -271,8 +286,11 @@ final class Diagnostics {
     static func identity(_ value: String) -> String { SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined() }
     static func install(revision: String, sourceState: String) {
         let session = UUID().uuidString
-        let directory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Fix macOS", isDirectory: true)
-        let logger = Diagnostics(sink: RotatingDiagnosticSink(directory: directory, session: session, pid: getpid()), session: session,
+        let sink = DeferredDiagnosticSink {
+            let directory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Fix macOS", isDirectory: true)
+            return RotatingDiagnosticSink(directory: directory, session: session, pid: getpid())
+        }
+        let logger = Diagnostics(sink: sink, session: session,
                                  startupMetadata: { startupMetadata(revision: revision, sourceState: sourceState) })
         shared = logger
         logger.emit("process", "startup", fields: ["compiled_base_revision": revision, "compiled_source_state": sourceState,
