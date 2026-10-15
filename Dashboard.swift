@@ -638,10 +638,10 @@ struct DashboardView: View {
                         Text("Custom…").tag(0)
                     }
                     if customAwakeDuration || !presets.contains(model.keepAwakeMinutes) {
-                        Stepper("\(model.keepAwakeMinutes) minutes", value: Binding(get: { model.keepAwakeMinutes },
-                            set: model.onKeepAwakeMinutesChanged), in: 5...1440, step: 5)
+                        AwakeDurationEditor(model: model, showsStart: true)
+                    } else {
+                        Button("Start session", action: model.onKeepAwakeStart).buttonStyle(.borderedProminent)
                     }
-                    Button("Start session", action: model.onKeepAwakeStart).buttonStyle(.borderedProminent)
                     if model.keepAwakeCanStop { Button("Stop", action: model.onKeepAwakeStop) }
                 }
             } }
@@ -674,7 +674,8 @@ struct DashboardView: View {
                 }
             }
             if isSetup { card {
-                Stepper("Default duration: \(model.keepAwakeMinutes) minutes", value: Binding(get: { model.keepAwakeMinutes }, set: model.onKeepAwakeMinutesChanged), in: 5...1440, step: 5)
+                Text("Default duration")
+                AwakeDurationEditor(model: model)
                 DashboardSwitchRow(title: "Keep display awake", isOn: Binding(get: { model.keepDisplayAwake }, set: model.onKeepDisplayAwakeChanged))
                 Text(model.keepDisplayAwake ? "Keep the computer and display awake until the session ends." : "Keep the computer awake while letting the display sleep.")
                     .font(.caption).foregroundStyle(.secondary)

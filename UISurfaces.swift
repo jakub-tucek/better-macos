@@ -360,6 +360,10 @@ struct QuickActionsView: View {
 struct AwakeSessionActions {
     let model: DashboardModel
     static let presets = [15, 30, 45, 60, 120]
+    var recentDuration: Int? {
+        let minutes = model.keepAwakeMinutes
+        return KeepAwakeModule.durationRange.contains(minutes) && !Self.presets.contains(minutes) ? minutes : nil
+    }
     var status: String {
         if model.keepAwakeProtectionFailed { return "Protection needs retry" }
         if model.keepAwakeRemaining > 0 {
@@ -370,13 +374,79 @@ struct AwakeSessionActions {
     }
     func start(minutes: Int) {
         guard model.enabledModules.contains(.keepAwake), !model.stoppingModules.contains(.keepAwake),
-              (5...1440).contains(minutes) else { return }
+              KeepAwakeModule.durationRange.contains(minutes) else { return }
         model.onKeepAwakeMinutesChanged(minutes)
         model.onKeepAwakeStart()
     }
     func retry() {
         guard model.enabledModules.contains(.keepAwake), !model.stoppingModules.contains(.keepAwake) else { return }
         model.onKeepAwakeRetry()
+    }
+}
+
+/// Keep raw edits separate from the persisted choice: invalid text never starts
+/// the previously selected duration or changes an existing session.
+struct AwakeDurationDraft {
+    var text: String
+    init(minutes: Int) { text = String(minutes) }
+    var minutes: Int? {
+        guard !text.isEmpty, text.utf8.allSatisfy({ (48...57).contains($0) }),
+              let value = Int(text), KeepAwakeModule.durationRange.contains(value) else { return nil }
+        return value
+    }
+    @discardableResult
+    func commit(to model: DashboardModel, start: Bool = false) -> Bool {
+        guard let minutes else { return false }
+        if start { AwakeSessionActions(model: model).start(minutes: minutes) }
+        else { model.onKeepAwakeMinutesChanged(minutes) }
+        return true
+    }
+}
+
+struct AwakeDurationEditor: View {
+    @ObservedObject var model: DashboardModel
+    var showsStart = false
+    @State private var draft: AwakeDurationDraft
+    @FocusState private var focused: Bool
+
+    init(model: DashboardModel, showsStart: Bool = false) {
+        self.model = model
+        self.showsStart = showsStart
+        _draft = State(initialValue: AwakeDurationDraft(minutes: model.keepAwakeMinutes))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                TextField("Minutes", text: $draft.text)
+                    .textFieldStyle(.roundedBorder).frame(width: 62)
+                    .multilineTextAlignment(.trailing).monospacedDigit()
+                    .focused($focused)
+                    .accessibilityLabel("Custom duration in minutes")
+                    .onSubmit { draft.commit(to: model) }
+                Text("min").foregroundStyle(.secondary)
+                Stepper("Duration", value: Binding(get: { draft.minutes ?? model.keepAwakeMinutes }, set: {
+                    draft = AwakeDurationDraft(minutes: $0)
+                    draft.commit(to: model)
+                }), in: KeepAwakeModule.durationRange, step: 5)
+                    .labelsHidden().disabled(draft.minutes == nil)
+                    .accessibilityLabel("Adjust duration by five minutes")
+                Spacer(minLength: 0)
+                if showsStart {
+                    Button("Start") { draft.commit(to: model, start: true) }
+                        .disabled(draft.minutes == nil)
+                }
+            }
+            if draft.minutes == nil {
+                Text("Enter a whole number from 1 to 1440.")
+                    .font(.caption).foregroundStyle(.orange)
+            }
+        }
+        .help("1–1440 whole minutes; step controls adjust by 5 minutes")
+        .onChange(of: focused) { _, value in if !value { draft.commit(to: model) } }
+        .onChange(of: model.keepAwakeMinutes) { _, minutes in
+            if !focused && draft.minutes != nil { draft = AwakeDurationDraft(minutes: minutes) }
+        }
     }
 }
 
@@ -420,12 +490,17 @@ struct AwakeSessionWidget: View {
                     Button { custom.toggle() } label: { Image(systemName: "ellipsis") }
                         .accessibilityLabel("Custom keep awake duration")
                 }.disabled(model.stoppingModules.contains(.keepAwake))
-                if custom || expanded {
+                if let minutes = actions.recentDuration {
                     HStack {
-                        Stepper("\(model.keepAwakeMinutes) min", value: Binding(get: { model.keepAwakeMinutes }, set: model.onKeepAwakeMinutesChanged), in: 5...1440, step: 5)
-                            .accessibilityLabel("Custom duration in minutes")
-                        Button("Start") { actions.start(minutes: model.keepAwakeMinutes) }
+                        Text("Last choice").font(.caption).foregroundStyle(.secondary)
+                        Button("\(minutes) min") { actions.start(minutes: minutes) }
+                            .accessibilityLabel("Start keep awake for \(minutes) minutes")
+                        Spacer()
                     }.disabled(model.stoppingModules.contains(.keepAwake))
+                }
+                if custom || expanded {
+                    AwakeDurationEditor(model: model, showsStart: true)
+                        .disabled(model.stoppingModules.contains(.keepAwake))
                 }
             }
             DashboardSwitchRow(title: "Keep display awake", isOn: Binding(get: { model.keepDisplayAwake }, set: model.onKeepDisplayAwakeChanged))

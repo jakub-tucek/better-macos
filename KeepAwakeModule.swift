@@ -38,6 +38,7 @@ struct SystemPowerAssertions: PowerAssertionBackend {
 /// Session deadlines and power assertions are transient. Only UI choices persist.
 /// The continuous clock counts sleep; IOKit also bounds assertions if our UI stalls.
 final class KeepAwakeModule {
+    static let durationRange = 1...1440
     private let defaults: UserDefaults
     private let backend: PowerAssertionBackend
     private let now: () -> TimeInterval
@@ -89,9 +90,12 @@ final class KeepAwakeModule {
     var selectedMinutes: Int {
         get {
             let saved = defaults.integer(forKey: "keepAwake.minutes")
-            return (5...1440).contains(saved) ? saved : 30
+            return Self.durationRange.contains(saved) ? saved : 30
         }
-        set { defaults.set(min(1440, max(5, newValue)), forKey: "keepAwake.minutes"); onChange?() }
+        set {
+            guard Self.durationRange.contains(newValue) else { return }
+            defaults.set(newValue, forKey: "keepAwake.minutes"); onChange?()
+        }
     }
 
     init(defaults: UserDefaults = .standard, backend: PowerAssertionBackend = SystemPowerAssertions(),
@@ -147,7 +151,7 @@ final class KeepAwakeModule {
         // Replace the complete policy before reconciling once. Timed ownership
         // and app pauses stay intact; removed rules cannot acquire a new lease.
         defaults.set(apps, forKey: "keepAwake.apps")
-        defaults.set(min(1440, max(5, minutes)), forKey: "keepAwake.minutes")
+        defaults.set(min(1440, max(1, minutes)), forKey: "keepAwake.minutes")
         defaults.set(display, forKey: "keepAwake.display")
         if watchingApps && !apps.isEmpty { beginUpdates() }
         do { try reconcile(); protectionFailed = false; lastError = nil }

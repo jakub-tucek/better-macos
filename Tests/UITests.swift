@@ -206,8 +206,26 @@ private func runAwakeQuickActionTests() {
     calls.removeAll()
     for minutes in [0, 1445] { actions.start(minutes: minutes) }
     expect(calls.isEmpty, "popup refuses out-of-cap durations")
-    actions.start(minutes: 5); actions.start(minutes: 1440)
-    expect(calls == ["duration:5", "start:5", "duration:1440", "start:1440"], "custom duration preserves existing five-minute minimum and 24-hour cap")
+    actions.start(minutes: 1); actions.start(minutes: 1440)
+    expect(calls == ["duration:1", "start:1", "duration:1440", "start:1440"], "custom duration accepts one minute through the 24-hour cap")
+    calls.removeAll()
+    for text in ["", "0", "-1", "1.5", "1441", "999999999999999999999999999999999", " 7", "7 ", "abc", "1e2"] {
+        var draft = AwakeDurationDraft(minutes: 30)
+        draft.text = text
+        expect(draft.minutes == nil && !draft.commit(to: model) && !draft.commit(to: model, start: true),
+               "invalid native numeric draft \(text) cannot commit or silently start the saved choice")
+        expect(draft.text == text, "invalid numeric draft stays visible for correction")
+    }
+    expect(calls.isEmpty && model.keepAwakeMinutes == 1440, "invalid raw keyboard edits preserve the last valid choice")
+    for text in ["1", "7", "42", "1440", "0007"] {
+        var draft = AwakeDurationDraft(minutes: model.keepAwakeMinutes)
+        draft.text = text
+        expect(draft.commit(to: model, start: true), "raw integer keyboard input commits and starts")
+        expect(calls.suffix(2) == ["duration:\(Int(text)!)", "start:\(Int(text)!)"], "typed custom Start uses its validated draft, not a stale selected duration")
+    }
+    expect(actions.recentDuration == 7, "only the last non-default choice is offered as a quick preset")
+    actions.start(minutes: 30)
+    expect(actions.recentDuration == nil, "default presets do not acquire a duplicate recent chip")
     calls.removeAll(); model.stoppingModules = [.keepAwake]
     actions.start(minutes: 30)
     expect(calls.isEmpty, "popup cannot start while feature recovery is stopping")
@@ -232,6 +250,15 @@ private func runAwakeQuickActionTests() {
     hostModel.onModuleChanged(.keepAwake, true)
     AwakeSessionActions(model: hostModel).start(minutes: 45)
     expect(awake.remaining == 2700 && awake.active && power.creates == 1, "production popup action reaches real host Start with fake assertions and selected preset")
+    var typed = AwakeDurationDraft(minutes: 45)
+    typed.text = "7"
+    expect(awake.selectedMinutes == 45, "uncommitted numeric edits do not persist")
+    typed.commit(to: hostModel)
+    expect(awake.selectedMinutes == 7 && awake.remaining == 2700 && power.creates == 1,
+           "committing a duration during a session saves only the next duration without changing active ownership")
+    let recreated = KeepAwakeModule(defaults: defaults, backend: power, automaticUpdates: false, runningApps: { [:] }, processInstances: { [:] })
+    expect(recreated.selectedMinutes == 7 && !recreated.active && recreated.remaining == 0,
+           "recreation restores a custom integer duration but never the active session")
     hostModel.onKeepAwakeExtend()
     expect(awake.remaining == 3600, "popup extension callback extends the owned timed session by fifteen minutes")
     power.failRenewal = true
@@ -249,8 +276,24 @@ private func runAwakeQuickActionTests() {
            "successful user Retry preserves elapsed time instead of granting a fresh duration")
     hostModel.onKeepAwakeStop()
     expect(!awake.active && awake.remaining == 0, "popup End session callback releases timed ownership through the host")
+    typed.commit(to: hostModel, start: true)
+    expect(awake.remaining == 420 && hostModel.keepAwakeMinutes == 7 && AwakeSessionActions(model: hostModel).recentDuration == 7,
+           "production custom Start uses raw committed seven-minute input and offers its recent preset")
+    hostModel.onKeepAwakeStop()
+    AwakeSessionActions(model: hostModel).start(minutes: 120)
+    let afterPreset = KeepAwakeModule(defaults: defaults, backend: power, automaticUpdates: false, runningApps: { [:] }, processInstances: { [:] })
+    expect(afterPreset.selectedMinutes == 120 && AwakeSessionActions(model: hostModel).recentDuration == nil,
+           "successful quick preset start persists across recreation without a duplicate recent chip")
+    hostModel.onKeepAwakeStop()
     power.fail = true
-    AwakeSessionActions(model: hostModel).start(minutes: 30)
+    typed.text = "13"
+    typed.commit(to: hostModel, start: true)
+    expect(awake.selectedMinutes == 13 && hostModel.keepAwakeMinutes == 13 && typed.text == "13" && awake.remaining == 0,
+           "failed custom Start retains its explicit duration and draft instead of resetting to a preset")
+    typed.text = ""
+    let createsBeforeInvalid = power.creates
+    expect(!typed.commit(to: hostModel, start: true) && power.creates == createsBeforeInvalid && awake.selectedMinutes == 13,
+           "invalid custom Start after a backend failure cannot restart the previous duration")
     expect(awake.protectionFailed && AwakeSessionActions(model: hostModel).status == "Protection needs retry", "failed production Start never renders a healthy countdown")
     power.fail = false
     hostModel.onKeepAwakeStop()

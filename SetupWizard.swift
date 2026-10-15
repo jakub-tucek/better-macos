@@ -91,7 +91,7 @@ struct SetupConfiguration: Codable, Equatable {
     }
     mutating func normalize() {
         quitDuration = QuitGuard.normalizedDuration(quitDuration.isFinite ? quitDuration : 3)
-        awakeMinutes = min(1440, max(5, awakeMinutes))
+        awakeMinutes = min(1440, max(1, awakeMinutes))
         clipboardDays = min(365, max(1, clipboardDays))
         speed = TransitionSpeed.from(rawValue: speed).rawValue
         mouseTracking = mouseTracking.isFinite ? min(SystemMouseBackend.trackingRange.upperBound, max(SystemMouseBackend.trackingRange.lowerBound, mouseTracking)) : 1
@@ -202,7 +202,10 @@ final class SetupDraft: ObservableObject {
         controls.onSpeedChanged = { [weak controls] in controls?.spacesSpeed = $0 }
         controls.onCompactMenuBarChanged = { [weak controls] in controls?.compactMenuBar = $0 }
         controls.onMenuBarHidingChanged = { [weak controls] in controls?.menuBarHiding = $0 }
-        controls.onKeepAwakeMinutesChanged = { [weak controls] in controls?.keepAwakeMinutes = min(1440, max(5, $0)) }
+        controls.onKeepAwakeMinutesChanged = { [weak controls] in
+            guard KeepAwakeModule.durationRange.contains($0) else { return }
+            controls?.keepAwakeMinutes = $0
+        }
         controls.onKeepDisplayAwakeChanged = { [weak controls] in controls?.keepDisplayAwake = $0 }
         controls.onKeepAwakeRemoveApp = { [weak controls] in controls?.keepAwakeApps.removeValue(forKey: $0) }
         controls.onClipboardPersistence = { [weak controls] in controls?.clipboardPersistence = $0 }
