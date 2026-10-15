@@ -70,6 +70,9 @@ lint pass does not replace them. Tooling verification does not run the full suit
 or manipulate live preferences, applications or devices. The [configured CI workflow](ci.md)
 uses these entry points; hosted execution and branch-protection requirements remain unverified/unconfigured.
 
+For local structured log locations, safe reading commands and evidence limits,
+see [operational diagnostics](diagnostics.md).
+
 ## Pinned development tools
 
 [`scripts/dev-tools.env`](../scripts/dev-tools.env) pins
