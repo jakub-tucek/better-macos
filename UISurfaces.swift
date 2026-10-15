@@ -341,6 +341,10 @@ struct AwakeSessionActions {
         model.onKeepAwakeMinutesChanged(minutes)
         model.onKeepAwakeStart()
     }
+    func retry() {
+        guard model.enabledModules.contains(.keepAwake), !model.stoppingModules.contains(.keepAwake) else { return }
+        model.onKeepAwakeRetry()
+    }
 }
 
 struct AwakeSessionWidget: View {
@@ -367,7 +371,8 @@ struct AwakeSessionWidget: View {
                         .disabled(model.keepAwakeRemaining >= 86400 || model.stoppingModules.contains(.keepAwake))
                     Spacer()
                     if model.keepAwakeProtectionFailed {
-                        Button("Retry session") { actions.start(minutes: model.keepAwakeMinutes) }
+                        Button("Retry session", action: actions.retry)
+                            .disabled(model.stoppingModules.contains(.keepAwake))
                     }
                 }
             } else {

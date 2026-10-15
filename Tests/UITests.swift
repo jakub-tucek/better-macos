@@ -12,8 +12,13 @@ private final class SetupAudioBackend: AudioRoutingBackend {
 private final class SetupPowerBackend: PowerAssertionBackend {
     var creates = 0
     var fail = false
+    var renewals = 0
+    var failRenewal = false
     func create(display: Bool, timeout: TimeInterval) throws -> IOPMAssertionID { creates += 1; if fail { throw ToggleError(message: "Repeated assertion failure") }; return IOPMAssertionID(creates) }
-    func setTimeout(_ id: IOPMAssertionID, seconds: TimeInterval) throws {}
+    func setTimeout(_ id: IOPMAssertionID, seconds: TimeInterval) throws {
+        renewals += 1
+        if failRenewal { throw ToggleError(message: "Fixture renewal failure") }
+    }
     func release(_ id: IOPMAssertionID) throws {}
 }
 
@@ -218,14 +223,29 @@ private func runAwakeQuickActionTests() {
     defer { defaults.removePersistentDomain(forName: suite) }
     for module in AppModule.allCases { ModuleSettings(defaults: defaults).set(module, enabled: false) }
     let power = SetupPowerBackend()
-    let awake = KeepAwakeModule(defaults: defaults, backend: power, now: { 100 }, automaticUpdates: false, runningApps: { [:] }, processInstances: { [:] })
+    var clock: TimeInterval = 100
+    let awake = KeepAwakeModule(defaults: defaults, backend: power, now: { clock }, automaticUpdates: false, runningApps: { [:] }, processInstances: { [:] })
     let hostModel = DashboardModel()
-    let host = AppDelegate(model: hostModel, preferences: defaults, makeKeepAwake: { awake })
+    let transactions = HostTransactions()
+    let host = AppDelegate(model: hostModel, preferences: defaults, makeKeepAwake: { awake }, transactions: transactions)
     hostModel.onModuleChanged(.keepAwake, true)
     AwakeSessionActions(model: hostModel).start(minutes: 45)
     expect(awake.remaining == 2700 && awake.active && power.creates == 1, "production popup action reaches real host Start with fake assertions and selected preset")
     hostModel.onKeepAwakeExtend()
     expect(awake.remaining == 3600, "popup extension callback extends the owned timed session by fifteen minutes")
+    power.failRenewal = true
+    clock += 10
+    awake.tick()
+    let retainedRemaining = awake.remaining
+    let renewalsBeforeRetry = power.renewals
+    AwakeSessionActions(model: hostModel).retry()
+    expect(power.renewals == renewalsBeforeRetry + 1 && awake.remaining == retainedRemaining && awake.protectionFailed,
+           "user Retry immediately attempts failed renewal without replacing its retained deadline")
+    power.failRenewal = false
+    clock += 5
+    AwakeSessionActions(model: hostModel).retry()
+    expect(power.renewals == renewalsBeforeRetry + 2 && awake.remaining == retainedRemaining - 5 && !awake.protectionFailed,
+           "successful user Retry preserves elapsed time instead of granting a fresh duration")
     hostModel.onKeepAwakeStop()
     expect(!awake.active && awake.remaining == 0, "popup End session callback releases timed ownership through the host")
     power.fail = true
@@ -234,6 +254,28 @@ private func runAwakeQuickActionTests() {
     power.fail = false
     hostModel.onKeepAwakeStop()
     try? awake.deactivate()
+    AwakeSessionActions(model: hostModel).start(minutes: 30)
+    let beforeClosedRetry = power.renewals + power.creates
+    let quit = HostTransactions.QuitActions(isBusy: { false }, prepareMouse: { true }, quiesce: {}, prepareClipboard: { true }, needsDisplayRecovery: { false }, restoreDisplays: { _ in }, suspendSpaces: nil, resumeClipboard: {}, restoreSpacesChoice: {}, didReopen: {}, didVeto: { _ in })
+    _ = transactions.requestQuit(quit, reply: { _ in })
+    hostModel.onKeepAwakeRetry()
+    expect(awake.remaining == 1800 && !transactions.acceptsActions && power.renewals + power.creates == beforeClosedRetry,
+           "production Retry callback respects HostTransactions admission without invoking application quit")
+    try? awake.stop()
+    defaults.set(["fixture.app": "Fixture app"], forKey: "keepAwake.apps")
+    let appPower = SetupPowerBackend()
+    let appAwake = KeepAwakeModule(defaults: defaults, backend: appPower, now: { clock }, automaticUpdates: false,
+                                  runningApps: { ["fixture.app": "Fixture app"] }, processInstances: { ["fixture.app": [42]] })
+    appAwake.activate()
+    try? appAwake.stop()
+    try? appAwake.start()
+    appPower.failRenewal = true; appAwake.tick()
+    let pausedRemaining = appAwake.remaining
+    appPower.failRenewal = false
+    try? appAwake.retry()
+    expect(appAwake.appsPaused && appAwake.activeAppNames.isEmpty && appAwake.remaining == pausedRemaining,
+           "explicit Retry preserves paused app intent alongside its timed deadline")
+    try? appAwake.deactivate()
     withExtendedLifetime(host) {}
 }
 

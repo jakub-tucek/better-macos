@@ -211,6 +211,7 @@ final class DashboardModel: ObservableObject {
     var onRefreshMouse: () -> Void = {}
     var onRestoreMouse: () -> Void = {}
     var onKeepAwakeStart: () -> Void = {}
+    var onKeepAwakeRetry: () -> Void = {}
     var onKeepAwakeStop: () -> Void = {}
     var onKeepAwakeExtend: () -> Void = {}
     var onKeepAwakeMinutesChanged: (Int) -> Void = { _ in }

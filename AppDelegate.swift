@@ -57,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var guiTestFinished = false
     private var guiTestOriginalOutput: String?
     private let commandRunner: CommandRunning
-    private let transactions = HostTransactions()
+    private let transactions: HostTransactions
     private var moduleFailures: [AppModule: String] = [:]
     private var setupDesktopReconciliationPending = false
     private let presentWindow: (NSWindow) -> Void
@@ -72,7 +72,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
           presentWindow: @escaping (NSWindow) -> Void = { $0.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) },
           restartAnimationClients: @escaping () -> Void = { _ = try? CommandRunner().run("/usr/bin/killall", ["Dock", "Finder"]) },
           controlStateSnapshot: (() -> SystemControlLifecycle.State)? = nil,
-         terminationReply: @escaping (NSApplication, Bool) -> Void = { $0.reply(toApplicationShouldTerminate: $1) }) {
+          transactions: HostTransactions = HostTransactions(),
+          terminationReply: @escaping (NSApplication, Bool) -> Void = { $0.reply(toApplicationShouldTerminate: $1) }) {
+         self.transactions = transactions
          self.commandRunner = commandRunner
          self.preferences = preferences
          self.modules = ModuleSettings(defaults: preferences)
@@ -234,6 +236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             mouseLifecycle.apply(acceleration: model.mouseAcceleration, speed: model.mouseTracking)
         }
         model.onKeepAwakeStart = { [weak self] in self?.actionHost?.performKeepAwake { try $0.start() } }
+        model.onKeepAwakeRetry = { [weak self] in self?.actionHost?.performKeepAwake { try $0.retry() } }
         model.onKeepAwakeStop = { [weak self] in self?.actionHost?.performKeepAwake { try $0.stop() } }
         model.onKeepAwakeExtend = { [weak self] in self?.actionHost?.performKeepAwake { try $0.extend() } }
         model.onKeepAwakeResume = { [weak self] in self?.actionHost?.performKeepAwake { try $0.resumeApps() } }

@@ -1,5 +1,20 @@
 # Compact native popup · 2026-10-15
 
+## Follow-up: explicit retry
+
+Parent review identified that Retry called Start, whose retained-deadline guard
+correctly refuses a new session but also prevents renewal recovery. Retry now uses
+an explicit `KeepAwakeModule.retry()` reconciliation, through the existing admitted
+host callback. It does not reset duration or resume paused app rules.
+
+The new production-action regression failed with the former Start behavior
+(`build/retry-red.log`) and passes with explicit Retry (`build/retry-green.log`):
+immediate backend attempt after retained-deadline renewal failure, elapsed deadline
+preserved on success, paused app intent preserved, and a closed HostTransactions
+gate prevents backend attempts even with a live fake timed assertion. The admission
+test injects only the transaction coordinator and fake quit actions; it never calls
+application quit. Full suite: 3797 isolated checks plus seven installer checks.
+
 Implementation branch: `feat/compact-ui-20261015`, based on `6878956`.
 Independent review belongs to the parent session; this is implementation evidence,
 not acceptance or a CLEAN review claim.

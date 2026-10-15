@@ -215,6 +215,14 @@ final class KeepAwakeModule {
         onChange?()
     }
 
+    /// Retry existing ownership, not Start: renewal failures retain their timed
+    /// deadline and app-rule pauses. Never grant a fresh duration on retry.
+    func retry() throws {
+        defer { onChange?() }
+        try reconcile()
+        lastError = nil
+    }
+
     func setKeepDisplayAwake(_ enabled: Bool) throws {
         try expireIfNeeded()
         if active {
