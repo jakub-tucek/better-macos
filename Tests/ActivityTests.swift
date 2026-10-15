@@ -23,8 +23,9 @@ func runActivityTests() throws {
     _ = journal.begin(.displayPower(false), trigger: .user)
     journal.finish(first, result: .completed)
     expect(journal.entries.count == 3 && !journal.entries.contains(where: { $0.id == first }), "activity bounds pending and finished rows and ignores evicted completions")
+    let beforeClear = journal.clearGeneration
     journal.clear(); journal.finish(second, result: .completed)
-    expect(journal.entries.isEmpty && presentation.entries.isEmpty, "activity clear invalidates late completions and presentation together")
+    expect(journal.entries.isEmpty && presentation.entries.isEmpty && journal.clearGeneration != beforeClear && !journal.contains(second), "activity clear invalidates queued observations, late completions and presentation together")
     let bounded = ActivityJournal(capacity: 999)
     for _ in 0..<1000 { _ = bounded.begin(.bluetoothPower, trigger: .user) }
     expect(bounded.entries.count == 300, "activity hard cap cannot be enlarged by a caller")
@@ -176,6 +177,20 @@ private func activityWait(_ done: () -> Bool) {
     expect(done(), "activity fixture finishes without hardware")
 }
 
+private final class ActivityBluetoothRunner: CommandRunning {
+    let fake: FakeRunner
+    var gateConnect = false
+    let entered = DispatchSemaphore(value: 0)
+    let resume = DispatchSemaphore(value: 0)
+    init(_ fake: FakeRunner) { self.fake = fake }
+    func run(_ executable: String, _ arguments: [String]) throws -> String {
+        if arguments.first == "--connect", gateConnect {
+            entered.signal(); _ = resume.wait(timeout: .now() + 3)
+        }
+        return try fake.run(executable, arguments)
+    }
+}
+
 private func runActivityBluetoothTests() {
     let suite = "fix-mac-os.activity-bluetooth.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
@@ -191,7 +206,8 @@ private func runActivityBluetoothTests() {
     defaults.set(["PRIVATE_ADDRESS_A", "PRIVATE_ADDRESS_B"], forKey: "bluetooth.autoAddresses")
     defaults.set(false, forKey: "bluetooth.protectAudio")
     defaults.set(false, forKey: "bluetooth.switchAudio")
-    let owner = BluetoothModule(defaults: defaults, backend: backend(runner, audioTool: nil), importLegacyConfiguration: false, authorizationProvider: { .allowedAlways })
+    let gate = ActivityBluetoothRunner(runner)
+    let owner = BluetoothModule(defaults: defaults, backend: BluetoothBackend(runner: gate, blueutil: "fixture", audioTool: nil, waitForConnection: {}), importLegacyConfiguration: false, authorizationProvider: { .allowedAlways })
     owner.activityJournal = journal
     owner.poll(); activityWait { !owner.isBusy }
     expect(journal.entries.count == 2 && journal.entries.contains(where: { $0.result == .retryScheduled }) && journal.entries.contains(where: { $0.result == .completed }), "Bluetooth mixed-target cycle records failure and verified success separately")
@@ -213,6 +229,21 @@ private func runActivityBluetoothTests() {
     owner.requestConnection(true, address: "PRIVATE_ADDRESS_A"); activityWait { !owner.isBusy }
     expect(journal.entries.first?.result == .completed, "Bluetooth manual success follows backend connection readback")
     expect(!journal.entries.map { "\($0.event.title) \($0.details)" }.joined().contains("PRIVATE"), "Bluetooth activity excludes addresses, names and raw errors")
+    runner.current = runner.current.map { BluetoothDevice(address: $0.address, name: $0.name, connected: $0.address != "PRIVATE_ADDRESS_A") }
+    runner.failedAddresses = ["PRIVATE_ADDRESS_A"]
+    owner.poll(); activityWait { !owner.isBusy }
+    expect(journal.entries.first?.result == .retryScheduled, "Bluetooth clear fixture establishes an automatic failure episode")
+    gate.gateConnect = true
+    owner.setAutoReconnect(true, for: "PRIVATE_ADDRESS_A"); owner.poll()
+    var enteredRetry = false
+    activityWait {
+        if !enteredRetry { enteredRetry = gate.entered.wait(timeout: .now()) == .success }
+        return enteredRetry
+    }
+    journal.clear()
+    runner.failedAddresses.removeAll(); gate.resume.signal()
+    activityWait { !owner.isBusy }
+    expect(journal.entries.isEmpty, "clearing activity during a suppressed Bluetooth retry cannot resurrect its old episode on success")
     owner.stop()
 
     let delayed = DelayedBluetoothRunner()
@@ -229,7 +260,14 @@ private func runActivityBluetoothTests() {
 
 private final class ActivityDisplayRunner: CommandRunning {
     var fail = false
+    var gateRestore = false
+    let restoreEntered = DispatchSemaphore(value: 0)
+    let resumeRestore = DispatchSemaphore(value: 0)
     func run(_ executable: String, _ arguments: [String]) throws -> String {
+        if arguments == ["--restore"], gateRestore {
+            restoreEntered.signal()
+            _ = resumeRestore.wait(timeout: .now() + 3)
+        }
         if fail { throw ToggleError(message: "PRIVATE_BACKEND_ERROR") }
         return "PRIVATE_HELPER_OUTPUT"
     }
@@ -260,8 +298,18 @@ private func runActivityDisplayTests() {
             let failures = journal.entries.count
             RunLoop.main.run(until: Date().addingTimeInterval(2.1))
             expect(journal.entries.count == failures, "repeated failed automatic display recovery does not spam activity")
+            runner.gateRestore = true
             runner.fail = false
-            activityWait { journal.entries.contains(where: { $0.event == .displayRecovery(.failedChange) && $0.result == .completed }) }
+            var entered = false
+            activityWait {
+                if !entered { entered = runner.restoreEntered.wait(timeout: .now()) == .success }
+                return entered
+            }
+            journal.clear()
+            runner.resumeRestore.signal()
+            activityWait { !model.monitorBusy }
+            expect(journal.entries.isEmpty, "clearing activity during a suppressed display retry cannot resurrect its old episode on success")
+            runner.gateRestore = false
         }
         runner.fail = false
         model.onRestoreAll(); activityWait { !model.monitorBusy }

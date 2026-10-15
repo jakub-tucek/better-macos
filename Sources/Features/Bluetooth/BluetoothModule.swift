@@ -190,8 +190,8 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     private var activityAutomatic: [String: ActivityOperationID] = [:]
     // Only suppress repeated waiting/failure observations, never feature retries.
     // These identity caches stay inside the owner and are bounded independently.
-    private var activityRetryNoted: Set<String> = []
-    private var activityWaitingNoted: Set<String> = []
+    private var activityRetryNoted: [String: ActivityOperationID] = [:]
+    private var activityWaitingNoted: [String: ActivityOperationID] = [:]
 
     private func cancelActivityConnections() {
         for operation in activityAutomatic.values { activityJournal?.finish(operation, result: .canceled) }
@@ -372,8 +372,8 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
 
     func poll() {
         guard !stopped, !busy else { return }
-        activityRetryNoted.formIntersection(autoAddresses)
-        activityWaitingNoted.formIntersection(autoAddresses)
+        activityRetryNoted = activityRetryNoted.filter { autoAddresses.contains($0.key) }
+        activityWaitingNoted = activityWaitingNoted.filter { autoAddresses.contains($0.key) }
         if !autoEnabled { activityRetryNoted.removeAll(); activityWaitingNoted.removeAll() }
         guard !permissionRequired else {
             radioPoweredOn = nil
@@ -405,12 +405,13 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
             }
         }
         onChange?()
+        let activityGeneration = activityJournal?.clearGeneration
         queue.async { [weak self] in
             let result = Result {
                 try backend.reconcile(config, progress: { progress in
                     DispatchQueue.main.async {
                         guard !cancellation.isCanceled else { return }
-                        self?.applyProgress(progress)
+                        self?.applyProgress(progress, activityGeneration: activityGeneration)
                     }
                 }, shouldContinue: { !cancellation.isCanceled })
             }
@@ -489,12 +490,16 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         }
     }
 
-    private func applyProgress(_ progress: BluetoothProgress) {
+    private func applyProgress(_ progress: BluetoothProgress, activityGeneration: UUID? = nil) {
+        let recordsActivity = activityGeneration == nil || activityJournal?.clearGeneration == activityGeneration
         switch progress {
         case .radio(let poweredOn): radioPoweredOn = poweredOn
         case .connecting(let device):
-            activityWaitingNoted.remove(device.address)
-            if !activityRetryNoted.contains(device.address), activityAutomatic.count < 300 {
+            activityWaitingNoted.removeValue(forKey: device.address)
+            if let previous = activityRetryNoted[device.address], activityJournal?.contains(previous) != true {
+                activityRetryNoted.removeValue(forKey: device.address)
+            }
+            if recordsActivity, activityRetryNoted[device.address] == nil, activityAutomatic.count < 300 {
                 activityAutomatic[device.address] = activityJournal?.begin(.bluetoothConnect(true), trigger: .automatic)
             }
             activity = "Connecting to \(device.name)…"
@@ -502,23 +507,27 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         case .connected(let device):
             if let operation = activityAutomatic.removeValue(forKey: device.address) {
                 activityJournal?.finish(operation, result: .completed)
-            } else if activityRetryNoted.contains(device.address) {
+            } else if let previous = activityRetryNoted[device.address], activityJournal?.contains(previous) == true {
                 activityJournal?.record(.bluetoothConnect(true), trigger: .automatic, result: .completed)
             }
-            activityRetryNoted.remove(device.address); activityWaitingNoted.remove(device.address)
+            activityRetryNoted.removeValue(forKey: device.address); activityWaitingNoted.removeValue(forKey: device.address)
             deviceStates.removeValue(forKey: device.address); retryAfter.removeValue(forKey: device.address)
             if autoEnabled && switchAudioOutput { pendingAudioAddresses.insert(device.address) }
         case .waiting(let device, let reason):
-            if !activityWaitingNoted.contains(device.address), activityWaitingNoted.count < 300 {
-                activityWaitingNoted.insert(device.address)
-                activityJournal?.record(.bluetoothWaiting, trigger: .automatic, result: .completed)
+            if let previous = activityWaitingNoted[device.address], activityJournal?.contains(previous) != true {
+                activityWaitingNoted.removeValue(forKey: device.address)
+            }
+            if recordsActivity, activityWaitingNoted[device.address] == nil, activityWaitingNoted.count < 300,
+               let operation = activityJournal?.begin(.bluetoothWaiting, trigger: .automatic) {
+                activityWaitingNoted[device.address] = operation
+                activityJournal?.finish(operation, result: .completed)
             }
             deviceStates[device.address] = reason
         case .failed(let device, let reason):
             if let operation = activityAutomatic.removeValue(forKey: device.address) {
                 activityJournal?.finish(operation, result: .retryScheduled)
+                if activityRetryNoted.count < 300 { activityRetryNoted[device.address] = operation }
             }
-            if activityRetryNoted.count < 300 { activityRetryNoted.insert(device.address) }
             deviceStates[device.address] = "\(reason) · will retry after 30s"
             retryAfter[device.address] = Date().addingTimeInterval(30)
         }
@@ -554,7 +563,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
             if let manualAddress { deviceStates.removeValue(forKey: manualAddress); retryAfter.removeValue(forKey: manualAddress) }
             for device in updated where device.connected {
                 deviceStates.removeValue(forKey: device.address); retryAfter.removeValue(forKey: device.address)
-                activityRetryNoted.remove(device.address); activityWaitingNoted.remove(device.address)
+                activityRetryNoted.removeValue(forKey: device.address); activityWaitingNoted.removeValue(forKey: device.address)
             }
             if defaults.object(forKey: "bluetooth.autoAddresses") == nil,
                let name = defaults.string(forKey: "bluetooth.legacySpeakerName"),

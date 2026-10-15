@@ -129,6 +129,9 @@ struct ActivityEntry: Identifiable, Equatable {
 final class ActivityJournal {
     private(set) var entries: [ActivityEntry] = []
     private var generation = UUID()
+    /// Scopes queued observations without creating a visible row. A clear makes
+    /// old queued starts ineligible as well as invalidating old completions.
+    var clearGeneration: UUID { generation }
     private let capacity: Int
     private let now: () -> Date
     var onChange: (() -> Void)?
@@ -152,6 +155,11 @@ final class ActivityJournal {
         guard id.generation == generation, let index = entries.firstIndex(where: { $0.id == id }), entries[index].result == nil, entries[index].queued else { return }
         entries[index].queued = false
         onChange?()
+    }
+
+    func contains(_ id: ActivityOperationID) -> Bool {
+        precondition(Thread.isMainThread)
+        return id.generation == generation && entries.contains(where: { $0.id == id })
     }
 
     func finish(_ id: ActivityOperationID, result: ActivityResult) {

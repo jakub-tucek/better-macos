@@ -39,7 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var activityWindow: NSWindow?
     private let activity: ActivityJournal
     private let activityPresentation: ActivityPresentation
-    private var activityRecoveryFailures: Set<ActivityRecoveryReason> = []
+    private var activityRecoveryFailures: [ActivityRecoveryReason: ActivityOperationID] = [:]
     private var setupWindow: NSWindow?
     private var activeSetupDraft: SetupDraft?
     private let uiStore: UISettingsStore
@@ -1392,16 +1392,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func restoreAll(reason: ActivityRecoveryReason = .user, completion: ((Bool) -> Void)? = nil) {
         guard controlState.recoveryReady else {
-            if reason == .user || !activityRecoveryFailures.contains(reason) {
-                activity.record(.displayRecovery(reason), trigger: reason.trigger, result: .blocked)
-                activityRecoveryFailures.insert(reason)
+            if reason == .user || activityRecoveryFailures[reason].map({ activity.contains($0) }) != true {
+                let operation = activity.begin(.displayRecovery(reason), trigger: reason.trigger)
+                activity.finish(operation, result: .blocked)
+                activityRecoveryFailures[reason] = operation
             }
             showError(ToggleError(message: "Wait for display connections to settle before recovery."))
             completion?(false)
             return
         }
         guard let executable = Bundle.main.executableURL?.path else { completion?(false); return }
-        let operation = (reason != .user && activityRecoveryFailures.contains(reason)) ? nil : activity.begin(.displayRecovery(reason), trigger: reason.trigger)
+        let previousFailure = activityRecoveryFailures[reason]
+        let suppress = reason != .user && previousFailure.map({ activity.contains($0) }) == true
+        let operation = suppress ? nil : activity.begin(.displayRecovery(reason), trigger: reason.trigger)
         screenEdges?.stop()
         recovering = true
         model.monitorBusy = true
@@ -1415,12 +1418,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 switch result {
                 case .success:
                     if let operation { self.activity.finish(operation, result: .completed) }
-                    else { self.activity.record(.displayRecovery(reason), trigger: reason.trigger, result: .completed) }
-                    self.activityRecoveryFailures.remove(reason)
+                    else if let previousFailure, self.activity.contains(previousFailure) {
+                        self.activity.record(.displayRecovery(reason), trigger: reason.trigger, result: .completed)
+                    }
+                    self.activityRecoveryFailures.removeValue(forKey: reason)
                     self.model.pendingArrangement = false; self.clearRollback(); completion?(true)
                 case .failure(let error):
-                    if let operation { self.activity.finish(operation, result: .failed) }
-                    self.activityRecoveryFailures.insert(reason)
+                    if let operation {
+                        self.activity.finish(operation, result: .failed)
+                        self.activityRecoveryFailures[reason] = operation
+                    }
                     self.showError(error); completion?(false)
                 }
         }
