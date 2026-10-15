@@ -5,20 +5,24 @@
 Use Apple Silicon macOS; the app targets **arm64 / macOS 15+**. That deployment
 target is not a claim that every compiler/SDK combination builds the app.
 
-Tested on 2026-10-15 against source baseline `b7a67ab`:
+Tested on 2026-10-15 at `a90cf68` on macOS 26.6.2 arm64:
 
 | Selected developer tools | Compiler / SDK | Result |
 | --- | --- | --- |
-| Xcode 27.0 (`27A266a`) | Apple Swift 6.4 (`swiftlang-6.4.0.34.1`), macOS SDK 27.0 | Build, lint and format-check pass on macOS 26.6.2 arm64. |
-| Standalone CLT 27.0 (`27.0.0.0.1788430756`) | Same compiler version and SDK | Lint/format-check pass; app build fails: missing `SwiftUIMacros.StateMacro` plugin at `WindowPositionsView.swift`. |
+| Xcode 27.0 (`27A266a`) | Apple Swift 6.4 (`swiftlang-6.4.0.34.1`), macOS SDK 27.0 | Clean build/full suite, lint and format-check pass. |
+| Standalone CLT 27.0 (`27.0.0.0.1788430756`) | Same compiler version and SDK | Clean build/full suite, lint and format-check pass. |
 
 `build.sh` and `test.sh` use **Swift 5 language mode** (`-swift-version 5`), not a
 Swift 5 compiler. Swift 6 strict concurrency is not adopted. The [Clipboard policy
 package](swiftpm.md) now uses Swift Testing and declares Swift tools 6.0; only Swift
 6.4 has been validated here, not the declared 6.0 minimum.
-The CLT-only source-install path remains independent of developer tools, but this
-CLT 27.0 app-build failure is an open compatibility gap, not a successful install
-test. No older CLT minimum is established by these checks.
+The earlier `b7a67ab` CLT build failed because SDK 27's `@State` resolves to a
+`SwiftUIMacros.StateMacro` plugin absent from standalone CLT. The app now explicitly
+uses the public property-wrapper type via `StoredState`; that build gap is resolved
+for the tested tools. See [compatibility evidence](validation/clt-compatibility.md)
+for state-lifecycle checks and limits. Source installation still does not require
+lint/format tools or full Xcode. These checks did not run a real installer and do
+not establish an older CLT minimum.
 
 Inspect/select tools per command, without changing global `xcode-select` state:
 
@@ -37,6 +41,7 @@ bash scripts/dev bootstrap       # download verified, pinned development tools
 bash scripts/dev lint            # SwiftLint, warnings fail; no fixes or cache
 bash scripts/dev format-check    # SwiftFormat --lint; no rewrites or cache
 bash scripts/dev build           # existing build.sh; bootstrap is NOT required
+bash Tests/swiftui-compatibility.sh # compile production state alias with selected tools
 bash scripts/dev-tools-test.sh   # offline tooling regressions after bootstrap
 bash Tests/packaging.sh          # inspect notices/signature after a successful build
 ```
@@ -92,8 +97,7 @@ Hashes authenticate pinned upstream bytes, not a separate publisher signature.
   bridging code, not arbitrary new forced casts. Review exceptions when touching
   that code; do not blanket-regenerate the baseline to make checks pass.
 - SwiftFormat checks trailing spaces, consecutive blank lines and final newline
-  only. All 39 first-party Swift files (including the manifest and new policy/tests)
-  pass without formatter edits. No full-style
+  only. First-party Swift files pass without formatting rewrites. No full-style
   baseline, mass formatting, naming/length rules or automatic rewrite command.
 - Both tools exclude `Vendor/`, `build/`, `.build/`, `.swiftpm/`, `.git/`,
   `worktrees/`, `.worktrees/`, `generated/` and `Generated/`. Keep worktrees outside
