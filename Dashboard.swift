@@ -35,20 +35,7 @@ enum DashboardTab: String, CaseIterable {
 }
 
 extension AppModule {
-    var dashboardFeature: DashboardTab {
-        switch self {
-        case .monitors, .arrangement: return .monitors
-        case .bluetooth: return .bluetooth
-        case .audio: return .audio
-        case .spaces: return .spaces
-        case .menuBar: return .menuBar
-        case .quitGuard: return .keyboard
-        case .keepAwake: return .keepAwake
-        case .windows: return .windows
-        case .clipboard: return .clipboard
-        case .mouse: return .mouse
-        }
-    }
+    var dashboardFeature: DashboardTab { BuiltinFeatures.definition(for: self).feature }
 }
 
 /// Context is independent of feature identity: Audio, for example, has two panels.

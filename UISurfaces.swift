@@ -5,16 +5,7 @@ enum SettingsGroup: String, CaseIterable, Identifiable {
     case general = "General", quickActions = "Quick actions", displays = "Displays"
     case sound = "Sound & connections", input = "Input", system = "System", clipboard = "Clipboard"
     var id: String { rawValue }
-    var modules: [AppModule] {
-        switch self {
-        case .general, .quickActions: return []
-        case .displays: return [.monitors, .arrangement, .windows]
-        case .sound: return [.audio, .bluetooth]
-        case .input: return [.quitGuard, .mouse]
-        case .system: return [.spaces, .menuBar, .keepAwake]
-        case .clipboard: return [.clipboard]
-        }
-    }
+    var modules: [AppModule] { BuiltinFeatures.modules(in: self) }
     static func forFeature(_ feature: DashboardTab) -> SettingsGroup {
         allCases.first { $0.modules.contains { $0.dashboardFeature == feature } } ?? .general
     }
@@ -23,37 +14,10 @@ enum SettingsGroup: String, CaseIterable, Identifiable {
 enum WidgetKind: String, CaseIterable, Identifiable, Codable {
     case keepAwake, audio, displays, windows, clipboard, bluetooth
     var id: String { rawValue }
-    var feature: DashboardTab {
-        switch self {
-        case .keepAwake: return .keepAwake
-        case .audio: return .audio
-        case .displays: return .monitors
-        case .windows: return .windows
-        case .clipboard: return .clipboard
-        case .bluetooth: return .bluetooth
-        }
-    }
-    var title: String { self == .displays ? "Displays" : self == .windows ? "Window layouts" : feature.rawValue }
-    var detail: String {
-        switch self {
-        case .keepAwake: return "Start or stop an idle-sleep prevention session."
-        case .audio: return "Switch output and microphone without opening Settings."
-        case .displays: return "Switch monitors, arrange screens, and restore windows."
-        case .windows: return "Restore named layouts on compatible displays."
-        case .clipboard: return "Open private history; copied content is never previewed here."
-        case .bluetooth: return "Connect chosen devices and see reconnect status."
-        }
-    }
-    var module: AppModule {
-        switch self {
-        case .keepAwake: return .keepAwake
-        case .audio: return .audio
-        case .displays: return .monitors
-        case .windows: return .windows
-        case .clipboard: return .clipboard
-        case .bluetooth: return .bluetooth
-        }
-    }
+    var feature: DashboardTab { module.dashboardFeature }
+    var title: String { BuiltinFeatures.widget(for: self).title }
+    var detail: String { BuiltinFeatures.widget(for: self).detail }
+    var module: AppModule { BuiltinFeatures.widget(for: self).module }
 }
 
 enum UILaunchRoute: Equatable {
@@ -89,7 +53,7 @@ struct WidgetLayout: Codable, Equatable {
     var version = 1
     var entries: [WidgetEntry] = []
     static func suggested(for modules: Set<AppModule>) -> WidgetLayout {
-        WidgetLayout(entries: [WidgetKind.keepAwake, .audio, .displays, .windows, .clipboard, .bluetooth]
+        WidgetLayout(entries: BuiltinFeatures.widgets.map(\.kind)
             .filter { modules.contains($0.module) }.map { WidgetEntry($0) })
     }
     mutating func normalize() {

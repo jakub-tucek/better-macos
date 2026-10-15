@@ -63,6 +63,7 @@ private final class UIWindows: WindowPositionBackend {
 }
 
 func runUITests() throws {
+    runBuiltinCatalogTests()
     runStoredStateTests()
     runAudioPreferenceAdditionTests()
     try renderReleaseUIFixtures()
@@ -200,6 +201,21 @@ func runUITests() throws {
     runNativeUIInteractionTests()
     runSetupDesktopIntentTests()
     runSetupDesktopPermissionTests()
+}
+
+private func runBuiltinCatalogTests() {
+    expect(BuiltinFeatures.definitions.map(\.module) == AppModule.allCases, "catalog registers every stable feature exactly once without changing setup order")
+    expect(AppModule.allCases.map(\.rawValue) == ["monitors", "arrangement", "bluetooth", "audio", "spaces", "menuBar", "quitGuard", "keepAwake", "windows", "clipboard", "mouse"], "feature persistence IDs remain stable")
+    let groups: [(SettingsGroup, [AppModule])] = [(.general, []), (.quickActions, []), (.displays, [.monitors, .arrangement, .windows]), (.sound, [.audio, .bluetooth]), (.input, [.quitGuard, .mouse]), (.system, [.spaces, .menuBar, .keepAwake]), (.clipboard, [.clipboard])]
+    for (group, modules) in groups { expect(group.modules == modules, "catalog preserves Settings order for \(group.rawValue)") }
+    let destinations: [DashboardTab] = [.monitors, .monitors, .bluetooth, .audio, .spaces, .menuBar, .keyboard, .keepAwake, .windows, .clipboard, .mouse]
+    expect(AppModule.allCases.map(\.dashboardFeature) == destinations, "catalog preserves shared display and keyboard navigation")
+    expect(Set(BuiltinFeatures.widgets.map(\.kind)) == Set(WidgetKind.allCases) && BuiltinFeatures.widgets.count == 6, "catalog registers each widget exactly once")
+    expect(WidgetKind.allCases.map(\.rawValue) == ["keepAwake", "audio", "displays", "windows", "clipboard", "bluetooth"], "widget persistence IDs remain stable")
+    expect(WidgetLayout.suggested(for: Set(AppModule.allCases)).entries.map(\.kind) == ["keepAwake", "audio", "displays", "windows", "clipboard", "bluetooth"], "catalog preserves suggestion order independently of feature order")
+    expect(WidgetKind.allCases.map(\.module) == [.keepAwake, .audio, .monitors, .windows, .clipboard, .bluetooth], "widgets retain distinct owning feature choices")
+    expect(WidgetKind.windows.title == "Window layouts" && WidgetKind.displays.title == "Displays", "widget labels are not inferred from feature titles")
+    expect(WidgetLayout.suggested(for: [.arrangement]).entries.isEmpty, "arrangement alone does not imply the monitor widget")
 }
 
 private func runAudioPreferenceAdditionTests() {
