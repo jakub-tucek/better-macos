@@ -2,6 +2,15 @@ import AppKit
 import IOKit.pwr_mgt
 
 func runActivityTests() throws {
+    weak var releasedJournal: ActivityJournal?
+    weak var releasedPresentation: ActivityPresentation?
+    do {
+        let local = ActivityJournal()
+        let adapter = ActivityPresentation(journal: local)
+        releasedJournal = local; releasedPresentation = adapter
+        local.record(.awakeStart(5), trigger: .user, result: .completed)
+    }
+    expect(releasedJournal == nil && releasedPresentation == nil, "activity observer does not retain the journal or presentation after host disposal")
     let journal = ActivityJournal(capacity: 3, now: { Date(timeIntervalSince1970: 123) })
     let presentation = ActivityPresentation(journal: journal)
     let first = journal.begin(.windowSave, trigger: .user)
@@ -111,6 +120,19 @@ private func runActivityAwakeTests() throws {
     expect(!journal.entries.map { "\($0.event.title) \($0.details)" }.joined().contains("PRIVATE"), "awake activity never retains app identities or labels")
     backend.failCreate = false
     try owner.deactivate()
+    var boundaryClock: TimeInterval = 100
+    var crossDuringDiscovery = false
+    let boundary = KeepAwakeModule(defaults: defaults, backend: FakePowerAssertions(), now: { boundaryClock }, automaticUpdates: false,
+        runningApps: {
+            if crossDuringDiscovery { boundaryClock += 61; crossDuringDiscovery = false }
+            return [:]
+        }, processInstances: { [:] })
+    boundary.onActivity = { journal.record($0, trigger: $1, result: $2) }
+    boundary.activate(); try boundary.start()
+    crossDuringDiscovery = true
+    boundary.tick()
+    expect(journal.entries.contains(where: { $0.result == .expired(appRuleActive: false) }), "awake expiry is recorded when the deadline crosses during owner reconciliation")
+    try boundary.deactivate()
 }
 
 private func runActivityNativeWindowTests() {

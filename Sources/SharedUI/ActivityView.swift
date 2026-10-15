@@ -10,7 +10,7 @@ final class ActivityPresentation: ObservableObject {
         self.journal = journal; entries = journal.entries
         journal.onChange = { [weak self] in
             guard let self else { return }
-            entries = journal.entries
+            entries = self.journal.entries
         }
     }
 }

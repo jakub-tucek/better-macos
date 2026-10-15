@@ -273,18 +273,18 @@ final class KeepAwakeModule {
     }
 
     private func reconcile() throws {
-        let expired = deadline != nil && remaining <= 0
+        let hadTimedSession = deadline != nil
         do {
             try reconcileAssertions(); protectionFailed = false
             let ruleActive = !activeAppNames.isEmpty && active
-            if expired { onActivity?(.awakeExpired(ruleActive), .automatic, .expired(appRuleActive: ruleActive)) }
+            if hadTimedSession && deadline == nil { onActivity?(.awakeExpired(ruleActive), .automatic, .expired(appRuleActive: ruleActive)) }
             if ruleActive != journalAppRuleActive {
                 journalAppRuleActive = ruleActive
                 onActivity?(.awakeRule(ruleActive), .automatic, .completed)
             }
         } catch {
             protectionFailed = true
-            if expired { onActivity?(.awakeExpired(false), .automatic, cleanupPending ? .cleanupNeeded : .failed) }
+            if hadTimedSession && deadline == nil { onActivity?(.awakeExpired(false), .automatic, cleanupPending ? .cleanupNeeded : .failed) }
             throw error
         }
     }
