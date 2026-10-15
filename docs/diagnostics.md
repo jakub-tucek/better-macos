@@ -1,7 +1,10 @@
 # Local operational diagnostics
 
-The app and its helpers write newline-delimited JSON automatically to
+Instrumented builds, once started, admit best-effort newline-delimited JSON to
 `~/Library/Logs/Fix macOS/`. No upload service or logging opt-in is involved.
+The [main integration record](#main-integration--2026-10-15) verifies source and
+isolated fixtures, not logging from the already-running app. That app has **not
+been relaunched** for this integration; no live user log directory was read.
 Each process/session has `fixmacos-<pid>-<session>-0.jsonl` (current), then `-1`
 and `-2` (older). Logger-created files are capped at 512 KiB; sessions in one
 validated directory share a 24-file budget (12 MiB). Old files, including old
@@ -40,6 +43,11 @@ closed), never follows the replacement. Restarting creates a fresh validated
 writer. Regular files must be owned by this user and have exactly one hard link.
 
 ## Read locally while reproducing
+
+The commands below are instructions for a later authorized reproduction, not
+checks performed during integration. Relaunch/installation/device or registration
+actions require separate approval; do not infer a running process loaded the new
+build merely because its on-disk bundle was replaced.
 
 Find current files (helpers have distinct PIDs and sessions):
 
@@ -93,9 +101,18 @@ the user's authorization; adding logs does not authorize those checks.
   names/MACs, stdout, stderr and raw error descriptions are never logged. A launch
   failure is separate from a command exit failure; the log does not guess that
   exit 75 means a specific authorization/device problem.
+- Host `bluetooth/manual_action_finished` records use only `power_on`, `connect`
+  or `disconnect`, a result and `error_cleared`. Failure uses its published error's
+  UUID as the operation token; a matching verified recovery reuses that token.
+  A newer identical-text or unrelated error still survives. This token does not
+  identify a device or command invocation; command start/finish IDs are separate.
 - Login requests include before/after registration/approval state, numeric failure
   code and a coarse error class, not localized error payloads. Status observations
-  are deduplicated by the host. Success can still require system approval.
+  come from the injected typed `LoginServicing` status and are deduplicated by the
+  host, including `requires_approval`, `not_found` and `unknown`. Registration remains
+  behind host admission; read-only activation/Settings refresh never registers.
+  Login's inline errors remain independent of Bluetooth's global publication.
+  Success can still require system approval and does not prove next-login launch.
 - Settings category changes report the existing new-ScrollView-identity reset
   request and content appearance. **Actual scroll offset is not observed** and
   reset success is not claimed. Popover events report anchor size, visible-frame
@@ -255,3 +272,87 @@ artifact at its own revision. No live log directory, app launch/quit/install,
 system preferences, permissions or devices were mutated; immutable flags were
 used and restored only on fixture-owned temporary files.
 **The same independent reviewer must re-review before any merge.**
+
+## Main integration · 2026-10-15
+
+The final source series through `f85ebf7` was supplied independently reviewed
+**CLEAN**. It was integrated on clean main `02e4ce7`, preserving the already
+reviewed Bluetooth UUID-owned error recovery and typed inline login status/error UI:
+
+| Reviewed source | Main commit |
+| --- | --- |
+| `c555a88` | `b5aa824` |
+| `3f54802` | `9e1d323` |
+| `721d573` | `941309f` |
+| `ec45762` | `03749ea` |
+| `f1eab2f` | `61996ec` |
+| `f0a03ee` | `ea319e8` |
+| `a993b42` | `22b18b8` |
+| `35c33a2` | `b1c465d` |
+| `82aea5b` | `db339de` |
+| `f85ebf7` | `d0941c4` |
+
+Actual history orders the descriptor fix `f1eab2f` before deferred construction
+`f0a03ee`; that dependency order was retained. Initial conflicts were restricted
+to `Sources/App/AppDelegate.swift`, `build.sh` and `test.sh`: current login guards,
+inline errors/read-only refresh and both login/Bluetooth test inputs were retained.
+No old direct-SMAppService host action or enabled-only checkbox was restored.
+
+New binding code and tests were isolated in **`fc30bf638dd39f1d5f6aada849d9fced37cc1739`**:
+`LoginDiagnostics` now wraps `LoginServicing`, with a closed typed status allowlist;
+host status refresh reads once and emits only on change. Bluetooth completion logs
+retain exact operation/publication ownership and emit only safe action/result fields.
+The reviewed bounded async sink, descriptor-relative IO and precreation retention
+implementation were not rewritten. No Clipboard archive deletion/retention policy, automatic
+radio action, login registration policy or Settings layout behavior was changed.
+
+### Focused independent rebinding review
+
+The local review UI could not connect after creating session
+`ce1cc713-24ad-46ec-aed2-92c56f548742`; it supplied no review verdict. A separate
+**read-only Codex CLI review of commit `fc30bf6`** then reported:
+“No actionable regressions were identified.” It specifically confirmed retained
+Bluetooth ownership/admission, typed login injection and exclusion of sensitive
+payloads. It ran no tests or live OS actions. The raw review log, including sandbox
+read warnings, is `build/diagnostics-rebinding-independent-review.log`; the verdict
+is not inferred from the earlier source-series CLEAN review.
+
+### Combined frozen-revision checks
+
+At **`fc30bf638dd39f1d5f6aada849d9fced37cc1739`**, one complete standalone CLT 27
+run passed **81 separate diagnostic review regressions**, the production safety
+no-flush/no-sync-wait source guard, **4,498 legacy checks**, **10 Swift Testing policy
+tests in three suites**, **13 mocked installer scenarios**, compiler/build fixtures
+and real/relocated-bundle checks. These counts are separate: 81 is not added to
+the legacy runner's count or substituted for the source worktree's historical 4,401.
+
+The legacy total retains all prior Bluetooth/login checks plus new actual-host
+diagnostic assertions: exit-75/success command and host UUID correlation, preservation
+of newer identical-text errors, requires-approval/unknown/error registration through
+injected services, status deduplication, closed admission and payload redaction.
+Only tests use a bounded flush to inspect injected sinks; no real login API or
+Bluetooth command was used.
+
+Log: `build/diagnostics-integration-clt.log`, recording HEAD, command-scoped
+`DEVELOPER_DIR=/Library/Developer/CommandLineTools`, actual Swift 6.4 / SDK 27.0
+compiler/SDK paths and versions, arm64 and bundle metadata, with `SDKROOT` unset.
+Strict configured-certificate signature, exact notices, source/built plist lint,
+relocation/dependency checks and metadata passed: version `0.4`, build `4`,
+arm64/macOS 15+, SDK 27.0, embedded tested revision. The compiled revision literal
+was independently found in the binary without executing it. The clean/modified
+production-input stamp generation and its fixture checks were preserved; asynchronous
+disk/signature observations remain explicitly distinct from compiled identity.
+
+Unmodified pinned lint/format passed under CLT across **55 files**; offline tooling
+and CI whitespace fixtures passed. Logs: `build/diagnostics-integration-{lint,format,tools,ci}.log`.
+No live log was read and the app was not relaunched, installed or quit. No real
+preferences, clipboard/device/permission changes, registration/settings actions,
+version bump, push/tag or publication occurred. Immutable flags were used/restored
+only on fixture-owned temporary files. The evidence-only commit does not describe
+an artifact built at its own revision; native/hardware, loaded-image reproduction,
+next-login and hosted-CI acceptance remain open.
+
+All **14 shell inputs**, **239 local links and 41 fragments across 31 tracked
+Markdown documents**, compiler-input/privacy/scope assertions and `git diff --check`
+passed. Direct comparisons confirm the final reviewed diagnostics backend,
+retention regressions and Clipboard instrumentation are unchanged by rebinding.

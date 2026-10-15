@@ -13,6 +13,7 @@ to the current documentation. Native/hardware acceptance remains open.
 - [Core recovery regressions](release-core.md) · [Host transactions](host-transactions.md)
 - [Bluetooth stale-banner recovery; power-on cause remains unknown](bluetooth-error-recovery.md#main-integration--2026-10-15)
 - [Login registration-intent UI; real autostart unverified](login-diagnosis.md#main-integration--2026-10-15)
+- [Bounded diagnostics and typed Bluetooth/login hooks](../diagnostics.md#main-integration--2026-10-15)
 - [Keep awake](awake.md) · [Window positions](window-positions.md)
 - [Clipboard UI](clipboard-ui.md) · [Compact UI](compact-ui.md)
 - [UI replacement](ui-replacement.md) · [Release UI polish](release-ui.md)
