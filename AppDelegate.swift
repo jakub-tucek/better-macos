@@ -1182,7 +1182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func setMonitor(_ uuid: String, enabled: Bool) {
-        guard modules.enabled.contains(.monitors), controlState.recoveryReady, !recovering, !displayRefresh.isSettling, !model.pendingArrangement,
+        guard modules.enabled.contains(.monitors), controlState.recoveryReady, (enabled || controlState.watchdogReady), !recovering, !displayRefresh.isSettling, !model.pendingArrangement,
               rollbackUUID == nil || (enabled && rollbackUUID == uuid),
               let executable = Bundle.main.executableURL?.path else {
             showError(ToggleError(message: "Wait for the watchdog, display changes, and current confirmation to finish."))

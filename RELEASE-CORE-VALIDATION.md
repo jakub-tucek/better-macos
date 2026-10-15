@@ -51,3 +51,19 @@ app. Live preferences/journals, clipboard, routes, pointer, display/window geome
 and power assertions were not deliberately modified for acceptance testing.
 Parent-session independent review and any authorized live acceptance remain
 outside this worktree's scope.
+
+## Independent-review follow-up — watchdog admission
+
+The injected readiness seam incorrectly used recovery readiness alone for new
+display disables. Recovery intentionally ignores watchdog availability; new
+disables must not. The host now additionally requires watchdog readiness when
+requesting Off, while On and Restore retain watchdog-independent recovery.
+
+New actual-host negative tests failed before the fix at
+`new display disable cannot dispatch with unavailable watchdog supervision`.
+They cover initially unavailable and subsequently lost supervision. Positive
+actual-host cases disable with supervision, lose the watchdog, and still recover
+before quit/module unload. All helper commands and snapshots are fake.
+After the fix, full `bash test.sh` passed: **4,118 isolated checks**, build and
+installer fixtures. Durable recovery ownership and the centralized gate remain
+unchanged. No live watchdog or display action was performed.

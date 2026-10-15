@@ -23,8 +23,37 @@ private final class JournalDisplayRunner: CommandRunning {
     }
 }
 
+private final class UnexpectedDisplayRunner: CommandRunning {
+    let dispatched = DispatchSemaphore(value: 0)
+    func run(_ executable: String, _ arguments: [String]) throws -> String {
+        dispatched.signal()
+        return ""
+    }
+}
+
+private func runDisplayWatchdogAdmissionTests() {
+    for initiallyReady in [false, true] {
+        let suite = "fix-mac-os.display-watchdog-admission.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = ModuleSettings(defaults: defaults)
+        for module in AppModule.allCases { settings.set(module, enabled: module == .monitors) }
+        let model = DashboardModel()
+        let runner = UnexpectedDisplayRunner()
+        var watchdogReady = initiallyReady
+        let host = AppDelegate(commandRunner: runner, model: model, preferences: defaults,
+            controlStateSnapshot: { SystemControlLifecycle.State(watchdogReady: watchdogReady, displaySettling: false) },
+            displayRecoveryPending: { false }, displaySnapshotRefresh: {})
+        watchdogReady = false // Covers both initial unavailability and supervision lost after host creation.
+        model.onMonitorChanged("fixture", false)
+        expect(runner.dispatched.wait(timeout: .now() + 0.1) == .timedOut && !model.monitorBusy && model.errorMessage != nil,
+               "new display disable cannot dispatch with \(initiallyReady ? "lost" : "unavailable") watchdog supervision")
+        withExtendedLifetime(host) {}
+    }
+}
+
 private func runDisplayOwnershipTests() {
-    for scenario in ["quit", "quit-failure", "module", "module-failure", "keep", "helper-failure"] {
+    for scenario in ["quit", "quit-failure", "module", "module-failure", "keep", "helper-failure", "quit-watchdog-lost", "module-watchdog-lost"] {
         let suite = "fix-mac-os.display-ownership.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -38,8 +67,9 @@ private func runDisplayOwnershipTests() {
         model.confirmMonitorDisable = scenario == "keep"
         var replies: [Bool] = []
         var snapshots = 0
+        var watchdogReady = true
         let host = AppDelegate(commandRunner: runner, mouseLifecycle: mouse, model: model, preferences: defaults,
-            controlStateSnapshot: { SystemControlLifecycle.State(watchdogReady: true, displaySettling: false) },
+            controlStateSnapshot: { SystemControlLifecycle.State(watchdogReady: watchdogReady, displaySettling: false) },
             displayRecoveryPending: { DisplayController.hasPendingRecovery(defaults: defaults) },
             displaySnapshotRefresh: { snapshots += 1 }, terminationReply: { _, approved in replies.append(approved) })
         func wait(_ condition: () -> Bool) {
@@ -49,6 +79,7 @@ private func runDisplayOwnershipTests() {
         }
         model.onMonitorChanged("fixture", false)
         wait { !model.monitorBusy }
+        if scenario.hasSuffix("watchdog-lost") { watchdogReady = false }
         expect(DisplayController.hasPendingRecovery(defaults: defaults) && model.disabledMonitorCount == 0 && snapshots == 0,
                "\(scenario): successful helper journal precedes the deliberately stale dashboard snapshot")
         if scenario == "keep" { model.onKeepDisabled("fixture") }
@@ -164,6 +195,7 @@ private final class QuitFixture {
 }
 
 func runHostTransactionsTests() {
+    runDisplayWatchdogAdmissionTests()
     runDisplayOwnershipTests()
     for veto in ["busy", "mouse", "clipboard"] {
         let fixture = QuitFixture()
