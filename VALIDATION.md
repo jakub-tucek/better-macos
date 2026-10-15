@@ -1,6 +1,6 @@
 # Validation and release acceptance
 
-## Current acceptance matrix · `f359f42` · 2026-10-15
+## Acceptance matrix and baseline · 2026-10-15
 
 The baseline report at `f359f42` records **3,997 isolated checks and seven installer
 checks**, including native compilation/signature checks. See the
@@ -25,18 +25,31 @@ target, not evidence of a full supported-OS acceptance sweep.
 | Quit coordination | Implemented; admission/drain/cancel/approval regressions | Injected host/native termination seams | Live recovery/quit with active hardware operations | [Host validation](HOST-TRANSACTIONS-VALIDATION.md), [terminology](GLOSSARY.md) |
 | Source install / updates | Implemented; thirteen mocked installer scenarios and four fresh-bundle fixture groups at `95e6433` | Apple Development build, strict signature and complete bundled notices verified | Final release revision/artifact verification; source install follows latest main, not an exact offered SHA | [Packaging](PACKAGING-VALIDATION.md), [installer](install.sh), [updater](SourceUpdates.swift) |
 
-### Release integration still open
+### Reviewed core integration · `dc96e9c` · 2026-10-15
 
-At this audit baseline, the parent session tracks display-recovery stale-count and
-setup awake-assertion defects as release blockers. Core fixes and watchdog/corrupt-journal
-reviews remain open. Reviewed UI and packaging changes are integrated through
-`95e6433`: 4,016 isolated checks, thirteen mocked installer scenarios, four build
-fixture groups, complete bundled-notice comparisons and strict Apple Development
-signature verification passed. Signing-identity changes automatically rebuild.
-Reviewed documentation followed without code changes; the suite was not needlessly
-repeated. See [exact integrated revisions and checks](RELEASE-CHECKLIST.md#current-evidence)
-and [unreleased notes](RELEASE-NOTES-1.0-DRAFT.md). These results do not close native,
-hardware, versioning or publication gates; historical counts below are unchanged.
+Display-recovery ownership, setup display-awake assertion removal, watchdog
+admission/executor authorization and unreadable-journal initialization/reload/save
+preservation fixes are independently reviewed CLEAN and integrated. The supplied
+final review reports **297 targeted checks** at source `ea47e60`; its implementer
+record reports **4,201 isolated checks** before integration with the reviewed UI.
+These are separate revision-bound results, not the combined-main count.
+
+Combined main at `dc96e9c46e813d1608d3879f68f49fdfc3239a7a` passed
+`bash test.sh`: **4,220 isolated checks**, thirteen mocked installer scenarios,
+four fresh-bundle fixture groups and exact real signed-bundle notice comparisons.
+Log: `build/release-core-integration.log`. Script syntax, source/built plist lint,
+strict Apple Development signature, arm64/macOS 15+ metadata, version `0.4`/build `4`
+and `git diff --check` passed. No live app/device acceptance or permission mutation
+was performed; default fixtures remain isolated. The evidence-only commit does not
+claim a final release artifact; rebuild the chosen final revision before distribution.
+
+The prior UI/packaging integration at `95e6433` passed **4,016 isolated checks**,
+thirteen mocked installer scenarios and four build fixture groups, including
+complete bundled notices and strict Apple Development signature verification.
+Signing-identity changes automatically rebuild. See [core regression evidence](RELEASE-CORE-VALIDATION.md),
+[exact integrated revisions and checks](RELEASE-CHECKLIST.md#current-evidence) and
+[unreleased notes](RELEASE-NOTES-1.0-DRAFT.md). Native/hardware acceptance, final
+documentation/versioning and publication remain open; historical counts below are unchanged.
 
 ## How to read the historical records
 

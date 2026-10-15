@@ -9,7 +9,7 @@ Keep the concise README and its install command. This plan promises no release d
 
 | Priority | Work | Done when |
 | --- | --- | --- |
-| 0 | Finish release safety | Review and integrate open core fixes, watchdog/corrupt-journal regressions, and native acceptance; record remaining hardware gaps at the tested revision. |
+| 0 | Finish release safety | Core fixes and watchdog/corrupt-journal regressions are reviewed and integrated through `dc96e9c`; complete native acceptance and record remaining hardware gaps at the tested revision. |
 | 1 | Documentation and developer baseline | Agree on compiler/tool versions, contributor commands, lint/format checks and the documentation map below. Verify links and script references. |
 | 2 | One SwiftPM slice and source organization | Extract one existing policy/backend boundary with tests; preserve app/helper behavior, CLT source installation and signed-bundle packaging. Move files in reviewable batches. |
 | 3 | Built-in feature registration | Register multiple different features through a small host interface without changing persisted IDs, shared ownership or drain/veto behavior. |
@@ -17,8 +17,9 @@ Keep the concise README and its install command. This plan promises no release d
 | 5 | Native UI automation, if needed | Add a separate full-Xcode GUI job only for acceptance gaps that require app-driving tests. |
 | Later | Measured performance/storage work | Compare idle resource baselines; consider SQLite only if clipboard measurements justify migration. |
 
-Priority 0 remains open: display-recovery stale state, setup awake-assertion defects,
-core/watchdog/corrupt-journal review and physical acceptance. Use
+Priority 0 remains open for native/physical acceptance and final release gates.
+Display-recovery ownership, setup awake-assertion removal, watchdog authorization
+and corrupt-journal preservation fixes are independently reviewed CLEAN and integrated. Use
 [release evidence](RELEASE-CHECKLIST.md#current-evidence) and
 [UI acceptance](UI-REPLACEMENT-VALIDATION.md), not test counts, to close these gates.
 

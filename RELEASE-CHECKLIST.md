@@ -24,9 +24,9 @@ requirements silently added to this release.
 ## Resolve and verify
 
 - [x] Triage findings into release blockers, required polish, and deferred work.
-- [ ] Fix actionable findings in focused commits; keep feature behavior stable.
-- [ ] Add regression coverage for bugs, then obtain independent follow-up review.
-- [ ] Rerun integrated checks after code changes; avoid treating historical counts
+- [x] Fix reviewed core/UI/packaging findings in focused commits; keep feature behavior stable.
+- [x] Add regression coverage for those bugs, then obtain independent CLEAN follow-up review.
+- [x] Rerun integrated checks after code changes; avoid treating historical counts
   as proof of the final release candidate.
 - [ ] Complete native acceptance where tools permit it. Record permission-blocked
   and human-only checks as outstanding rather than counting them as passed.
@@ -70,12 +70,14 @@ Baseline at `f359f423bd7d3109fe519268776e6ca65d155344`:
 - Bundle still reports version `0.4`, build `4`, targeting Apple Silicon/macOS 15+.
 - Local build uses Apple Development signing; this is not a notarized distribution.
 
-Reviewed integration status (remaining core work stays open):
+Reviewed integration status (native acceptance and final release gates stay open):
 
 | Finding | Workstream | Status |
 | --- | --- | --- |
-| Immediate quit/module disable can miss newly committed display recovery | Core recovery | Fix and regression review pending |
-| Setup display-wake Off leaves an existing assertion active | Core recovery | Fix and regression review pending |
+| Immediate quit/module disable can miss newly committed display recovery | Core recovery | Done: reviewed CLEAN; integrated `57075d4`, journal ownership regressions passed |
+| Setup display-wake Off leaves an existing assertion active | Core recovery | Done: reviewed CLEAN; integrated `55fa91b`, isolated assertion release/retry regressions passed |
+| New display mutations can outlive watchdog authorization | Core recovery | Done: reviewed CLEAN; integrated `cd49731` and `47eb5ff`, admission/executor boundary regressions passed |
+| Unreadable display journals can be overwritten during initialization or reload/save | Core recovery | Done: reviewed CLEAN; integrated `a75dcf9` and `dc96e9c`, preservation regressions passed |
 | Settings Clear history lacks confirmation | UI polish | Done: reviewed CLEAN; integrated `57e8738`, confirmation regressions passed |
 | Clipboard copy instructions and empty audio preference menus mislead | UI polish | Done: reviewed CLEAN; integrated `57e8738`, UI regressions passed |
 | Installed bundle omits project/vendor license notices | Packaging | Done: reviewed CLEAN; integrated `0ac6495` and `95e6433`, real signed-bundle notices verified |
@@ -117,7 +119,51 @@ Starting at `020de2d`, reviewed CLEAN commits were integrated separately:
   on compilation/signing/verification/publication failures.
 - No real app quit/launch, device mutation, clipboard action, release/tag/push was
   performed. Existing isolated/read-only tests and disposable fixtures only.
-- Core fixes, watchdog/corrupt-journal reviews, remaining documentation release
-  gates, version choice, native/hardware acceptance and publication remain open.
+- At this historical integration, core fixes, watchdog/corrupt-journal reviews,
+  remaining documentation release gates, version choice, native/hardware acceptance
+  and publication remained open.
   This documentation-only evidence commit does not claim a final release artifact;
   rebuild and verify the chosen release revision before distribution.
+
+### Core integration · 2026-10-15
+
+Starting at clean main `b7a67ab`, all six reviewed source commits were unique and
+cherry-picked in order without conflicts. Git patch-equivalence checks confirm
+the integrated series; README voice, module documentation, reviewed UI/packaging
+and the still-proposed architecture/tooling roadmap were preserved.
+
+| Work | Reviewed source commit | Main commit |
+| --- | --- | --- |
+| Durable display-recovery ownership | `a95a0502ea0a2679ef45bc48f0014850708c6403` | `57075d4` |
+| Setup display-wake assertion release | `dbfc59c091e5185cc58a897bb7556b79d09dd082` | `55fa91b` |
+| Watchdog admission for new disables | `454591c569e8b4aced8c3748359f4652f9026327` | `cd49731` |
+| Unreadable journal initialization preservation | `200a080980490a696992cec72ad82a63461dbcde` | `a75dcf9` |
+| Delayed helper supervision recheck | `dd10b4ab3e9e7a13c820b07430952a11996cb330` | `47eb5ff` |
+| Every journal reload/save validation | `ea47e6093818601f6889806dfcf4e3f8fdbd5bfa` | `dc96e9c` |
+
+- Supplied independent final review: **CLEAN**, **297 targeted checks** at
+  `ea47e60`. The implementer's **4,201** full-suite checks remain historical
+  worktree evidence, not a claim about combined main.
+- Combined `bash test.sh` passed at code revision
+  `dc96e9c46e813d1608d3879f68f49fdfc3239a7a`: **4,220 isolated checks**, thirteen
+  mocked installer scenarios, four fresh-bundle fixture groups and real signed
+  bundle notice comparisons. Log: `build/release-core-integration.log` (ignored
+  local build output). This is 19 checks above the core-only result because the
+  reviewed UI regression coverage is also present.
+- All six shell scripts passed `bash -n`; source/built plists passed lint.
+  Strict bundle signature and all three exact project/vendor notice comparisons
+  passed. Metadata embeds `dc96e9c46e813d1608d3879f68f49fdfc3239a7a`, version
+  `0.4`, build `4`, arm64/macOS 15+. Signing is Apple Development, not notarized.
+- Environment: macOS 26.6.2 (25G83), arm64, Apple Swift 6.4 in Swift 5 language
+  mode, SDK 27.0. This does not establish acceptance across supported OS versions.
+- Local Markdown validation passed: **104 file targets across 19 root documents**;
+  fragments were not checked. `git diff --check` passed.
+- No real app launch/quit, device/preference/permission mutation, version bump,
+  push, tag or publication was requested or performed. Tests use isolated defaults,
+  fake discovery/assertions/helpers and disposable process/installer fixtures;
+  native hardware probes were not invoked. Separate tooling/AGENTS work is not
+  integrated by this change.
+- Native/hardware acceptance, final release docs/notes, version/revision choice,
+  final artifact rebuild/review and publication approval remain open. A separate
+  documentation evidence commit does not turn this tested code build into a final
+  release artifact.
