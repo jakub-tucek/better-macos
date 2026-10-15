@@ -709,8 +709,16 @@ struct SettingsView: View {
                     }
                 }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
             }.id(model.settingsGroup).frame(minWidth: 440, idealWidth: 620)
+                .onAppear {
+                    Diagnostics.shared.emit("settings", "category_content_appeared", fields: ["category": model.settingsGroup.rawValue,
+                                            "scroll_policy": "new_scrollview_identity", "scroll_offset_observed": "false"])
+                }
         }.frame(minWidth: 680, minHeight: 480)
             .background(Color(nsColor: .windowBackgroundColor))
+            .onChange(of: model.settingsGroup) { old, new in
+                Diagnostics.shared.emit("settings", "category_changed", fields: ["from": old.rawValue, "to": new.rawValue,
+                                        "scroll_reset": "identity_requested_not_verified"])
+            }
     }
     private var features: [DashboardTab] {
         var seen = Set<DashboardTab>()

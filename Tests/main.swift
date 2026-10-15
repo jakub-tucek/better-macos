@@ -405,6 +405,7 @@ displaySetDefaults.removePersistentDomain(forName: displaySetDomain)
 runHostTransactionsTests()
 runLoginServiceTests()
 runKeepAwakeFeatureTests()
+try runDiagnosticsTests()
 try runUITests()
 try runClipboardTests()
 

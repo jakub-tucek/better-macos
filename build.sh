@@ -27,6 +27,14 @@ cp Vendor/strafe/LICENSE "$APP/Contents/Resources/Licenses/strafe-LICENSE.txt"
 cp Vendor/strafe/UPSTREAM.txt "$APP/Contents/Resources/Licenses/strafe-UPSTREAM.txt"
 cp Info.plist "$APP/Contents/Info.plist"
 REVISION="$(git rev-parse HEAD)"
+[[ "$REVISION" =~ ^[a-f0-9]{40}$ ]] || { echo "Invalid build revision" >&2; exit 1; }
+echo "let compiledDiagnosticRevision = \"$REVISION\"" > "$STAGE/DiagnosticBuild.swift"
+SOURCE_STATE=unknown
+if SOURCE_STATUS="$(git status --porcelain --untracked-files=normal -- Sources MouseHID Vendor Package.swift build.sh Scripts Info.plist)"; then
+    SOURCE_STATE=clean
+    if [[ -n "$SOURCE_STATUS" ]]; then SOURCE_STATE=modified; fi
+fi
+echo "let compiledDiagnosticSourceState = \"$SOURCE_STATE\"" >> "$STAGE/DiagnosticBuild.swift"
 plutil -insert FixMacOSRevision -string "$REVISION" "$APP/Contents/Info.plist"
 if [[ "${FIX_MACOS_SOURCE_INSTALL:-0}" == 1 ]]; then
     plutil -insert FixMacOSSourceInstall -bool YES "$APP/Contents/Info.plist"
@@ -43,6 +51,7 @@ for source in CStrafe IOHIDPayload; do
 done
 xcrun clang -O2 -arch arm64 -mmacosx-version-min=15.0 -c MouseHID/MouseHID.c -o build/objects/MouseHID.o
 xcrun swiftc -swift-version 5 -warnings-as-errors -O -target arm64-apple-macos15.0 \
+    Sources/Core/Diagnostics.swift Sources/Core/LoginDiagnostics.swift "$STAGE/DiagnosticBuild.swift" \
     Sources/App/LoginService.swift Sources/Features/KeepAwake/KeepAwakeFeature.swift Sources/Features/KeepAwake/KeepAwakePresentation.swift \
     -I "$CLIPBOARD_PACKAGE_MODULES" "$CLIPBOARD_PACKAGE_ARCHIVE" \
     -I Vendor/strafe/CStrafe/include -I MouseHID Sources/Features/Clipboard/ClipboardModule.swift Sources/Features/Windows/WindowPositions.swift Sources/Features/Windows/WindowPositionsView.swift \

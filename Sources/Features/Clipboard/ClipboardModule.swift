@@ -284,8 +284,18 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
         }
         self.history.onChange = { [weak self] in self?.reload(); self?.onChange() }
         self.history.onError = { [weak self] in self?.onError("Clipboard history could not be saved.") }
+        self.history.onStorageDiagnostic = { event in
+            var fields = ["reason": event.reason.rawValue, "io_duration_ms": String(event.durationMS), "failure_class": event.failure.rawValue]
+            if let count = event.entryCount { fields["entry_count"] = String(count) }
+            if let code = event.errorCode { fields["error_code"] = String(code) }
+            Diagnostics.shared.emit("clipboard_storage", event.action.rawValue, outcome: event.succeeded ? "success" : "failure", fields: fields)
+        }
     }
     func start() {
+        Diagnostics.shared.emit("clipboard_storage", "configuration_requested", fields: ["reason": "startup",
+                                "persistence_key_present": String(defaults.object(forKey: "clipboard.persistence") != nil),
+                                "days_key_present": String(defaults.object(forKey: "clipboard.days") != nil),
+                                "persistence_requested": String(defaults.bool(forKey: "clipboard.persistence"))])
         setExclusions(defaults.string(forKey: "clipboard.exclusions") ?? "")
         do {
             try history.configurePersistence(defaults.bool(forKey: "clipboard.persistence"),
@@ -331,6 +341,7 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
         return history.flushPendingStorage()
     }
     func setPersistence(_ enabled: Bool, days: Int? = nil) {
+        Diagnostics.shared.emit("clipboard_storage", "configuration_requested", fields: ["reason": "explicit_configuration", "persistence_requested": String(enabled)])
         // Deliberate Disable revokes disk persistence even when cleanup fails.
         // Keep that intent across a later module reload/app restart too.
         if !enabled { defaults.set(false, forKey: "clipboard.persistence") }

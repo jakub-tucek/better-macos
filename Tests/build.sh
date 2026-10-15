@@ -13,7 +13,7 @@ cat > "$ROOT/bin/mock" <<'MOCK'
 #!/bin/bash
 set -euo pipefail
 case "${0##*/}" in
-    git) echo aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ;;
+    git) if [[ "$1" != status ]]; then echo aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; fi ;;
     xcrun)
         if [[ "$1" == --find ]]; then echo /mock/usr/bin/swiftc; exit 0; fi
         if [[ "$1 $2" == 'swift build' ]]; then
@@ -41,11 +41,11 @@ case "${0##*/}" in
                 *fixture-stale.o|*ClipboardHistory.swift|Sources/Features/Clipboard/Policy/*) exit 21 ;;
                 *.swift)
                     [[ -f "$arg" ]] || exit 28
-                    case "$arg" in Sources/*|Tests/*|Vendor/*) ;; *) exit 29 ;; esac ;;
+                    case "$arg" in Sources/*|Tests/*|Vendor/*|*/.bundle.*/DiagnosticBuild.swift) ;; *) exit 29 ;; esac ;;
             esac
         done
         if [[ "$1" == swiftc ]]; then
-            for source in Sources/Features/KeepAwake/KeepAwakeFeature.swift Sources/Features/KeepAwake/KeepAwakePresentation.swift; do
+            for source in Sources/Features/KeepAwake/KeepAwakeFeature.swift Sources/Features/KeepAwake/KeepAwakePresentation.swift Sources/Core/Diagnostics.swift Sources/Core/LoginDiagnostics.swift; do
                 inputs=0
                 for arg in "$@"; do
                     if [[ "$arg" == "$source" ]]; then inputs=$((inputs + 1)); fi
@@ -56,6 +56,15 @@ case "${0##*/}" in
                 [[ "$*" == *'Tests/main.swift'* && "$*" != *'Sources/App/main.swift'* ]] || exit 30
             else
                 [[ "$*" == *'Sources/App/main.swift'* && "$*" != *'Tests/main.swift'* ]] || exit 31
+                generated=0
+                for arg in "$@"; do
+                    if [[ "$arg" == */.bundle.*/DiagnosticBuild.swift ]]; then
+                        grep -qx 'let compiledDiagnosticRevision = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' "$arg" || exit 33
+                        grep -qx 'let compiledDiagnosticSourceState = "clean"' "$arg" || exit 33
+                        generated=$((generated + 1))
+                    fi
+                done
+                [[ "$generated" == 1 ]] || exit 34
             fi
             [[ "$*" == *'libClipboardPolicy.a'* && "$*" == *'/Modules'* ]] || exit 24
             archives=0

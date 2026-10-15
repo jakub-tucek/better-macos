@@ -1,6 +1,8 @@
 import AppKit
 import ServiceManagement
 
+Diagnostics.install(revision: compiledDiagnosticRevision, sourceState: compiledDiagnosticSourceState)
+
 func runChild(_ arguments: [String], capture: Bool = false) throws -> Data {
     let process = Process()
     let output = Pipe()
@@ -94,12 +96,12 @@ if let index = CommandLine.arguments.firstIndex(of: "--watchdog") {
     print("Accessibility permission: \(AXIsProcessTrusted() ? "granted" : "not granted")")
 } else if CommandLine.arguments.contains("--enable-login") {
     do {
-        try SMAppService.mainApp.register()
+        try LoginDiagnostics.change(true)
         print("Launch at login: \(SMAppService.mainApp.status == .enabled ? "enabled" : "requires system approval")")
     } catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
 } else if CommandLine.arguments.contains("--disable-login") {
     do {
-        try SMAppService.mainApp.unregister()
+        try LoginDiagnostics.change(false)
         print("Launch at login disabled.")
     } catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
 } else if CommandLine.arguments.contains("--status") {

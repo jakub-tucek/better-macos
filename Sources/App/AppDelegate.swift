@@ -42,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var setupPermissionManager: CBCentralManager?
     private let safety = SafetySupervisor()
     private let logger = Logger(subsystem: "io.github.jakub-tucek.mac-utils", category: "Safety")
+    private var loggedLoginStatus: String?
     private lazy var displayRefresh = DisplayRefreshGate { [weak self] in self?.refreshDisplaySnapshot() }
     private let recoveryQueue = DispatchQueue(label: "mac-utils.display-recovery", qos: .userInitiated)
     private var item: NSStatusItem!
@@ -660,11 +661,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         popover.contentSize.height = min(popover.contentSize.height, model.popupHeight, 650)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
+        let operation = UUID().uuidString
+        Diagnostics.shared.emit("popover", "show", operation: operation, fields: ["height_limit": String(Double(model.popupHeight)),
+                                "anchor_width": String(Double(button.bounds.width)), "anchor_height": String(Double(button.bounds.height))])
+        DispatchQueue.main.async { [weak self] in
+            guard let self, popover.isShown, let window = popover.contentViewController?.view.window,
+                  let visible = window.screen?.visibleFrame else { return }
+            let frame = window.frame
+            Diagnostics.shared.emit("popover", "geometry_observed", operation: operation, fields: [
+                "width": String(Double(frame.width)), "height": String(Double(frame.height)),
+                "visible_width": String(Double(visible.width)), "visible_height": String(Double(visible.height)),
+                "left_margin": String(Double(frame.minX - visible.minX)), "right_margin": String(Double(visible.maxX - frame.maxX)),
+                "bottom_margin": String(Double(frame.minY - visible.minY)), "top_margin": String(Double(visible.maxY - frame.maxY))])
+        }
     }
 
     private func showSettings(_ group: SettingsGroup? = nil) {
         guard transactions.acceptsActions else { return }
         refreshLoginStatus()
+        Diagnostics.shared.emit("settings", "open_requested", fields: ["category": (group ?? model.settingsGroup).rawValue])
         if let group { model.settingsGroup = group }
         popover.performClose(nil)
         if settingsWindow == nil {

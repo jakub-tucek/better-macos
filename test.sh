@@ -10,6 +10,7 @@ source Scripts/clipboard-package.sh
 clipboard_package_test debug
 clipboard_package_build release
 xcrun swiftc -swift-version 5 -warnings-as-errors -target arm64-apple-macos15.0 \
+    Sources/Core/Diagnostics.swift Sources/Core/LoginDiagnostics.swift Tests/DiagnosticsTests.swift \
     Sources/App/LoginService.swift Tests/LoginServiceTests.swift Sources/Features/KeepAwake/KeepAwakeFeature.swift Sources/Features/KeepAwake/KeepAwakePresentation.swift Tests/KeepAwakeFeatureTests.swift \
     -I "$CLIPBOARD_PACKAGE_MODULES" "$CLIPBOARD_PACKAGE_ARCHIVE" \
     -I Vendor/strafe/CStrafe/include -I MouseHID Sources/Features/Clipboard/ClipboardModule.swift Tests/ClipboardTests.swift Tests/ClipboardPresentationTests.swift Sources/Features/Windows/WindowPositions.swift Sources/Features/Windows/WindowPositionsView.swift \

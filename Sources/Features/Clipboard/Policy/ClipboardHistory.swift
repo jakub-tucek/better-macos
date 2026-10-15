@@ -48,6 +48,20 @@ public protocol ClipboardPersistence {
     func clear() throws
 }
 
+/// Deliberately cannot carry content, entry/source IDs, paths, or raw errors.
+public struct ClipboardStorageDiagnostic {
+    public enum Action: String { case load, save, clear }
+    public enum Reason: String { case startup, explicitConfiguration, explicitClear, historyChanged }
+    public enum Failure: String { case none, oversized, decoding, io, other }
+    public let action: Action
+    public let reason: Reason
+    public let succeeded: Bool
+    public let entryCount: Int?
+    public let durationMS: Double
+    public let failure: Failure
+    public let errorCode: Int?
+}
+
 /// A single bounded archive owns image bytes too: delete/expiry/Clear cannot orphan images.
 public struct ClipboardArchive: ClipboardPersistence {
     // Raw caps can expand to ~81 MiB with base64 and worst-case JSON text escaping.
@@ -113,13 +127,18 @@ public final class ClipboardHistory {
     public var requestedPersistence: Bool { startupDays != nil || persistent }
     public var onChange: () -> Void = {}
     public var onError: () -> Void = {}
+    public var onStorageDiagnostic: (ClipboardStorageDiagnostic) -> Void = { _ in }
+    private var diagnosticReason: ClipboardStorageDiagnostic.Reason = .startup
+    private let monotonic: () -> TimeInterval
 
     public init(board: ClipboardAccess, archive: ClipboardPersistence, now: @escaping () -> Date = Date.init,
-         source: @escaping () -> String?) {
+         source: @escaping () -> String?, monotonic: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
         self.board = board; self.archive = archive; self.now = now; self.source = source
+        self.monotonic = monotonic
         lastChange = board.changeCount // Never capture the clipboard present at startup/resume.
     }
     public func configurePersistence(_ enabled: Bool, ageDays: Int, load: Bool = false) throws {
+        diagnosticReason = load ? .startup : .explicitConfiguration
         if !enabled {
             // Disable preserves memory but revokes every previous disk restore
             // intent before attempting I/O, even if deletion commits then throws.
@@ -139,6 +158,7 @@ public final class ClipboardHistory {
         // An explicit disable/Clear may discard it; enabling must recover it first.
         if !load, let days = startupDays {
             try configurePersistence(true, ageDays: days, load: true)
+            diagnosticReason = .explicitConfiguration
         }
         if case .rollback = storageIntent {
             try reconcileStorage()
@@ -146,15 +166,15 @@ public final class ClipboardHistory {
         // Before first enable, remember disk work we don't yet own. If load
         // fails, do not write at all. A failed save must not silently delete an
         // older archive when restoring the disabled configuration.
-        let originalArchive = !persistent && !load ? try archive.load() : nil
+        let originalArchive = !persistent && !load ? try loadArchive() : nil
         let previousDays = self.ageDays
         let previousEntries = entries
         self.ageDays = min(365, max(1, ageDays))
         do {
-            if load { entries = try archive.load() }
+            if load { entries = try loadArchive() }
             else if let originalArchive { entries += originalArchive }
             prune()
-            try archive.save(entries)
+            try saveArchive(entries)
         } catch {
             self.ageDays = previousDays; entries = previousEntries
             if load {
@@ -213,6 +233,7 @@ public final class ClipboardHistory {
         entries[index].pinned.toggle(); changed()
     }
     public func clear() throws {
+        diagnosticReason = .explicitClear
         entries = []; lastChange = board.changeCount
         if let days = startupDays {
             persistent = true
@@ -246,6 +267,7 @@ public final class ClipboardHistory {
         }
     }
     private func changed() {
+        if !storagePending { diagnosticReason = .historyChanged }
         if persistent {
             if case .idle = storageIntent { storageIntent = .save }
             retryStorage()
@@ -253,12 +275,12 @@ public final class ClipboardHistory {
         onChange()
     }
     private func finishArchiveDeletion() throws {
-        try archive.clear()
+        try clearArchive()
         // Clear permits new post-Clear captures; Disable sets persistent=false
         // first and must never rewrite memory to disk during deletion recovery.
         storageIntent = persistent && !entries.isEmpty ? .save : .idle
         if case .save = storageIntent {
-            try archive.save(entries)
+            try saveArchive(entries)
             storageIntent = .idle
         }
     }
@@ -268,11 +290,11 @@ public final class ClipboardHistory {
         case .delete: try finishArchiveDeletion()
         case .startup(let days): try configurePersistence(true, ageDays: days, load: true)
         case .rollback(let original):
-            if original.isEmpty { try archive.clear() }
-            else { try archive.save(original) }
+            if original.isEmpty { try clearArchive() }
+            else { try saveArchive(original) }
             storageIntent = .idle
         case .save:
-            try archive.save(entries)
+            try saveArchive(entries)
             storageIntent = .idle
         }
     }
@@ -280,4 +302,33 @@ public final class ClipboardHistory {
         do { try reconcileStorage() } catch { onError() }
         onChange()
     }
+    private func storageDiagnostic<T>(_ action: ClipboardStorageDiagnostic.Action, count: Int? = nil,
+                                      resultCount: (T) -> Int? = { _ in nil },
+                                      work: () throws -> T) throws -> T {
+        let started = monotonic()
+        do {
+            let result = try work()
+            onStorageDiagnostic(ClipboardStorageDiagnostic(action: action, reason: diagnosticReason, succeeded: true,
+                                entryCount: resultCount(result) ?? count, durationMS: max(0, monotonic() - started) * 1000,
+                                failure: .none, errorCode: nil))
+            return result
+        } catch {
+            let failure: ClipboardStorageDiagnostic.Failure
+            if error is DecodingError { failure = .decoding }
+            else if error is ClipboardArchive.ArchiveError { failure = .oversized }
+            else if (error as NSError).domain == NSCocoaErrorDomain { failure = .io }
+            else { failure = .other }
+            onStorageDiagnostic(ClipboardStorageDiagnostic(action: action, reason: diagnosticReason, succeeded: false,
+                                entryCount: count, durationMS: max(0, monotonic() - started) * 1000,
+                                failure: failure, errorCode: (error as NSError).code))
+            throw error
+        }
+    }
+    private func loadArchive() throws -> [ClipboardEntry] {
+        try storageDiagnostic(.load, resultCount: { $0.count }) { try archive.load() }
+    }
+    private func saveArchive(_ entries: [ClipboardEntry]) throws {
+        try storageDiagnostic(.save, count: entries.count) { try archive.save(entries) }
+    }
+    private func clearArchive() throws { try storageDiagnostic(.clear) { try archive.clear() } }
 }
