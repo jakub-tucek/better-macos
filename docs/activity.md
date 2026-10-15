@@ -210,3 +210,63 @@ documentation commit is evidence only, not a claim of a rebuilt artifact at its
 own revision. **Independent follow-up review remains mandatory; the correction is
 not yet independently CLEAN.** Native visual/keyboard/VoiceOver and hardware
 acceptance gaps remain open.
+
+## Main integration · 2026-10-15
+
+Final source through `a51eb41` was supplied independently reviewed **CLEAN**, including
+the reproduced burst-insertion fix and its actual row-ID/relative-offset assertions.
+All six unique commits integrated in order on clean main `778f078`, without conflicts:
+
+| Reviewed source | Main commit |
+| --- | --- |
+| `7c61502` — journal, quiet UI and owner outcomes | `1b91095` |
+| `f3f5537` — observer lifetime and expiry reconciliation | `4e731b1` |
+| `0a7be84` — retry scoping and Clear generation | `6a187d9` |
+| `c4adc00` — historical frozen evidence | `c8f85c5` |
+| `182767b` — synchronous native anchor correction | `3d00ee8` |
+| `a51eb41` — reproduced defect and corrected evidence | `c76acbf` |
+
+At **`c76acbf0a064a37719810455af7e33dfdb385b50`**, one integrated full
+`DEVELOPER_DIR=/Library/Developer/CommandLineTools bash test.sh` run passed:
+
+- **4,596 legacy checks, including 27 native Activity scrolling assertions**. The
+  27 are already inside 4,596, not an additional suite. Owner outcomes, session-only
+  300-entry bounds, lifecycle/release, Clear generation, privacy and native window
+  reuse remain covered.
+- **81 separate diagnostics regressions** and the production safety no-flush/no-sync
+  guard; **10 Swift Testing policy tests in three suites**; **13 mocked installer
+  scenarios**, compiler/build fixtures and real/relocated-bundle checks.
+- Strict configured-certificate signature, exact complete notices, source/built
+  plist lint and arm64/macOS 15+/SDK 27 metadata. The bundle embeds that exact tested
+  source revision, version `0.4`, build `4`. Compiled startup identity and asynchronous
+  diagnostic metadata semantics remain separate and unchanged.
+
+Log: `build/activity-integration-clt.log`; it records HEAD, scoped CLT compiler path,
+Apple Swift 6.4 / SDK 27.0 paths/versions, arm64 and bundle metadata, with `SDKROOT`
+explicitly unset. Unmodified lint/format passed across **59 files**; offline tooling
+and CI whitespace fixtures passed. Logs: `build/activity-integration-{lint,format,tools,ci}.log`.
+Earlier failures, review concerns and revision-bound counts above are preserved;
+the final independent review, not the earlier passing offset-only test, closes the
+reported code-review concern.
+
+Activity remains observational, typed and memory-only: no plugin registration,
+diagnostic subscription, file-backed journal, archive deletion change or new quit
+veto. Existing Bluetooth UUID-owned error completion, typed inline login service,
+bounded descriptor-relative diagnostics, source layout, CI and host admission/
+restoration responsibilities were preserved. A successful journal row is not proof
+of physical hardware behavior.
+
+The app was **not relaunched, quit, launched or installed** for this integration.
+The parent's previously identified loaded revision was `fc30bf6`; compiling this
+new bundle does not update that running image, and no new process-identity probe
+was made. Prior relaunch approval is not reused. There were no live log reads,
+preferences/devices/permissions/registration actions, version changes, push/tag or
+publication. Live visual/keyboard/VoiceOver, native/hardware and hosted-CI acceptance
+remain open. This evidence-only commit does not claim an artifact rebuilt at its
+own revision; no rebuild is needed merely to record these docs-only results.
+
+All **15 shell inputs**, **248 local links and 42 fragments across 32 tracked
+Markdown documents**, compiler-input/scope assertions and `git diff --check` passed.
+Production and test files exactly match the reviewed Activity branch; direct
+comparisons retain the prior Bluetooth UUID completion and inline login bindings,
+unchanged diagnostics backend, Clipboard policy and CI inputs.

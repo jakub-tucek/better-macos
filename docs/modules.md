@@ -189,6 +189,7 @@ claim that the baseline's release blockers are fixed.
 | [BuiltinFeatures.swift](../Sources/App/BuiltinFeatures.swift) | Inert feature/widget metadata and Settings order; no owner/view factories. |
 | [BuiltinChoicePreparations.swift](../Sources/App/BuiltinChoicePreparations.swift) | Typed pre-commit choice preparation for Keep awake, Clipboard and shared Displays; host retains admission/commit/reconciliation. |
 | [HostTransactions.swift](../Sources/Core/HostTransactions.swift) | Action admission and ordered quit preparation/drain/cancel/approval; feature owners still perform cleanup. See [glossary](glossary.md). |
+| [ActivityJournal.swift](../Sources/Core/ActivityJournal.swift), [ActivityView.swift](../Sources/SharedUI/ActivityView.swift) | Typed, main-thread, session-only outcome history and separate native viewport; observational, not a feature/plugin or source of admission/quit authority. |
 | [SystemControlLifecycle.swift](../Sources/Core/SystemControlLifecycle.swift) | Shared input/recovery readiness state and cursor reconciliation, not a general plugin lifecycle. |
 | [DisplayRefreshGate.swift](../Sources/Features/Displays/DisplayRefreshGate.swift) | Coalesced display refresh/settling before input or window work resumes. |
 | [SafetyWatchdog.swift](../Sources/App/SafetyWatchdog.swift), [main.swift](../Sources/App/main.swift) | Independent watchdog and helper/CLI entry paths in the same built executable. |
@@ -197,6 +198,14 @@ claim that the baseline's release blockers are fixed.
 Storage has feature owners: `ModuleSettings` stores enable choices, `UISettingsStore`
 in `UISurfaces.swift` stores UI/setup state, and feature files own their policy data
 and recovery journals. Clipboard archives are not part of widget/setup drafts.
+
+The host injects one in-memory Activity journal into Displays, window layouts,
+Keep awake and Bluetooth outcome paths. **General → Show activity…** opens one
+reusable window; no automatic opening, extra sidebar or notifications. The latest
+300 entries include unfinished work; Clear affects only Activity and late results
+cannot restore cleared/evicted rows. It neither reads diagnostic logs nor deletes
+archives/recovery records. Native row-ID/relative-offset anchoring preserves the
+reader through bursts and disclosure/width changes. See [scope, privacy and evidence](activity.md).
 
 ## Why strafe is in `Vendor/`
 

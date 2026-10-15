@@ -14,6 +14,7 @@
   revision-bound evidence. Preserve historical failures and hardware acceptance gaps.
 - For host coordination terminology, use [the glossary](docs/glossary.md).
 - For diagnostic events, privacy and authorized local reproduction, read [diagnostics](docs/diagnostics.md).
+- For Activity outcomes, Clear semantics or native row anchoring, read [session activity](docs/activity.md).
 
 ## Current commands and layout
 
