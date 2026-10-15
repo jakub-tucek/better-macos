@@ -9,6 +9,22 @@ No upstream license text is rewritten. `Tests/packaging.sh` compares all three
 resources byte-for-byte with the repository sources and verifies the actual
 built bundle with `codesign --verify --strict`.
 
+Each build assembles a fresh `build/.bundle.XXXXXX/new.app`, with cleanup traps
+restricted to that invocation's staging directory. Only a strictly verified
+bundle replaces `build/Fix macOS.app`; compile/sign/verification failures leave
+the previous output untouched, and a failed publication restores it. Failed
+rollback retains the old bundle in staging and prints its location. No app is
+launched or quit. Source-install metadata records the repository root, not the
+staging path. The three C objects are rebuilt and linked explicitly, excluding
+unrelated stale object files.
+
+`Tests/build.sh` exercises the real build script with injected compiler/signing
+tools in a disposable source fixture. It verifies metadata, stale-resource
+removal, exact notices, rejection of stale link inputs, staging cleanup, and
+preservation of the previous bundle on compile, sign, verify, and publication
+failures. A stale test resource seeded in this worktree's real build output was
+also absent after the full real-build test run.
+
 ## Installer signing selection
 
 - A nonempty `MAC_UTILS_SIGNING_IDENTITY` is saved in the managed source checkout's
@@ -36,6 +52,8 @@ selection/persistence/no-op, changed certificates, external configuration change
 unavailable and ambiguous certificates, wrong build signer, fingerprint selection,
 and explicit ad-hoc reset, alongside the existing rollback tests. It never edits
 the real repository signing configuration or quits/opens the live app.
+The fingerprint case includes lowercase alphabetic hex input resolved against
+an uppercase certificate fingerprint, followed by a saved-configuration no-op.
 
 ## Scope and evidence
 
@@ -50,3 +68,7 @@ the real repository signing configuration or quits/opens the live app.
   isolated Swift checks, and mocked installer cases pass. This is not evidence
   of Developer ID signing, notarization, or hardware qualification.
 - `git diff --check` passes.
+- Build revision metadata is the checkout's `HEAD` when `build.sh` runs, not a
+  promised release SHA. Rebuild after the final release/integration commit in
+  the parent checkout and verify `FixMacOSRevision` against that commit before
+  distributing; a pre-commit validation artifact is not the final release.

@@ -45,6 +45,7 @@ case "${0##*/}" in
         [[ "${MOCK_CERT_UNAVAILABLE:-0}" != 1 ]] || exit 0
         echo '  1) 1111111111111111111111111111111111111111 "Fixture A"'
         echo '  2) 2222222222222222222222222222222222222222 "Fixture B"'
+        echo '  4) ABCDEF0123456789ABCDEF0123456789ABCDEF01 "Fixture Hex"'
         if [[ "${MOCK_CERT_AMBIGUOUS:-0}" == 1 ]]; then
             echo '  3) 3333333333333333333333333333333333333333 "Fixture A"'
         fi ;;
@@ -78,6 +79,7 @@ mkdir -p 'build/Fix macOS.app/Contents'
 case "${MAC_UTILS_SIGNING_IDENTITY:--}" in
     'Fixture A'|1111111111111111111111111111111111111111) signature=1111111111111111111111111111111111111111 ;;
     'Fixture B'|2222222222222222222222222222222222222222) signature=2222222222222222222222222222222222222222 ;;
+    abcdef0123456789abcdef0123456789abcdef01) signature=ABCDEF0123456789ABCDEF0123456789ABCDEF01 ;;
     -) signature=- ;;
     *) exit 18 ;;
 esac
@@ -193,6 +195,15 @@ unset MOCK_CERT_AMBIGUOUS
 export MAC_UTILS_SIGNING_IDENTITY=2222222222222222222222222222222222222222
 bash install.sh --no-open > "$ROOT/output" 2>&1
 [[ "$(signature)" == 2222222222222222222222222222222222222222 ]]
+export MAC_UTILS_SIGNING_IDENTITY=abcdef0123456789abcdef0123456789abcdef01
+bash install.sh --no-open > "$ROOT/output" 2>&1
+[[ "$(signature)" == ABCDEF0123456789ABCDEF0123456789ABCDEF01 ]]
+[[ "$(cat "$ROOT/signing-identity")" == "$MAC_UTILS_SIGNING_IDENTITY" ]]
+before="$(builds)"
+unset MAC_UTILS_SIGNING_IDENTITY
+bash install.sh --no-open > "$ROOT/output" 2>&1
+[[ "$(builds)" == "$before" ]]
+echo 'PASS: lowercase alphabetic fingerprint resolves uppercase certificate hash and then skips rebuild'
 export MAC_UTILS_SIGNING_IDENTITY=-
 bash install.sh --no-open > "$ROOT/output" 2>&1
 [[ "$(signature)" == - && "$(cat "$ROOT/signing-identity")" == - ]]

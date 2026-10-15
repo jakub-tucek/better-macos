@@ -1,10 +1,25 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")"
-APP="$PWD/build/Fix macOS.app"
+OUTPUT="$PWD/build/Fix macOS.app"
 # Local repository configuration selects a repeatable signing identity across builds.
 # An unavailable configured certificate must fail signing, never fall back silently.
 SIGNING_IDENTITY="${MAC_UTILS_SIGNING_IDENTITY:-$(git config --local --get macutils.signingIdentity || true)}"
+mkdir -p build
+STAGE="$(mktemp -d "$PWD/build/.bundle.XXXXXX")"
+cleanup() {
+    local result=$?
+    if [[ -d "$STAGE/previous.app" && ! -e "$OUTPUT" ]]; then
+        mv "$STAGE/previous.app" "$OUTPUT" || echo "Previous build remains at $STAGE/previous.app" >&2
+    fi
+    # Only remove this invocation's staging directory; retain a failed rollback.
+    if [[ ! -d "$STAGE/previous.app" || -d "$OUTPUT" ]]; then rm -rf "$STAGE"; fi
+    exit "$result"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+APP="$STAGE/new.app"
 mkdir -p "$APP/Contents/MacOS"
 mkdir -p "$APP/Contents/Resources/Licenses"
 cp LICENSE "$APP/Contents/Resources/Licenses/Fix-macOS-MIT.txt"
@@ -29,12 +44,14 @@ xcrun swiftc -swift-version 5 -warnings-as-errors -O -target arm64-apple-macos15
     -I Vendor/strafe/CStrafe/include -I MouseHID ClipboardHistory.swift ClipboardModule.swift WindowPositions.swift WindowPositionsView.swift \
     AppModules.swift HostTransactions.swift DisplayController.swift DisplayTopology.swift DisplayArrangementEditor.swift DisplayRefreshGate.swift SafetyWatchdog.swift Dashboard.swift AppDelegate.swift CommandRunner.swift BluetoothModule.swift \
     MouseSystemBackend.swift MouseModule.swift KeepAwakeModule.swift QuitGuard.swift MenuBarModule.swift SourceUpdates.swift SystemControlLifecycle.swift ScreenEdges.swift AnimationPreferences.swift SpacesModule.swift Vendor/strafe/Swift/*.swift main.swift \
-    UISurfaces.swift SetupWizard.swift AudioModule.swift build/objects/*.o -framework Carbon -framework CoreAudio -framework AppKit -framework ServiceManagement \
+    UISurfaces.swift SetupWizard.swift AudioModule.swift build/objects/CStrafe.o build/objects/IOHIDPayload.o build/objects/MouseHID.o -framework Carbon -framework CoreAudio -framework AppKit -framework ServiceManagement \
     -framework SwiftUI -framework CoreBluetooth -framework ApplicationServices -framework CoreGraphics -framework CoreFoundation -framework IOKit \
     -o "$APP/Contents/MacOS/fix-mac-os"
 codesign --force --sign "${SIGNING_IDENTITY:--}" "$APP"
 codesign --verify --strict "$APP"
+if [[ -e "$OUTPUT" ]]; then mv "$OUTPUT" "$STAGE/previous.app"; fi
+mv "$APP" "$OUTPUT"
 if [[ -z "$SIGNING_IDENTITY" || "$SIGNING_IDENTITY" == "-" ]]; then
     echo "Ad-hoc signing: Accessibility and Bluetooth access may need granting again after rebuilds."
 fi
-echo "Built: $APP"
+echo "Built: $OUTPUT"
