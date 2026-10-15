@@ -1,4 +1,13 @@
-# UI/UX redesign plan
+# UI/UX implementation record
+
+Revision scope: this record retains the agreed design and delivery requirements.
+B–D are implemented at the `f359f42` documentation baseline; E native acceptance is
+partial. Read imperative/proposed wording below as the original requirements, not
+unimplemented feature claims. Later compact-popup and clipboard changes supersede
+older dimensions and panel descriptions. See the
+[current acceptance matrix](VALIDATION.md#current-acceptance-matrix--f359f42--2026-10-15),
+[compact UI evidence](COMPACT-UI-VALIDATION.md), and
+[clipboard UI evidence](CLIPBOARD-UI-VALIDATION.md).
 
 Status: production replacement implemented for B–D; parent-session independent review
 reports CLEAN at `7e3974cd`. Native acceptance E is partial/open: signed rebuild,
@@ -209,17 +218,17 @@ in isolated worktrees after the shared navigation/state decisions settle.
   editor, grouped Settings, and two wizard steps. Include long device names,
   permission denial, no selected widgets, and recovery countdown examples.
   **Accept:** user approves hierarchy and density before production replacement.
-- [x] **B · Full Settings window (implemented; independent acceptance pending).** Move configuration out of the popover; establish
+- [x] **B · Full Settings window (implemented; live acceptance partial).** Move configuration out of the popover; establish
   grouped navigation, gear entry, and direct links. Keep current quick controls
   working during this increment.
   **Accept:** every existing setting/recovery action has a reachable destination;
   repeated opening uses one window; current feature settings survive migration.
-- [x] **C · Direct quick-action widgets (implemented; independent acceptance pending).** Replace the card launcher with a useful
+- [x] **C · Direct quick-action widgets (implemented; live acceptance partial).** Replace the card launcher with a useful
   default widget stack, keeping full controls in Settings. Add persistent show/hide,
   reorder, Compact/Expanded, Edit drafts, Add gallery, and empty state.
   **Accept:** daily actions take no page-navigation step; layout edits survive
   relaunch and do not mutate feature configuration; safety alerts cannot be removed.
-- [x] **D · Guided setup (implemented; independent acceptance pending).** Add feature selection/descriptions, selected-only setup,
+- [x] **D · Guided setup (implemented; live acceptance partial).** Add feature selection/descriptions, selected-only setup,
   contextual permissions, widget selection, and per-feature Finish results.
   **Accept:** first-run Skip, repeat setup, Back/Cancel, interrupted drafts, partial
   failure, and denied permissions behave as specified without hidden activation.

@@ -1,4 +1,54 @@
-# Upstream validation — 2026-10-14
+# Validation and release acceptance
+
+## Current acceptance matrix · `f359f42` · 2026-10-15
+
+The baseline report at `f359f42` records **3,997 isolated checks and seven installer
+checks**, including native compilation/signature checks. See the
+[countdown integration record](AWAKE-VALIDATION.md#shared-readable-countdown-2026-10-15).
+This docs-only audit did not rerun the suite or launch the app. The documented
+environment includes Apple Silicon/macOS **26.6.2 (25G83)**; macOS 15 is the deployment
+target, not evidence of a full supported-OS acceptance sweep.
+
+| Capability | Implementation / isolated evidence | Native evidence recorded | Live acceptance gap | Evidence |
+| --- | --- | --- | --- | --- |
+| Monitor switching, arrangement, recovery | Implemented; identity/last-display safeguards, helper/watchdog and lifecycle tests | Disposable helper/watchdog processes | Physical disable/restore, crash recovery, wake/reconnect; cannot guarantee WindowServer/driver recovery | [Monitor management](#monitor-management) |
+| Desktop switching / matched edges | Implemented; vendored engine checks, injected phases and geometry | Compilation and source/API inspection | Physical gestures/crossings, latency, permission transitions | [Space engine](#space-animation--strafe), [edges](#matched-screen-edges) |
+| Named window layouts and automation | Implemented; matching, bounds, settling, exclusions | Native AX boundary compiles | Multi-app restore, reconnect/wake cycles, unsupported windows; current desktop only | [Window validation](WINDOW-POSITIONS-VALIDATION.md) |
+| Audio / Bluetooth | Implemented; injected discovery, routing/protection/retry and shutdown tests | Read-only CoreAudio discovery | Actual input/output writes, headset/USB/monitor cycles, Bluetooth authorization | [Audio](#audio-2a--2b) |
+| Keep awake | Timed and app reasons implemented; injected power/lifecycle tests | Mounted native duration/focus/action harness | Real assertions, physical sleep/lid-close, live interactions | [Awake validation](AWAKE-VALIDATION.md) |
+| Clipboard capture / retention | Implemented; fake pasteboard, temporary archive and failure/retry tests | Native panel compilation and injected presentation tests | Live global shortcut, destination focus, VoiceOver, large-history responsiveness | [Storage evidence](#clipboard-5a--5b), [panel evidence](CLIPBOARD-UI-VALIDATION.md) |
+| Mouse 4A | Implemented; mouse-class runtime backend and injected rollback tests | Read-only IOKit capability reads | Physical effectiveness, trackpad invariance, reconnect/restoration | [4A evidence](#real-4a-backend-follow-up) |
+| Mouse 4B | Unsupported; no production wheel tap | No qualified attribution backend | Reliable wheel/trackpad source attribution before implementation | [Qualification gates](#mouse-controls-4a4b-qualification-gates) |
+| Hold to quit | Implemented; countdown/input state-machine tests | Native HUD compiles | Layouts, secure input, full-screen placement, app save prompts | [Hold to quit](#hold-to-quit) |
+| Animation / menu-bar controls | Implemented; preference restoration/recovery tests | Isolated live AppKit divider probe | App-specific motion, spacing effect, user icon arrangements/notch limits | [Lifecycle](#lifecycle-regression-coverage), [menu bar](#menu-bar-controls) |
+| Widgets, Settings, guided setup | B–D implemented; injected production action/transaction tests | Fixtures, native owned-window/focus harnesses; signed rebuild/relaunch and Settings metadata recorded | E partial: live keyboard/VoiceOver, focus, long labels, appearance and hardware actions | [Replacement](UI-REPLACEMENT-VALIDATION.md), [compact popup](COMPACT-UI-VALIDATION.md) |
+| Quit coordination | Implemented; admission/drain/cancel/approval regressions | Injected host/native termination seams | Live recovery/quit with active hardware operations | [Host validation](HOST-TRANSACTIONS-VALIDATION.md), [terminology](GLOSSARY.md) |
+| Source install / updates | Implemented; seven mocked installer/source-update checks | Build/signature verification | Final merged packaging/re-signing and notice inspection; source install follows latest main, not an exact offered SHA | [Installer](install.sh), [updater](SourceUpdates.swift) |
+
+### Release integration still open
+
+At this audit baseline, the parent session tracks display-recovery stale-count and
+setup awake-assertion defects as release blockers. Separate core/packaging/UI work
+is pending integration. Do not infer a fix from this document: record final merged
+revisions, regression evidence, signing-identity rebuild behavior, and bundled-notice
+inspection before release. See [unreleased notes](RELEASE-NOTES-1.0-DRAFT.md).
+
+## How to read the historical records
+
+The sections below retain evidence from earlier increments. Counts, “latest/final”
+labels, review status, and statements about then-current UI/backend behavior belong
+to those revisions, not the current tree. Do not replace historical counts with the
+baseline count above. The initial Mouse foundation predates the implemented 4A backend.
+
+The old card/navbar/panel descriptions in
+[UI consolidation](UI-CONSOLIDATION-VALIDATION.md) predate the widget popup and full
+Settings replacement. Use [replacement validation](UI-REPLACEMENT-VALIDATION.md),
+[compact UI validation](COMPACT-UI-VALIDATION.md), and
+[clipboard UI validation](CLIPBOARD-UI-VALIDATION.md) for later UI evidence. Those
+records also retain revision-bound results; a CLEAN code review does not close live
+acceptance. Existing storage-intent cases and [glossary](GLOSSARY.md) remain relevant.
+
+## Historical upstream validation · 2026-10-14
 
 ## Space animation / strafe
 

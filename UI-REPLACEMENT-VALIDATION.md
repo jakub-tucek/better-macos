@@ -1,5 +1,11 @@
 # UI replacement validation
 
+> Revision-bound evidence, not a fresh release acceptance run. Later compact-popup
+> and clipboard-panel changes supersede older sizing/interaction descriptions; see
+> [compact UI](COMPACT-UI-VALIDATION.md), [clipboard UI](CLIPBOARD-UI-VALIDATION.md),
+> and the [current acceptance matrix](VALIDATION.md). Preserve historical counts and
+> review chronology; native acceptance remains partial.
+
 ## Production scope
 
 Implemented B–D from [UI-UX-PLAN.md](UI-UX-PLAN.md). The user waived the preview
@@ -52,8 +58,9 @@ recovery fixtures were inspected. New coverage includes:
 
 ## Independent review fixes
 
-The first independent review blocked the replacement. These fixes await follow-up
-review; neither implementation checkboxes nor test counts imply native acceptance.
+The first independent review blocked the replacement. The list below records its
+fixes; the subsequent parent review reported CLEAN at `7e3974cd` as noted above.
+Neither implementation checkboxes nor test counts imply native acceptance.
 
 1. **Activation ordering:** actual host Finish uses fake Audio, awake, and menu-spacing
    backends with obsolete saved policies. Tests assert zero intermediate route writes,
