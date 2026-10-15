@@ -168,3 +168,45 @@ There are no production dispatch delays, timers or eventual-correction guesses.
 
 This correction still requires independent follow-up review before integration;
 the earlier review concern is not superseded merely by implementer test results.
+
+### Corrected scrolling: frozen implementation evidence · 2026-10-15
+
+Correction **`182767b1e41044c02800fe36c00fa9546ee43f00`**, based on `c4adc00`,
+passed one complete standalone-CLT run of
+`DEVELOPER_DIR=/Library/Developer/CommandLineTools bash test.sh`:
+
+- **4,596 legacy isolated checks**, including **27 native scrolling assertions**.
+  Those 27 are part of the legacy total, not an additional suite to add to it.
+- **81 separate diagnostic regressions** and the unchanged production safety
+  source guard, **10 policy tests in 3 suites**, **13 mocked installer scenarios**,
+  compiler/build fixtures and real/relocated bundle checks.
+- Built `FixMacOSRevision` exactly matches the correction above. Subsequent
+  read-only strict signature verification passed. Version/build and deployment
+  target are unchanged; the environment remains CLT 27 / Swift 6.4 / SDK 27.0.
+
+Log: `activity-182767b-test.log` (ignored, local to the implementation worktree).
+Pinned lint and format passed across **59 Swift files**; the production journal,
+`StoredState` and native Activity view type-checked with warnings-as-errors in
+Swift 5 language mode for arm64/macOS 15. Logs:
+`activity-182767b-{lint,format,typecheck}.log`. Shell syntax, whitespace and CI
+whitespace fixtures passed (`activity-182767b-ci.log`).
+
+The same 27 native assertions also pass through the focused, reproducible command:
+
+```sh
+DEVELOPER_DIR=/Library/Developer/CommandLineTools bash Tests/activity-scroll-regressions.sh
+```
+
+Its log is `activity-182767b-scroll.log`. This compiles the production viewport and
+the same `Tests/ActivityScrollTests.swift` used by the full suite, then creates a
+hidden fixture window. It checks actual visible row IDs and relative offsets,
+including an expanded detail that demonstrably changes height on width changes,
+and explicitly defined clamping when a visible row collapses or is evicted. It
+does not rely on the old offset-only test or a delayed production scroll reset.
+
+No reviewer worktree was edited. No main merge, production app launch/quit/install,
+live preferences/device/permission actions, push or tag occurred. This later
+documentation commit is evidence only, not a claim of a rebuilt artifact at its
+own revision. **Independent follow-up review remains mandatory; the correction is
+not yet independently CLEAN.** Native visual/keyboard/VoiceOver and hardware
+acceptance gaps remain open.
