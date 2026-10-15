@@ -8,6 +8,7 @@ to the current documentation. Native/hardware acceptance remains open.
 
 - [CLT/Xcode compatibility and combined SwiftPM integration](clt-compatibility.md)
 - [Built-in registration integration and limits](../architecture/builtin-registration.md#main-integration--2026-10-15)
+- [Mechanical source organization and byte-preservation checks](source-organization.md)
 - [Core recovery regressions](release-core.md) · [Host transactions](host-transactions.md)
 - [Keep awake](awake.md) · [Window positions](window-positions.md)
 - [Clipboard UI](clipboard-ui.md) · [Compact UI](compact-ui.md)
