@@ -28,6 +28,17 @@ current capabilities or committed release work.
 
 ## Development gates
 
+### Proposed organization work · not implemented
+
+Consider an explicit built-in module registration interface and a feature-oriented
+source layout after the release work settles. First preserve shared Audio/display
+ownership, action admission, recovery and asynchronous cleanup semantics. A registry
+would not itself provide dynamic plugins. There is no approved implementation or
+release commitment for either change; [MODULES.md](MODULES.md) maps the current flat
+layout. This documentation change does not move files or alter build inputs.
+
+### Existing implementation gates
+
 - Retain independent module lifecycles and saved settings; release owned timers,
   observers, event taps, and assertions when disabling a feature.
 - Keep one owner for shared OS controls, including audio routing and display recovery.
