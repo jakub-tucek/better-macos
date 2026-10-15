@@ -97,6 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         super.init()
          configureActions()
          windowPositions?.acceptsActions = { [weak self] in self?.transactions.acceptsActions == true }
+         clipboard?.acceptsActions = { [weak self] in self?.transactions.acceptsActions == true }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -483,6 +484,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if clipboard == nil {
                 let module = ClipboardModule(defaults: preferences)
                 clipboard = module
+                module.acceptsActions = { [weak self] in self?.transactions.acceptsActions == true }
                 module.onChange = { [weak self] in self?.refreshClipboard() }
                 module.onError = { [weak self] in self?.model.errorMessage = $0 }
                 module.start()
