@@ -57,6 +57,39 @@ else
 fi
 
 REVISION="$(git -C "$SOURCE" rev-parse HEAD)"
+# Save an explicit selection even when the revision is unchanged. A changed
+# selection always rebuilds; an unchanged selection must also match the bundle.
+CONFIGURED_IDENTITY="$(git -C "$SOURCE" config --local --get macutils.signingIdentity || true)"
+IDENTITY_CHANGED=0
+if [[ -n "${MAC_UTILS_SIGNING_IDENTITY:-}" ]]; then
+    if [[ "$MAC_UTILS_SIGNING_IDENTITY" != "$CONFIGURED_IDENTITY" ]]; then IDENTITY_CHANGED=1; fi
+    git -C "$SOURCE" config --local macutils.signingIdentity "$MAC_UTILS_SIGNING_IDENTITY"
+fi
+SIGNING_IDENTITY="${MAC_UTILS_SIGNING_IDENTITY:-${CONFIGURED_IDENTITY:--}}"
+CERTIFICATE_HASH=""
+if [[ "$SIGNING_IDENTITY" != - ]]; then
+    IDENTITIES="$(security find-identity -v -p codesigning)" || fail "Cannot inspect signing certificates."
+    IDENTITY_PATTERN='^[[:space:]]*[0-9]+\)[[:space:]]+([[:xdigit:]]{40})[[:space:]]+"(.*)"$'
+    while IFS= read -r line; do
+        if [[ "$line" =~ $IDENTITY_PATTERN ]]; then
+            hash="${BASH_REMATCH[1]}"
+            name="${BASH_REMATCH[2]}"
+            if [[ "$SIGNING_IDENTITY" == "$name" || "$(printf '%s' "$SIGNING_IDENTITY" | tr '[:lower:]' '[:upper:]')" == "$hash" ]]; then
+                [[ -z "$CERTIFICATE_HASH" || "$CERTIFICATE_HASH" == "$hash" ]] || fail "Signing identity is ambiguous; select its full SHA-1 fingerprint."
+                CERTIFICATE_HASH="$hash"
+            fi
+        fi
+    done <<< "$IDENTITIES"
+    [[ -n "$CERTIFICATE_HASH" ]] || fail "Selected signing certificate is unavailable: $SIGNING_IDENTITY (no ad-hoc fallback)."
+fi
+signature_matches() {
+    codesign --verify --strict "$1" 2>/dev/null || return 1
+    if [[ "$SIGNING_IDENTITY" == - ]]; then
+        codesign -dv "$1" 2>&1 | grep -qx 'Signature=adhoc'
+    else
+        codesign --verify --strict -R="certificate leaf = H\"$CERTIFICATE_HASH\"" "$1" 2>/dev/null
+    fi
+}
 PLIST="$APP/Contents/Info.plist"
 if [[ -e "$APP" ]]; then
     [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST" 2>/dev/null || true)" == io.github.jakub-tucek.mac-utils ]] || fail "Destination contains a different app: $APP"
@@ -64,21 +97,18 @@ fi
 INSTALLED="$(/usr/libexec/PlistBuddy -c 'Print :FixMacOSRevision' "$PLIST" 2>/dev/null || true)"
 MANAGED="$(/usr/libexec/PlistBuddy -c 'Print :FixMacOSSourceInstall' "$PLIST" 2>/dev/null || true)"
 INSTALLED_SOURCE="$(/usr/libexec/PlistBuddy -c 'Print :FixMacOSSourceDirectory' "$PLIST" 2>/dev/null || true)"
-if [[ "$FORCE" == 0 && "$INSTALLED" == "$REVISION" && "$MANAGED" == true && "$INSTALLED_SOURCE" == "$SOURCE" ]] && codesign --verify --strict "$APP" 2>/dev/null; then
+if [[ "$FORCE" == 0 && "$IDENTITY_CHANGED" == 0 && "$INSTALLED" == "$REVISION" && "$MANAGED" == true && "$INSTALLED_SOURCE" == "$SOURCE" ]] && signature_matches "$APP"; then
     echo "Already up to date (${REVISION:0:7}). Use --force to rebuild."
     if [[ "$OPEN" == 1 ]]; then open "$APP"; fi
     exit 0
 fi
 
 brew install blueutil switchaudio-osx
-if [[ -n "${MAC_UTILS_SIGNING_IDENTITY:-}" ]]; then
-    git -C "$SOURCE" config --local macutils.signingIdentity "$MAC_UTILS_SIGNING_IDENTITY"
-fi
 echo "Building Fix macOS from ${REVISION:0:7}…"
-FIX_MACOS_SOURCE_INSTALL=1 FIX_MACOS_INSTALL_DESTINATION="$APP" bash "$SOURCE/build.sh"
+MAC_UTILS_SIGNING_IDENTITY="$SIGNING_IDENTITY" FIX_MACOS_SOURCE_INSTALL=1 FIX_MACOS_INSTALL_DESTINATION="$APP" bash "$SOURCE/build.sh"
 STAGE="$(mktemp -d "$APP_DIR/.fix-macos-install.XXXXXX")"
 ditto "$SOURCE/build/Fix macOS.app" "$STAGE/new.app"
-codesign --verify --strict "$STAGE/new.app"
+signature_matches "$STAGE/new.app" || fail "Built app does not match the selected signing identity."
 
 # Quit via the app's normal recovery/drain path. Never kill a busy GUI.
 osascript <<'APPLESCRIPT'
