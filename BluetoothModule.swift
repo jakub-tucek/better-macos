@@ -212,6 +212,18 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     var available: Bool { backend != nil }
+    var configurationOutcome: FeatureSetupOutcome {
+        if permissionRequired { return .pendingAccess("Bluetooth access required; grant access and retry in Sound & connections.") }
+        if !available { return .pendingHardware("Bluetooth backend is unavailable.") }
+        if let lastError { return .failed(lastError) }
+        if radioPoweredOn == false { return .pendingHardware("Bluetooth radio is off; turn it on in Settings.") }
+        if busy || lastObservation == nil { return .pendingHardware("Device discovery/connection is in progress; see Sound & connections for its result.") }
+        if autoEnabled && legacyServicePresent { return .pendingHardware("The existing Bluetooth service owns reconnection; choose explicit takeover in Settings.") }
+        if autoEnabled && autoAddresses.contains(where: { address in !devices.contains { $0.address == address && $0.connected } }) {
+            return .pendingHardware(reconnectSummary)
+        }
+        return .applied(reconnectSummary)
+    }
     func audioRequestIsCurrent(name: String) -> Bool {
         !stopped && autoEnabled && switchAudioOutput && !suspendAutomaticReconnection && !legacyServicePresent &&
             cycleCancellation?.isCanceled == false && devices.contains {

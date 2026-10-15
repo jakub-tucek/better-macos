@@ -1,5 +1,21 @@
 import Foundation
 
+enum FeatureSetupOutcome: Equatable {
+    case applied(String)
+    case pendingAccess(String)
+    case pendingHardware(String)
+    case failed(String)
+
+    var description: String {
+        switch self {
+        case .applied(let detail): return "applied. \(detail)"
+        case .pendingAccess(let detail): return "pending access. \(detail)"
+        case .pendingHardware(let detail): return "pending hardware/readiness. \(detail)"
+        case .failed(let detail): return "failed. \(detail)"
+        }
+    }
+}
+
 enum AppModule: String, CaseIterable, Identifiable {
     case monitors, arrangement, bluetooth, audio, spaces, menuBar, quitGuard, keepAwake, windows, clipboard, mouse
     var id: String { rawValue }

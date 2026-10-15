@@ -101,6 +101,23 @@ final class AudioModule {
     private(set) var devices: [AudioDevice] = []
     private(set) var routes: [AudioDirection: String] = [:]
     private(set) var status = "Automatic routing is off"
+    private var observationFailure: String?
+    private var routingFailures: [String] = []
+    var configurationOutcome: FeatureSetupOutcome {
+        if let observationFailure { return .failed(observationFailure) }
+        if !routingFailures.isEmpty { return .failed(routingFailures.joined(separator: "; ")) }
+        guard observed else { return .pendingHardware("Audio discovery has not completed.") }
+        if automatic && automaticAllowed {
+            if suspendRouting { return .pendingHardware("Routing is suspended.") }
+            for direction in AudioDirection.allCases where !overrides.contains(direction) {
+                let requested = preferences(direction) + [fallback(direction)].filter { !$0.isEmpty }
+                let available = Set(devices.filter { $0.directions.contains(direction) }.map(\.uid))
+                if !requested.isEmpty && !requested.contains(where: available.contains) { return .pendingHardware("Preferred \(direction.rawValue) devices are unavailable; choices are saved.") }
+            }
+            if !pending.isEmpty { return .pendingHardware("Preferred routing is deferred by device/protection policy.") }
+        }
+        return .applied(status)
+    }
     var onChange: (() -> Void)?
     var automaticAllowed = false {
         didSet {
@@ -185,6 +202,7 @@ final class AudioModule {
                 }
             }
             devices = updated; routes = current; observed = true
+            observationFailure = nil; routingFailures = []
             pending.formUnion(changed)
             status = automatic && automaticAllowed ? "Watching audio devices" : "Automatic routing is off"
             if automatic && automaticAllowed && !suspendRouting {
@@ -194,10 +212,11 @@ final class AudioModule {
                         if try reconcile(direction) { pending.remove(direction) }
                     } catch { failures.append("\(direction.rawValue): \(error.localizedDescription)") }
                 }
+                routingFailures = failures
                 if !failures.isEmpty { status = failures.joined(separator: "; ") }
             }
             try reconcileBluetoothRequest()
-        } catch { status = error.localizedDescription; onChange?(); return false }
+        } catch { observationFailure = error.localizedDescription; status = error.localizedDescription; onChange?(); return false }
         onChange?()
         return true
     }

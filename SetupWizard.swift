@@ -146,6 +146,7 @@ final class SetupDraft: ObservableObject {
     @Published var step: Step = .welcome
     @Published var widgets: WidgetLayout
     @Published var results: [String] = []
+    @Published var outcomes: [AppModule: FeatureSetupOutcome] = [:]
     @Published var applying = false
     @Published var discoveryStatus = ""
     @Published var windowsAutomatic: Bool

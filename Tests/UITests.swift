@@ -146,7 +146,7 @@ func runUITests() throws {
     failingDraft.controls.onClipboardPersistence(true); failingDraft.controls.onClipboardDays(4)
     archive.fail = true
     hostModel.onFinishSetup(failingDraft) { finished = $0 }
-    expect(finished.contains { $0.contains("Clipboard: needs attention") } && finished.contains { $0.contains("layout saved") }, "actual Finish reports per-feature storage failure separately from successful layout application")
+    expect(finished.contains { $0.contains("Clipboard: failed") } && finished.contains { $0.contains("layout saved") }, "actual Finish reports per-feature storage failure separately from successful layout application")
     expect(!history.recording && board.reads == 0, "failed Finish cannot accidentally capture clipboard contents")
     archive.fail = false
     history.poll()
@@ -171,6 +171,76 @@ func runUITests() throws {
     expect(scheduledBackend.moves.isEmpty, "queued quick window Restore rechecks admission before its first OS write")
     withExtendedLifetime(host) {}
     runSetupActivationOrderingTests()
+    runSetupOutcomeTests()
+}
+
+private struct SetupBluetoothRunner: CommandRunning {
+    let failure: Bool
+    func run(_ executable: String, _ arguments: [String]) throws -> String {
+        if failure { throw ToggleError(message: "Repeated Bluetooth failure") }
+        if arguments == ["--power"] { return "0" }
+        if arguments == ["--paired", "--format", "json"] { return "[]" }
+        fatalError("Setup must not write Bluetooth hardware in this fixture")
+    }
+}
+
+private func runSetupOutcomeTests() {
+    let suite = "fix-mac-os.setup-outcomes.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    for module in AppModule.allCases { ModuleSettings(defaults: defaults).set(module, enabled: false) }
+    defaults.set(true, forKey: "audio.automatic"); defaults.set(["old"], forKey: "audio.output.preferences")
+    defaults.set(["old.app": "Old app"], forKey: "keepAwake.apps")
+    defaults.set(true, forKey: "menuBar.compact")
+    let audioBackend = SetupAudioBackend(); audioBackend.fail = true
+    let power = SetupPowerBackend(); power.fail = true
+    let audio = AudioModule(backend: audioBackend, defaults: defaults)
+    let awake = KeepAwakeModule(defaults: defaults, backend: power, automaticUpdates: false, runningApps: { ["old.app": "Old app"] }, processInstances: { [:] })
+    let spacing = MenuBarSpacing(defaults: defaults, read: { _ in nil }, write: { _, _ in throw ToggleError(message: "Repeated spacing failure") })
+    let model = DashboardModel(); model.enabledModules = []; model.errorMessage = "Repeated assertion failure"
+    let host = AppDelegate(model: model, preferences: defaults, makeAudio: { audio }, makeKeepAwake: { awake }, menuBarSpacing: spacing)
+    let draft = SetupDraft(current: model, defaults: defaults)
+    draft.selected = [.audio, .keepAwake, .menuBar]; draft.syncSelection()
+    model.onFinishSetup(draft) { _ in }
+    if case .failed(let detail) = draft.outcomes[.audio] { expect(detail.contains("Repeated routing failure"), "actual Finish reports synchronous activation routing failure from Audio authority") }
+    else { expect(false, "Audio activation failure must not be reported applied") }
+    if case .failed(let detail) = draft.outcomes[.keepAwake] { expect(detail.contains("Repeated assertion failure"), "actual Finish reports awake activation failure even when global error already has identical text") }
+    else { expect(false, "Awake activation failure must not be reported applied") }
+    if case .failed(let detail) = draft.outcomes[.menuBar] { expect(detail.contains("Repeated spacing failure"), "actual Finish retains spacing activation failure before configuration begins") }
+    else { expect(false, "Spacing activation failure must not be reported applied") }
+    expect(!audioBackend.writes.isEmpty && power.creates > 0, "failure fixtures exercised actual activation backend attempts, not just final preferences")
+    model.errorMessage = "output: Repeated routing failure"
+    model.onFinishSetup(draft) { _ in }
+    if case .failed = draft.outcomes[.audio], case .failed = draft.outcomes[.keepAwake], case .failed = draft.outcomes[.menuBar] {
+        expect(true, "repeated identical failures remain failed on a second actual Finish")
+    } else { expect(false, "global banner equality cannot erase repeated per-feature failures") }
+    audio.stop(); try? awake.deactivate()
+    withExtendedLifetime(host) {}
+
+    for scenario in ["denied", "off", "failed"] {
+        let btSuite = "fix-mac-os.setup-bluetooth.\(UUID().uuidString)"
+        let btDefaults = UserDefaults(suiteName: btSuite)!
+        for module in AppModule.allCases { ModuleSettings(defaults: btDefaults).set(module, enabled: false) }
+        let routing = AudioModule(backend: SetupAudioBackend(), defaults: btDefaults)
+        let backend = BluetoothBackend(runner: SetupBluetoothRunner(failure: scenario == "failed"), blueutil: "fixture-blueutil", audioTool: nil)
+        let bluetooth = BluetoothModule(defaults: btDefaults, backend: backend, importLegacyConfiguration: false, authorizationProvider: { scenario == "denied" ? .denied : .allowedAlways })
+        let btModel = DashboardModel(); btModel.enabledModules = []; btModel.errorMessage = "Repeated Bluetooth failure"
+        let btHost = AppDelegate(model: btModel, preferences: btDefaults, makeAudio: { routing }, makeBluetooth: { bluetooth })
+        let btDraft = SetupDraft(current: btModel, defaults: btDefaults); btDraft.selected = [.bluetooth]; btDraft.syncSelection()
+        btModel.onFinishSetup(btDraft) { _ in }
+        let deadline = Date().addingTimeInterval(2)
+        while bluetooth.isBusy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+        btModel.onFinishSetup(btDraft) { _ in }
+        switch (scenario, btDraft.outcomes[.bluetooth]) {
+        case ("denied", .pendingAccess): expect(true, "actual Finish distinguishes denied Bluetooth access using the feature's authorization provider")
+        case ("off", .pendingHardware(let detail)): expect(detail.contains("radio is off"), "actual Finish reports radio-off hardware readiness, not applied")
+        case ("failed", .failed(let detail)): expect(detail.contains("Repeated Bluetooth failure"), "actual Finish reports Bluetooth backend failure independent of identical global banner")
+        default: expect(false, "Bluetooth outcome must reflect authoritative \(scenario) state")
+        }
+        bluetooth.stop(); routing.stop()
+        withExtendedLifetime(btHost) {}
+        btDefaults.removePersistentDomain(forName: btSuite)
+    }
 }
 
 private func runSetupActivationOrderingTests() {

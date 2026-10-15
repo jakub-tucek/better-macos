@@ -58,6 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var guiTestOriginalOutput: String?
     private let commandRunner: CommandRunning
     private let transactions = HostTransactions()
+    private var moduleFailures: [AppModule: String] = [:]
     private let terminationReply: (NSApplication, Bool) -> Void
 
      init(commandRunner: CommandRunning = CommandRunner(), spaces: SpacesModule? = nil, windowPositions: WindowPositions? = nil, clipboard: ClipboardModule? = nil, mouseLifecycle: MouseLifecycle? = nil, model: DashboardModel = DashboardModel(), preferences: UserDefaults = .standard,
@@ -331,27 +332,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func setModule(_ module: AppModule, enabled: Bool, completion: @escaping (Bool) -> Void = { _ in }) {
-        guard transactions.acceptsActions, !model.stoppingModules.contains(module) else { completion(false); return }
+        moduleFailures[module] = nil
+        guard transactions.acceptsActions, !model.stoppingModules.contains(module) else {
+            moduleFailures[module] = "Shutdown or feature recovery is in progress."; completion(false); return
+        }
         if module == .clipboard && !enabled && clipboard?.history.flushPendingStorage() == false {
             model.errorMessage = "Clipboard disk cleanup is pending. Retry after storage becomes available."
+            moduleFailures[module] = "Clipboard disk cleanup is pending."
             completion(false)
             return
         }
         if module == .mouse {
-            guard mouseLifecycle.setEnabled(enabled) else { completion(false); return }
+            guard mouseLifecycle.setEnabled(enabled) else { moduleFailures[module] = mouseLifecycle.errorMessage ?? "Mouse restoration failed."; completion(false); return }
             updateModules()
             completion(true)
             return
         }
         if module == .keepAwake && !enabled {
-            do { try keepAwake?.deactivate() } catch { keepAwake?.activate(); showError(error); completion(false); return }
+            do { try keepAwake?.deactivate() } catch { moduleFailures[module] = error.localizedDescription; keepAwake?.activate(); showError(error); completion(false); return }
         }
         if module == .menuBar && !enabled {
             do { try menuBarSpacing.restore(preserveChoice: true) }
-            catch { refreshMenuBar(); showError(error); completion(false); return }
+            catch { moduleFailures[module] = error.localizedDescription; refreshMenuBar(); showError(error); completion(false); return }
         }
         if module == .spaces {
-            guard !model.animationsBusy else { completion(false); return }
+            guard !model.animationsBusy else { moduleFailures[module] = "Animation operation is busy."; completion(false); return }
             if !animations.enabled && !animations.recoveryRequired {
                 modules.set(module, enabled: enabled); updateModules(); completion(true); return
             }
@@ -363,13 +368,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         if module == .monitors || module == .arrangement {
-            guard !recovering else { showError(ToggleError(message: "Wait for the current display operation to finish.")); completion(false); return }
+            guard !recovering else { moduleFailures[module] = "Display operation is busy."; showError(ToggleError(message: "Wait for the current display operation to finish.")); completion(false); return }
             if !enabled && (model.disabledMonitorCount > 0 || model.pendingArrangement || rollbackUUID != nil) {
                 model.stoppingModules.insert(module)
                 restoreAll { [weak self] restored in
                     guard let self else { return }
                     model.stoppingModules.remove(module)
                     if restored { modules.set(module, enabled: false); updateModules() }
+                    else { moduleFailures[module] = "Display restoration failed; recovery remains available." }
                     completion(restored)
                 }
                 return
@@ -486,7 +492,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     self?.model.tab = .keyboard
                     self?.showDashboard()
                 }
-                do { try module.startIfEnabled() } catch { showError(error) }
+                do { try module.startIfEnabled() } catch { moduleFailures[.quitGuard] = error.localizedDescription; showError(error) }
             }
         } else {
             quitGuard?.onChange = nil
@@ -506,7 +512,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 menuBar = module
                 module.start()
                 if menuBarSpacing.needsApply && !menuBarSpacing.recoveryRequired {
-                    do { try menuBarSpacing.setEnabled(true) } catch { showError(error) }
+                    do { try menuBarSpacing.setEnabled(true) } catch { moduleFailures[.menuBar] = error.localizedDescription; showError(error) }
                 }
             }
         } else {
@@ -724,6 +730,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Sequential, per-feature application keeps asynchronous recovery inside the
     /// existing host operations. Every continuation rechecks quit admission.
     private func applySetup(_ draft: SetupDraft, completion: @escaping ([String]) -> Void) {
+        moduleFailures = [:]
         let configuration = draft.configuration
         let selected = draft.selected
         let requestedWidgets = draft.widgets
@@ -750,6 +757,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 input: configuration.inputPreferences, outputFallback: configuration.outputFallback, inputFallback: configuration.inputFallback)
         }
         var results: [String] = []
+        draft.outcomes = [:]
         func advance(_ index: Int) {
             guard transactions.acceptsActions else {
                 for module in newlyEnabled { restoreUnactivated(module) }
@@ -758,7 +766,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             guard index < AppModule.allCases.count else {
                 model.onSaveWidgets(requestedWidgets)
                 uiStore.complete(); draft.discardCheckpoint()
-                completion(results + draft.unresolvedPermissions + ["Quick-action layout saved. No timed session, clipboard capture, window capture, or pointer Apply was started."])
+                completion(results + ["Quick-action layout saved. No timed session, clipboard capture, window capture, or pointer Apply was started."])
                 return
             }
             let module = AppModule.allCases[index]
@@ -770,12 +778,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
                 guard success else {
                     restoreUnactivated(module)
-                    results.append("\(module.title): not applied. \(model.errorMessage ?? "Busy or recovery is still pending; retry in Settings.")")
+                    let outcome = FeatureSetupOutcome.failed(moduleFailures[module] ?? "Busy or recovery is still pending; retry in Settings.")
+                    draft.outcomes[module] = outcome; results.append("\(module.title): \(outcome.description)")
                     advance(index + 1); return
                 }
-                guard enabled else { results.append("\(module.title): disabled."); advance(index + 1); return }
-                applySetupConfiguration(configuration, module: module) { success, detail in
-                    results.append("\(module.title): \(success ? "applied" : "needs attention"). \(detail)")
+                guard enabled else { draft.outcomes[module] = .applied("Disabled."); results.append("\(module.title): disabled."); advance(index + 1); return }
+                applySetupConfiguration(configuration, module: module) { outcome in
+                    draft.outcomes[module] = outcome; results.append("\(module.title): \(outcome.description)")
                     advance(index + 1)
                 }
             }
@@ -785,8 +794,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         advance(0)
     }
 
-    private func applySetupConfiguration(_ value: SetupConfiguration, module: AppModule, completion: @escaping (Bool, String) -> Void) {
-        guard transactions.acceptsActions else { completion(false, "Shutdown in progress."); return }
+    private func applySetupConfiguration(_ value: SetupConfiguration, module: AppModule, completion: @escaping (FeatureSetupOutcome) -> Void) {
+        guard transactions.acceptsActions else { completion(.failed("Shutdown in progress.")); return }
+        if let failure = moduleFailures[module] { completion(.failed(failure)); return }
         let missing: Bool
         switch module {
         case .audio: missing = audio == nil
@@ -797,23 +807,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case .windows: missing = windowPositions == nil
         default: missing = false
         }
-        guard !missing else { completion(false, "Feature owner is unavailable. Retry from its Settings group."); return }
+        guard !missing else { completion(.failed("Feature owner is unavailable. Retry from its Settings group.")); return }
         let old = SetupConfiguration(model)
-        let errorBefore = model.errorMessage
         var note = ""
         switch module {
         case .monitors:
             if value.confirmDisplays != old.confirmDisplays { model.onMonitorDisableModeChanged(value.confirmDisplays) }
+            if !model.displaySupported { completion(.pendingHardware("Display controls await recovery monitoring and stable displays.")); return }
         case .arrangement:
             if value.matchEdges != old.matchEdges { model.onMatchScreenEdgesChanged(value.matchEdges) }
-            if value.matchEdges && !AXIsProcessTrusted() { note = "Screen edges await Accessibility access and stable displays." }
+            if value.matchEdges && !AXIsProcessTrusted() { completion(.pendingAccess("Screen edges require Accessibility access.")); return }
+            if value.matchEdges && !model.screenEdgesActive { completion(.pendingHardware("Screen edges await stable displays and recovery monitoring.")); return }
         case .audio:
-            if value.outputPreferences != old.outputPreferences { model.onAudioPreferences(value.outputPreferences, .output) }
-            if value.inputPreferences != old.inputPreferences { model.onAudioPreferences(value.inputPreferences, .input) }
-            if value.outputFallback != old.outputFallback { model.onAudioFallback(value.outputFallback, .output) }
-            if value.inputFallback != old.inputFallback { model.onAudioFallback(value.inputFallback, .input) }
-            if value.audioAutomatic != old.audioAutomatic { model.onAudioAutomatic(value.audioAutomatic) }
-            note = model.audioStatus
+            completion(audio!.configurationOutcome); return
         case .bluetooth:
             // Pause automatic reconciliation while replacing its inputs.
             let changed = value.bluetoothTargets != old.bluetoothTargets || value.protectedTargets != old.protectedTargets || value.protectAudio != old.protectAudio || value.switchAudio != old.switchAudio
@@ -827,23 +833,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if value.protectAudio != old.protectAudio { model.onProtectAudioChanged(value.protectAudio) }
             if value.switchAudio != old.switchAudio { model.onSwitchAudioChanged(value.switchAudio) }
             if changed || value.bluetoothAutomatic != old.bluetoothAutomatic { model.onAutomaticReconnectChanged(value.bluetoothAutomatic) }
-            if CBManager.authorization != .allowedAlways { note = "Bluetooth access unresolved. Open Sound & connections to grant access and retry." }
+            completion(bluetooth!.configurationOutcome); return
         case .quitGuard:
-            if value.quitDuration != old.quitDuration { model.onQuitGuardDurationChanged(value.quitDuration) }
-            if value.quitGuard != old.quitGuard { model.onQuitGuardChanged(value.quitGuard) }
-            if value.quitGuard && !model.quitGuardActive { note = "Hold to quit is inactive; check Accessibility and Retry in Input settings." }
+            if value.quitDuration != quitGuard!.duration { quitGuard!.duration = value.quitDuration }
+            do {
+                if value.quitGuard != quitGuard!.enabled { try quitGuard!.setEnabled(value.quitGuard) }
+                refreshQuitGuard()
+            } catch { completion(.failed(error.localizedDescription)); return }
+            if value.quitGuard && !model.quitGuardActive { completion(.pendingAccess("Hold to quit is inactive; check Accessibility and Retry in Input settings.")); return }
         case .keepAwake:
             if let keepAwake {
                 do { try keepAwake.configureForSetup(minutes: value.awakeMinutes, display: value.displayAwake, apps: value.awakeApps) }
-                catch { showError(error) }
+                catch { showError(error); completion(.failed(error.localizedDescription)); return }
                 refreshKeepAwake()
             }
-            note = "Saved app rules may be active. No timed session started."
+            completion(keepAwake!.configurationOutcome); return
         case .clipboard:
             if value.clipboardDays != old.clipboardDays { model.onClipboardDays(value.clipboardDays) }
             if value.clipboardExclusions != old.clipboardExclusions { model.onClipboardExclusions(value.clipboardExclusions) }
             if value.clipboardPersistence != old.clipboardPersistence { model.onClipboardPersistence(value.clipboardPersistence) }
-            if model.clipboardStoragePending { completion(false, "Disk cleanup/save is pending; keep Clipboard enabled and retry in Settings."); return }
+            if clipboard!.history.storagePending { completion(.failed("Disk cleanup/save is pending; keep Clipboard enabled and retry in Settings.")); return }
             note = "Recording was not started or changed by setup."
         case .mouse:
             model.mouseAcceleration = value.mouseAcceleration; model.mouseTracking = value.mouseTracking
@@ -854,28 +863,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 if value.windowsSelected != old.windowsSelected { windowPositions.selected = value.windowsSelected }
                 if value.windowsExclusions != old.windowsExclusions { windowPositions.exclusions = value.windowsExclusions }
                 if value.windowsAutomatic != old.windowsAutomatic { windowPositions.automatic = value.windowsAutomatic }
-                note = windowPositions.permitted ? "No windows captured or moved." : "Accessibility is required before saving or restoring windows."
+                if !windowPositions.permitted { completion(.pendingAccess("Accessibility is required before saving or restoring windows.")); return }
+                if !value.windowsSelected.isEmpty && !windowPositions.layouts.contains(where: { $0.id == value.windowsSelected }) {
+                    completion(.pendingHardware("Chosen window layout is unavailable; its target is preserved.")); return
+                }
+                note = "No windows captured or moved."
             }
         case .menuBar:
-            if value.compactMenu != old.compactMenu { model.onCompactMenuBarChanged(value.compactMenu) }
-            if value.hideMenu != old.hideMenu { model.onMenuBarHidingChanged(value.hideMenu) }
+            do {
+                if value.compactMenu != menuBarSpacing.enabled || menuBarSpacing.recoveryRequired { try menuBarSpacing.setEnabled(value.compactMenu) }
+                if value.hideMenu != menuBar?.enabled { menuBar?.setEnabled(value.hideMenu) }
+                refreshMenuBar()
+            } catch { completion(.failed(error.localizedDescription)); return }
         case .spaces:
             func finishAnimation(_ success: Bool) {
-                guard success, transactions.acceptsActions else { completion(false, model.errorMessage ?? "Animation change interrupted or unavailable."); return }
+                guard success, transactions.acceptsActions else { completion(.failed(moduleFailures[.spaces] ?? "Animation change interrupted or unavailable.")); return }
                 if value.speed != old.speed { model.onSpeedChanged(TransitionSpeed.from(rawValue: value.speed)) }
-                if value.spaces != model.spacesEnabled { model.onSpacesChanged(value.spaces) }
-                completion(model.animationsEnabled == value.animations && (!value.spaces || model.spacesEnabled), model.errorMessage ?? "Desktop switching may await Accessibility or stable displays.")
+                if value.spaces && spaces?.hasPermission != true { completion(.pendingAccess("Desktop switching requires Accessibility access.")); return }
+                if value.spaces && (!controlState.inputReady || !value.animations) { completion(.pendingHardware("Desktop switching awaits the animation preset, recovery monitoring and stable displays.")); return }
+                do {
+                    if value.spaces != spaces?.isEnabled { try spaces?.setEnabled(value.spaces) }
+                    refreshPreferences(); completion(.applied("Reviewed animation and desktop-switching policy installed."))
+                } catch { completion(.failed(error.localizedDescription)) }
             }
             if value.animations != old.animations { setAnimations(value.animations, resultCompletion: finishAnimation) }
             else { finishAnimation(true) }
             return
         }
-        let newError = model.errorMessage != errorBefore ? model.errorMessage : nil
-        let permissionPending = (module == .bluetooth && CBManager.authorization != .allowedAlways) ||
-            (module == .quitGuard && value.quitGuard && !model.quitGuardActive) ||
-            (module == .arrangement && value.matchEdges && !AXIsProcessTrusted()) ||
-            (module == .windows && windowPositions?.permitted != true)
-        completion(newError == nil && !permissionPending, newError ?? note)
+        completion(.applied(note))
     }
 
     private func refreshDisplaySnapshot() {
@@ -1042,6 +1057,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 } catch {
                     DispatchQueue.main.async { [weak self] in
                         self?.model.animationsBusy = false
+                        self?.moduleFailures[.spaces] = error.localizedDescription
                         self?.showError(error)
                         self?.refreshPreferences()
                         resultCompletion?(false)

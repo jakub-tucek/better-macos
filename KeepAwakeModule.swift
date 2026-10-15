@@ -63,6 +63,10 @@ final class KeepAwakeModule {
     private var lastPublished: PublishedState?
     private var lastError: String?
     private(set) var protectionFailed = false
+    var configurationOutcome: FeatureSetupOutcome {
+        if protectionFailed || cleanupPending { return .failed(lastError ?? "Keep-awake assertion reconciliation failed; retry in Settings.") }
+        return .applied("Reviewed app rules installed. No timed session started.")
+    }
     private var cleanupPending = false
     private(set) var matchingApps: [String: String] = [:]
     var selectedApps: [String: String] { defaults.dictionary(forKey: "keepAwake.apps") as? [String: String] ?? [:] }
@@ -139,14 +143,15 @@ final class KeepAwakeModule {
     }
 
     func configureForSetup(minutes: Int, display: Bool, apps: [String: String]) throws {
-        guard selectedMinutes != minutes || keepDisplayAwake != display || selectedApps != apps else { return }
+        guard selectedMinutes != minutes || keepDisplayAwake != display || selectedApps != apps || protectionFailed else { return }
         // Replace the complete policy before reconciling once. Timed ownership
         // and app pauses stay intact; removed rules cannot acquire a new lease.
         defaults.set(apps, forKey: "keepAwake.apps")
         defaults.set(min(1440, max(5, minutes)), forKey: "keepAwake.minutes")
         defaults.set(display, forKey: "keepAwake.display")
         if watchingApps && !apps.isEmpty { beginUpdates() }
-        try reconcile()
+        do { try reconcile(); protectionFailed = false; lastError = nil }
+        catch { protectionFailed = true; lastError = error.localizedDescription; onChange?(); throw error }
         onChange?()
     }
 
