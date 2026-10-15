@@ -43,14 +43,16 @@ func runBluetoothErrorRecoveryTests() throws {
     defer { defaults.removePersistentDomain(forName: suite) }
     for feature in AppModule.allCases { ModuleSettings(defaults: defaults).set(feature, enabled: false) }
     defaults.set(true, forKey: "bluetooth.autoEnabled")
+    let memory = MemoryDiagnosticSink()
+    let logger = Diagnostics(sink: memory)
     let module = BluetoothModule(defaults: defaults,
-        backend: BluetoothBackend(runner: CommandRunner(), blueutil: executable.path, audioTool: nil, waitForConnection: {}),
+        backend: BluetoothBackend(runner: CommandRunner(diagnostics: logger), blueutil: executable.path, audioTool: nil, waitForConnection: {}),
         importLegacyConfiguration: false, authorizationProvider: { .allowedAlways })
     let model = DashboardModel()
     model.enabledModules = []
     model.errorMessage = "Unrelated preexisting error"
     let audio = AudioModule(backend: Exit75AudioBackend(), defaults: defaults)
-    let host = AppDelegate(model: model, preferences: defaults, makeAudio: { audio }, makeBluetooth: { module })
+    let host = AppDelegate(model: model, preferences: defaults, makeAudio: { audio }, makeBluetooth: { module }, diagnostics: logger)
     defer { module.stop(); audio.stop(); withExtendedLifetime(host) {} }
     func wait() {
         let deadline = Date().addingTimeInterval(5)
@@ -67,6 +69,14 @@ func runBluetoothErrorRecoveryTests() throws {
     wait()
     let exact = "blueutil failed (exit 75): Failed to switch bluetooth power on in 10 seconds"
     expect(module.lastError == exact && model.errorMessage == exact, "actual host manual action publishes exact screenshot error through real CommandRunner stderr/exit handling")
+    expect(logger.flushForTesting(), "Bluetooth host diagnostic events drain through test-only flush")
+    let failedPublication = model.errorGeneration.uuidString
+    let actionFailure = memory.records.last { $0["event"] as? String == "manual_action_finished" }
+    expect(actionFailure?["operation"] as? String == failedPublication && actionFailure?["outcome"] as? String == "failure",
+           "Bluetooth failure event correlates with the exact host-owned publication UUID")
+    let commandFailure = memory.records.last { ($0["fields"] as? [String: String])?["exit_code"] == "75" }
+    expect(commandFailure?["outcome"] as? String == "failure" && (commandFailure?["fields"] as? [String: String])?["action"] == "--power",
+           "real fixture exit75 retains safe command action/result events")
     module.poll()
     wait()
     expect(module.lastError == nil && model.errorMessage == exact, "healthy discovery with radio still off does not dismiss the unresolved power-on failure")
@@ -74,6 +84,11 @@ func runBluetoothErrorRecoveryTests() throws {
     model.onBluetoothPowerOn()
     wait()
     expect(module.radioPoweredOn == true && module.lastError == nil && model.errorMessage == nil, "verified successful retry clears only its owned Bluetooth failure banner")
+    expect(logger.flushForTesting(), "verified Bluetooth success diagnostics drain in test")
+    let recovered = memory.records.last { $0["event"] as? String == "manual_action_finished" }
+    expect(recovered?["operation"] as? String == failedPublication && recovered?["outcome"] as? String == "success"
+           && (recovered?["fields"] as? [String: String])?["error_cleared"] == "true",
+           "Bluetooth verified success reuses owned publication token and records actual clearance")
     func failAgain() throws {
         try FileManager.default.removeItem(at: root.appendingPathComponent("succeed"))
         try FileManager.default.removeItem(at: root.appendingPathComponent("powered"))
@@ -94,6 +109,10 @@ func runBluetoothErrorRecoveryTests() throws {
     try "".write(to: root.appendingPathComponent("succeed"), atomically: true, encoding: .utf8)
     model.onBluetoothPowerOn(); wait()
     expect(module.radioPoweredOn == true && model.errorMessage == exact, "successful Bluetooth retry preserves newer identical-text error publication")
+    expect(logger.flushForTesting(), "newer-publication Bluetooth diagnostic events drain in test")
+    let preserved = memory.records.last { $0["event"] as? String == "manual_action_finished" }
+    expect((preserved?["fields"] as? [String: String])?["error_cleared"] == "false",
+           "Bluetooth success logs non-clearance when an identical-text error has a newer UUID")
     try "".write(to: root.appendingPathComponent("fail-connect"), atomically: true, encoding: .utf8)
     model.onManualConnection("fixture"); wait()
     let connectionError = model.errorMessage
@@ -109,4 +128,8 @@ func runBluetoothErrorRecoveryTests() throws {
     wait()
     let afterDisable = try calls()
     expect(model.errorMessage == "Unrelated storage cleanup failure" && afterDisable == beforeDisable, "feature disable neither clears unrelated errors nor mutates Bluetooth")
+    expect(logger.flushForTesting(), "final Bluetooth diagnostic records drain in test")
+    let encoded = memory.lines.map { String(decoding: $0, as: UTF8.self) }.joined()
+    expect(!encoded.contains(exact) && !encoded.contains("Fixture speaker") && !encoded.contains("--connect fixture") && !encoded.contains(root.path),
+           "host and command Bluetooth hooks omit raw error, device name/address and executable path")
 }

@@ -32,10 +32,12 @@ func runLoginServiceTests() {
     let model = DashboardModel()
     let service = FakeLoginService()
     let transactions = HostTransactions()
+    let memory = MemoryDiagnosticSink()
+    let diagnostics = Diagnostics(sink: memory)
     service.registrationStatus = .requiresApproval
     let host = AppDelegate(model: model, preferences: defaults,
         displayRecoveryPending: { false }, displaySnapshotRefresh: {},
-        transactions: transactions, loginService: service)
+        transactions: transactions, loginService: service, diagnostics: diagnostics)
     let originalPreferences = defaults.persistentDomain(forName: suite)! as NSDictionary
     expect(service.registrations == 0 && service.unregistrations == 0 && service.settingsOpened == 0,
            "constructing the actual host never changes login registration or opens settings")
@@ -51,7 +53,15 @@ func runLoginServiceTests() {
         expect(!model.loginStatus.message.isEmpty, "login status \(status) always has explanatory text")
     }
     expect(service.registrations == 0 && service.unregistrations == 0 && service.settingsOpened == 0,
-           "repeated activation only reads status, including denied or unknown states")
+            "repeated activation only reads status, including denied or unknown states")
+    expect(diagnostics.flushForTesting(), "typed login status observations drain through test-only flush")
+    let observations = memory.records.filter { $0["event"] as? String == "status_observed" }
+    expect(Set(observations.compactMap { ($0["fields"] as? [String: String])?["status"] }) ==
+           Set(["not_registered", "enabled", "requires_approval", "not_found", "unknown"]),
+           "host observations log all five typed login statuses without raw service data")
+    host.applicationDidBecomeActive(active)
+    expect(diagnostics.flushForTesting() && memory.records.filter { $0["event"] as? String == "status_observed" }.count == observations.count,
+           "repeated unchanged login refresh remains read-only and deduplicates diagnostics")
     service.currentStatus = .notRegistered
     model.onLoginChanged(true)
     expect(model.launchAtLogin && model.loginStatus == .requiresApproval,
@@ -59,6 +69,13 @@ func runLoginServiceTests() {
     expect(model.loginStatus.message.contains("Approval required") && model.loginStatus.needsAttention,
            "pending login approval has explicit actionable status")
     expect(service.settingsOpened == 0, "pending approval never opens macOS settings automatically")
+    expect(diagnostics.flushForTesting(), "pending-approval login operation diagnostics drain in test")
+    let requested = memory.records.last { $0["event"] as? String == "change_requested" }
+    let finished = memory.records.last { $0["event"] as? String == "change_finished" }
+    expect(requested?["operation"] as? String == finished?["operation"] as? String && finished?["outcome"] as? String == "success"
+           && (requested?["fields"] as? [String: String])?["status"] == "not_registered"
+           && (finished?["fields"] as? [String: String])?["status"] == "requires_approval",
+           "injected host registration logs correlated before/after approval state without claiming eligible launch")
     model.onOpenLoginSettings()
     expect(service.settingsOpened == 1, "explicit actual host action opens injected Login Items settings")
     model.onLoginChanged(false)
@@ -74,6 +91,10 @@ func runLoginServiceTests() {
     expect(!model.launchAtLogin && model.loginStatus == .notRegistered,
            "failed registration reflects the service rather than an optimistic checkbox")
     expect(model.errorMessage == unrelatedError, "login registration failure does not overwrite Bluetooth error")
+    expect(diagnostics.flushForTesting(), "failed injected login operation diagnostics drain in test")
+    let failed = memory.records.last { $0["event"] as? String == "change_finished" }
+    expect(failed?["outcome"] as? String == "failure" && (failed?["fields"] as? [String: String])?["error_class"] == "other",
+           "injected login failure logs only result and coarse error class alongside inline UI feedback")
     service.currentStatus = .requiresApproval
     model.onLoginChanged(true)
     expect(model.launchAtLogin && model.loginStatus == .requiresApproval && model.loginError != nil,
@@ -102,7 +123,11 @@ func runLoginServiceTests() {
         expect(model.loginStatus == status && !model.launchAtLogin && model.loginStatus.needsAttention,
                "unexpected registration result \(status) remains truthful and actionable")
         expect(!model.loginStatus.message.contains("Approval required"),
-               "unexpected registration result \(status) is not mislabeled pending approval")
+                "unexpected registration result \(status) is not mislabeled pending approval")
+        expect(diagnostics.flushForTesting(), "unexpected typed login status diagnostic drains in test")
+        let result = memory.records.last { $0["event"] as? String == "change_finished" }
+        expect((result?["fields"] as? [String: String])?["status"] == LoginDiagnostics.status(status),
+               "unexpected registration result \(status) is logged through the typed status allowlist")
     }
 
     service.currentStatus = .requiresApproval
@@ -134,18 +159,26 @@ func runLoginServiceTests() {
     let opened = service.settingsOpened
     model.loginError = "Earlier login operation failed."
     let error = model.loginError
+    expect(diagnostics.flushForTesting(), "pre-barrier login diagnostics drain in test")
+    let requests = memory.records.filter { $0["event"] as? String == "change_requested" }.count
     model.onLoginChanged(true)
     model.onLoginChanged(false)
     model.onOpenLoginSettings()
     expect(service.registrations == registrations && service.unregistrations == unregistrations && service.settingsOpened == opened,
            "closed host admission blocks both login writes and the settings opener")
     expect(model.loginError == error, "rejected login action does not clear previously published feedback")
+    expect(diagnostics.flushForTesting() && memory.records.filter { $0["event"] as? String == "change_requested" }.count == requests,
+           "closed host admission neither logs nor executes a new login registration request")
     service.currentStatus = .enabled
     host.applicationDidBecomeActive(active)
     expect(model.loginStatus == .enabled && service.registrations == registrations,
            "activation remains read-only even when host admission is closed")
     expect(originalPreferences.isEqual(to: defaults.persistentDomain(forName: suite)!),
-           "login lifecycle and action callbacks write no app preferences")
+            "login lifecycle and action callbacks write no app preferences")
+    expect(diagnostics.flushForTesting(), "final login hook diagnostics drain in test")
+    let encoded = memory.lines.map { String(decoding: $0, as: UTF8.self) }.joined()
+    expect(!encoded.contains("injected registration denial") && !encoded.contains("injected unregister failure") && !encoded.contains(unrelatedError),
+           "login diagnostic hooks redact raw registration errors and unrelated global errors")
     withExtendedLifetime(host) {}
     runRetainedLoginCallbackTests(defaults: defaults)
 }

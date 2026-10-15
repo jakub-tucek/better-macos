@@ -1,7 +1,7 @@
 import Foundation
 import ClipboardPolicy
 
-private final class MemoryDiagnosticSink: DiagnosticSink {
+final class MemoryDiagnosticSink: DiagnosticSink {
     var lines = [Data]()
     var fail = false
     func write(_ line: Data) throws {
@@ -38,6 +38,14 @@ private final class DiagnosticArchive: ClipboardPersistence {
     }
     func save(_ entries: [ClipboardEntry]) throws { if fail { throw CocoaError(.fileWriteNoPermission) } }
     func clear() throws { if fail { throw CocoaError(.fileWriteNoPermission) } }
+}
+
+private struct DiagnosticLoginService: LoginServicing {
+    let failure: Error
+    var status: LoginStatus { .requiresApproval }
+    func register() throws { throw failure }
+    func unregister() throws { throw failure }
+    func openSettings() { preconditionFailure("No real settings action in diagnostics") }
 }
 
 func runDiagnosticsTests() throws {
@@ -124,9 +132,8 @@ func runDiagnosticsTests() throws {
     expect(fields?["action"] == "--connect" && failure["outcome"] as? String == "failure", "Bluetooth logs safe operation semantics")
     expect(memory.records.suffix(2).first?["operation"] as? String == failure["operation"] as? String, "command start and failure correlate")
     do {
-        try LoginDiagnostics.change(true, diagnostics: logger, readStatus: { "requires_approval" }, apply: { _ in
-            throw NSError(domain: "private.error.domain", code: 91, userInfo: [NSLocalizedDescriptionKey: sensitive])
-        })
+        try LoginDiagnostics.change(true, service: DiagnosticLoginService(failure:
+            NSError(domain: "private.error.domain", code: 91, userInfo: [NSLocalizedDescriptionKey: sensitive])), diagnostics: logger)
         expect(false, "login fixture must throw")
     } catch {}
     expect(logger.flushForTesting(), "test-only login logging flush completes")

@@ -60,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let commandRunner: CommandRunning
     private let transactions: HostTransactions
     private let loginService: LoginServicing
+    private let diagnostics: Diagnostics
     private var moduleFailures: [AppModule: String] = [:]
     private lazy var choicePreparations = BuiltinChoicePreparations(
         keepAwake: awakeFeature,
@@ -98,9 +99,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
           displaySnapshotRefresh: (() -> Void)? = nil,
           transactions: HostTransactions = HostTransactions(),
           loginService: LoginServicing = SystemLoginService(),
+          diagnostics: Diagnostics = .shared,
           terminationReply: @escaping (NSApplication, Bool) -> Void = { $0.reply(toApplicationShouldTerminate: $1) }) {
          self.transactions = transactions
          self.loginService = loginService
+         self.diagnostics = diagnostics
          self.commandRunner = commandRunner
          self.preferences = preferences
          self.modules = ModuleSettings(defaults: preferences)
@@ -363,8 +366,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             guard let self, transactions.acceptsActions else { return }
             model.loginError = nil
             do {
-                if enabled { try loginService.register() }
-                else { try loginService.unregister() }
+                try LoginDiagnostics.change(enabled, service: loginService, diagnostics: diagnostics)
             } catch {
                 model.loginError = "Could not \(enabled ? "enable" : "disable") launch at login: \(error.localizedDescription)"
             }
@@ -540,15 +542,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 module.onError = { [weak self] in self?.showError($0) }
                 module.onManualOperationCompleted = { [weak self] operation, result in
                     guard let self else { return }
+                    let action: String
+                    switch operation {
+                    case .powerOn: action = "power_on"
+                    case .connection(_, let connected): action = connected ? "connect" : "disconnect"
+                    }
+                    var token = UUID().uuidString
+                    var cleared = false
+                    let outcome: String
                     switch result {
                     case .failure:
                         // onError has just published this operation's failure.
                         bluetoothActionError = (operation, model.errorGeneration)
+                        token = model.errorGeneration.uuidString
+                        outcome = "failure"
                     case .success:
-                        guard let owned = bluetoothActionError, owned.operation == operation else { return }
-                        bluetoothActionError = nil
-                        if model.errorGeneration == owned.generation { model.errorMessage = nil }
+                        outcome = "success"
+                        if let owned = bluetoothActionError, owned.operation == operation {
+                            token = owned.generation.uuidString
+                            bluetoothActionError = nil
+                            if model.errorGeneration == owned.generation { model.errorMessage = nil; cleared = true }
+                        }
                     }
+                    diagnostics.emit("bluetooth", "manual_action_finished", outcome: outcome, operation: token,
+                                     fields: ["action": action, "error_cleared": String(cleared)])
                 }
                 module.start()
             }
@@ -1067,7 +1084,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func refreshLoginStatus() {
-        model.loginStatus = loginService.status
+        let status = loginService.status
+        model.loginStatus = status
+        let value = LoginDiagnostics.status(status)
+        if loggedLoginStatus != value {
+            loggedLoginStatus = value
+            diagnostics.emit("login", "status_observed", fields: ["status": value])
+        }
     }
 
     private var controlState: SystemControlLifecycle.State {
