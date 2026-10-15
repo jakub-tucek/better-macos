@@ -1,7 +1,9 @@
 # UI/UX redesign plan
 
 Status: production replacement implemented for B–D; independent review and live
-native acceptance remain pending. The user explicitly waived preview approval and
+native acceptance remain pending. The first independent review blocked activation
+ordering, outcome reporting, and interaction evidence; follow-up fixes are implemented
+and await independent re-review. The user explicitly waived preview approval and
 requested immediate UI replacement. This document retains the agreed requirements;
 see [validation evidence and open acceptance checks](UI-REPLACEMENT-VALIDATION.md).
 
@@ -246,7 +248,11 @@ in isolated worktrees after the shared navigation/state decisions settle.
 - `SetupWizard.swift` owns separate configuration and widget drafts, opt-in resume,
   selected-only group steps, permissions, shared controls, review, and results.
 - `AppDelegate.swift` owns the two native windows and applies Finish sequentially
-  through existing feature operations. Admission is checked again at continuations.
+  through existing feature operations. Reviewed preferences for new owners are staged
+  before any activation; refusals restore only unactivated choices, never recovery
+  journals. Audio and awake policy replacement avoids intermediate old-rule effects.
+  Admission is checked again at continuations. Typed results come from feature-owned
+  failures and readiness, not global error-string comparisons.
 - `Dashboard.swift` retains reusable feature configuration views, not the old
   launcher. Window configuration controls are shared with setup. Window actions and
   bindings now also consult host admission, including queued restore steps.
@@ -258,6 +264,10 @@ in isolated worktrees after the shared navigation/state decisions settle.
   for access; requesting permission does not enable reconnect or change routes.
 - Mouse proposals remain unapplied until Input → Apply. Named window capture and
   management remain in Displays after setup, explicitly avoiding wizard captures.
+- Popup and Settings buttons share tested editor sessions. In-process native-window
+  tests suppress presentation/activation while exercising actual host links, window
+  reuse, draft preservation, and native close refusal during asynchronous Finish.
+  These are not a substitute for live SwiftUI accessibility/button traversal.
 
 ## Original preview proposal
 

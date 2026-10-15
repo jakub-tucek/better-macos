@@ -112,6 +112,18 @@ struct WidgetLayout: Codable, Equatable {
     }
 }
 
+/// Production button actions share this session with the host. A rejected Done
+/// keeps the draft (for example after a canceled asynchronous quit).
+final class WidgetEditingSession: ObservableObject {
+    @Published var draft: WidgetLayout?
+    func begin(_ layout: WidgetLayout) { if draft == nil { draft = layout } }
+    func cancel() { draft = nil }
+    @discardableResult func done(save: (WidgetLayout) -> Bool) -> Bool {
+        guard let draft, save(draft) else { return false }
+        self.draft = nil; return true
+    }
+}
+
 final class UISettingsStore {
     private let defaults: UserDefaults
     static let layoutKey = "ui.widgets.v1"
@@ -250,7 +262,8 @@ struct WidgetEditor: View {
 
 struct QuickActionsView: View {
     @ObservedObject var model: DashboardModel
-    @State private var draft: WidgetLayout?
+    @ObservedObject private var editor: WidgetEditingSession
+    init(model: DashboardModel) { self.model = model; self.editor = model.popupWidgetEditor }
     private var entries: [WidgetEntry] {
         var entries = model.widgetLayout.entries.filter { $0.known != nil }
         if let launch = model.launchWidget {
@@ -266,10 +279,10 @@ struct QuickActionsView: View {
             HStack {
                 Text("Fix macOS").font(.headline)
                 Spacer()
-                if draft != nil {
-                    Button("Cancel") { draft = nil }
-                    Button("Done") { if let draft { model.onSaveWidgets(draft) }; draft = nil }
-                } else { Button("Edit") { draft = model.widgetLayout } }
+                if editor.draft != nil {
+                    Button("Cancel", action: editor.cancel)
+                    Button("Done") { editor.done(save: model.onSaveWidgets) }
+                } else { Button("Edit") { editor.begin(model.widgetLayout) } }
                 Button { model.onOpenSettings(nil) } label: { Image(systemName: "gearshape") }
                     .accessibilityLabel("Settings")
             }.padding(16)
@@ -277,8 +290,8 @@ struct QuickActionsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     SafetyAlerts(model: model)
-                    if draft != nil {
-                        WidgetEditor(layout: Binding(get: { draft ?? model.widgetLayout }, set: { draft = $0 }), model: model)
+                    if editor.draft != nil {
+                        WidgetEditor(layout: Binding(get: { editor.draft ?? model.widgetLayout }, set: { editor.draft = $0 }), model: model)
                     } else {
                         if model.launchWidget != nil {
                             Button("Dismiss temporary launch action") { model.launchWidget = nil }.font(.caption)
@@ -288,7 +301,7 @@ struct QuickActionsView: View {
                         }
                         if entries.isEmpty {
                             Text("Your quick actions, your choice.").font(.headline)
-                            Button("Add quick actions") { draft = model.widgetLayout }
+                            Button("Add quick actions") { editor.begin(model.widgetLayout) }
                             Button("Run setup", action: model.onRunSetup)
                         }
                     }
@@ -466,7 +479,8 @@ struct WindowRestoreWidget: View {
 
 struct SettingsView: View {
     @ObservedObject var model: DashboardModel
-    @State private var widgetDraft: WidgetLayout?
+    @ObservedObject private var widgetEditor: WidgetEditingSession
+    init(model: DashboardModel) { self.model = model; self.widgetEditor = model.settingsWidgetEditor }
     var body: some View {
         HSplitView {
             List(SettingsGroup.allCases, selection: Binding<SettingsGroup?>(get: { model.settingsGroup }, set: { if let value = $0 { model.settingsGroup = value } })) { group in
@@ -500,15 +514,15 @@ struct SettingsView: View {
     }
     private var editor: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if widgetDraft != nil {
+            if widgetEditor.draft != nil {
                 HStack {
-                    Button("Cancel") { widgetDraft = nil }
-                    Button("Done") { if let widgetDraft { model.onSaveWidgets(widgetDraft) }; widgetDraft = nil }
+                    Button("Cancel", action: widgetEditor.cancel)
+                    Button("Done") { widgetEditor.done(save: model.onSaveWidgets) }
                 }
-                WidgetEditor(layout: Binding(get: { widgetDraft ?? model.widgetLayout }, set: { widgetDraft = $0 }), model: model)
+                WidgetEditor(layout: Binding(get: { widgetEditor.draft ?? model.widgetLayout }, set: { widgetEditor.draft = $0 }), model: model)
             } else {
                 Text("Choose, order, and resize the actions shown in the menu-bar popup.")
-                Button("Edit quick actions") { widgetDraft = model.widgetLayout }
+                Button("Edit quick actions") { widgetEditor.begin(model.widgetLayout) }
                 ForEach(model.widgetLayout.entries) { Text($0.known?.title ?? $0.kind) }
             }
         }

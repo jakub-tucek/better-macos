@@ -49,12 +49,15 @@ the draft; Cancel discards it. Interrupted drafts are offered for explicit Resum
 be undone by Cancel.
 
 Only **Finish** applies feature/configuration changes through the existing host
-operations, reporting each feature separately. Successful changes are not rolled back
+operations. Reviewed configuration is installed before a newly selected feature can
+activate; obsolete saved policies are not briefly applied first. Each feature reports
+Applied, Pending access, Pending hardware/readiness, or Failed using its own operation
+and readiness state, not a shared error banner. Successful changes are not rolled back
 because another feature fails. Selecting Clipboard never starts recording or enables
 disk retention; disk retention requires its own explicit draft choice and Finish.
 Setup never captures/moves windows, changes display positions, starts a timed awake
 session, or applies pointer tuning. Mouse proposals transfer to Input settings for
-explicit Apply. Enabling features can activate saved policies: running-app awake
+explicit Apply. Enabling features can activate reviewed policies: running-app awake
 rules, Bluetooth reconnect, and automatic audio routing. Animation changes may restart
 Dock/Finder. Review explains these effects before confirmation.
 

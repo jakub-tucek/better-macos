@@ -70,9 +70,6 @@ func runUITests() throws {
     expect(store.loadLayout(modules: [], existing: true).entries.filter { $0.kind == "future-kind" }.count == 1, "unknown widget kinds survive normalized persistence")
     let newerLayout = try JSONDecoder().decode(WidgetLayout.self, from: Data(#"{"version":2,"entries":[{"kind":"future-only"},{"kind":"audio","expanded":true}]}"#.utf8))
     expect(newerLayout.entries.count == 2 && newerLayout.entries[0].known == nil && newerLayout.entries[1].expanded, "unknown kinds with no old presentation fields do not reset otherwise usable widgets")
-    let saved = store.loadLayout(modules: [], existing: true)
-    var canceled = saved; canceled.entries.removeAll()
-    expect(store.loadLayout(modules: [], existing: true) == saved, "canceling a value-semantic edit draft leaves persisted widgets intact")
     let model = DashboardModel()
     model.enabledModules = []
     model.widgetLayout = WidgetLayout()
@@ -139,7 +136,7 @@ func runUITests() throws {
     expect(defaults.integer(forKey: UISettingsStore.completionKey) == 1 && hostModel.widgetLayout.entries.first?.known == .clipboard, "actual Finish persists completion independently from features and widget layout")
     history.setRecording(true)
     let entriesBeforeRemoval = history.entries
-    hostModel.onSaveWidgets(WidgetLayout())
+    _ = hostModel.onSaveWidgets(WidgetLayout())
     expect(history.recording && history.entries == entriesBeforeRemoval && ModuleSettings(defaults: defaults).enabled == [.clipboard], "actual host widget removal neither disables Clipboard nor stops recording or changes history")
     history.setRecording(false)
     let failingDraft = SetupDraft(current: hostModel, defaults: defaults)
@@ -172,6 +169,100 @@ func runUITests() throws {
     withExtendedLifetime(host) {}
     runSetupActivationOrderingTests()
     runSetupOutcomeTests()
+    runNativeUIInteractionTests()
+}
+
+private func runNativeUIInteractionTests() {
+    let suite = "fix-mac-os.native-ui-interactions.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    for module in AppModule.allCases { ModuleSettings(defaults: defaults).set(module, enabled: false) }
+    let model = DashboardModel(); model.enabledModules = []
+    let started = DispatchSemaphore(value: 0); let release = DispatchSemaphore(value: 0)
+    var restarts = 0
+    let animations = AnimationPreferences(defaults: defaults, read: { _ in nil }, write: { setting, _ in
+        if setting.id == AnimationPreferences.settings[0].id { started.signal(); release.wait() }
+    })
+    let engine = GestureSwitchEngine(spaceInfo: { nil }, postPhase: { _, _, _ in true })
+    let spaces = SpacesModule(defaults: defaults, engine: engine)
+    var presented: [NSWindow] = []
+    // This is the real host/window path, with presentation (activation/orderFront)
+    // suppressed. All animation writes and client restarts stay inside fakes.
+    let host = AppDelegate(spaces: spaces, model: model, preferences: defaults, animations: animations,
+        presentWindow: { presented.append($0) }, restartAnimationClients: { restarts += 1 })
+    let store = UISettingsStore(defaults: defaults)
+    let original = WidgetLayout(entries: [WidgetEntry(.clipboard)])
+    _ = model.onSaveWidgets(original)
+    let popup = model.popupWidgetEditor
+    popup.begin(model.widgetLayout); popup.draft?.add(.audio)
+    popup.cancel()
+    expect(popup.draft == nil && model.widgetLayout == original && store.loadLayout(modules: [], existing: true) == original,
+           "production popup Cancel action discards its actual editor session without invoking host persistence")
+    popup.begin(model.widgetLayout); popup.draft?.add(.audio)
+    expect(popup.done(save: model.onSaveWidgets) && popup.draft == nil && model.widgetLayout.entries.count == 2,
+           "production popup Done action invokes actual host persistence and closes only its committed draft")
+    expect(store.loadLayout(modules: [], existing: true) == model.widgetLayout,
+           "interaction-level Done is persisted across store recreation")
+    popup.begin(model.widgetLayout); popup.draft?.entries.removeAll()
+    expect(!popup.done(save: { _ in false }) && popup.draft != nil && !model.widgetLayout.entries.isEmpty,
+           "rejected production Done retains the editable draft instead of losing it during quit admission")
+    popup.cancel()
+
+    model.onOpenSettings(.quickActions)
+    let settings = presented.last!
+    let content = settings.contentViewController
+    model.settingsWidgetEditor.begin(model.widgetLayout)
+    model.settingsWidgetEditor.draft?.entries.removeAll()
+    model.onOpenSettings(.clipboard)
+    model.onOpenSettings(.quickActions)
+    model.onOpenSettings(nil)
+    expect(presented.suffix(4).allSatisfy { $0 === settings } && settings.contentViewController === content,
+           "actual host gear/deep-link actions reuse one native Settings window and hosting controller")
+    expect(model.settingsGroup == .quickActions && model.settingsWidgetEditor.draft?.entries.isEmpty == true && !model.widgetLayout.entries.isEmpty,
+           "actual Settings links preserve selected group and uncommitted editor draft across destinations")
+    model.settingsWidgetEditor.cancel()
+    expect(!model.widgetLayout.entries.isEmpty, "Settings Cancel uses the same production session without affecting the saved popup")
+    model.settingsWidgetEditor.begin(model.widgetLayout); model.settingsWidgetEditor.draft?.entries.removeAll()
+    expect(model.settingsWidgetEditor.done(save: model.onSaveWidgets) && model.widgetLayout.entries.isEmpty,
+           "Settings Done persists its real editor draft through the host callback")
+
+    model.onRunSetup()
+    let setupWindow = presented.last!
+    let draft = host.setupSession!
+    model.onRunSetup()
+    expect(presented.last === setupWindow && host.setupSession === draft,
+           "actual repeated Run setup action reuses the existing native setup session")
+    draft.next(); draft.setSelected(.spaces, enabled: true)
+    draft.controls.onAnimationsChanged(true)
+    draft.step = .review
+    expect(draft.finish(using: model.onFinishSetup), "production confirmed Finish action admits the real host application sequence")
+    let startDeadline = Date().addingTimeInterval(2)
+    var began = false
+    while !began && Date() < startDeadline {
+        began = started.wait(timeout: .now()) == .success
+        if !began { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+    }
+    expect(began && draft.applying && !draft.finish(using: model.onFinishSetup),
+           "real asynchronous Finish is in flight and rejects a duplicate confirmed Finish")
+    setupWindow.performClose(nil)
+    expect(host.setupSession === draft && draft.applying && !draft.cancel(),
+           "native window close delegate and production Cancel action both block while Finish is applying")
+    model.onSkipSetup()
+    expect(host.setupSession === draft, "retained Skip callback cannot dismiss an applying setup transaction")
+    release.signal()
+    let finishDeadline = Date().addingTimeInterval(3)
+    while draft.applying && Date() < finishDeadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+    expect(!draft.applying && draft.step == .results && restarts == 1 && !draft.results.isEmpty,
+           "real asynchronous Finish completion transitions the production wizard to per-feature results using only fake writes/restart")
+    setupWindow.performClose(nil)
+    expect(host.setupSession == nil, "native close is admitted after Finish and releases its setup session")
+    model.onRunSetup()
+    let repeated = host.setupSession!
+    expect(repeated !== draft && repeated.selected == [.spaces] && repeated.controls.animationsEnabled,
+           "repeat setup after native close starts a new draft seeded from successfully applied current choices")
+    presented.last?.performClose(nil)
+    settings.close(); spaces.stop()
+    withExtendedLifetime(host) {}
 }
 
 private struct SetupBluetoothRunner: CommandRunning {
@@ -277,4 +368,31 @@ private func runSetupActivationOrderingTests() {
     expect(defaults.string(forKey: "clipboard.exclusions") == "unselected sentinel", "preactivation staging leaves unselected feature preferences untouched")
     audio.stop(); try? awake.deactivate()
     withExtendedLifetime(host) {}
+
+    let refusedSuite = "fix-mac-os.setup-refused.\(UUID().uuidString)"
+    let refusedDefaults = UserDefaults(suiteName: refusedSuite)!
+    defer { refusedDefaults.removePersistentDomain(forName: refusedSuite) }
+    for module in AppModule.allCases { ModuleSettings(defaults: refusedDefaults).set(module, enabled: false) }
+    refusedDefaults.set(true, forKey: "monitors.confirmDisable")
+    let recovery = Data([1, 2, 3])
+    refusedDefaults.set(recovery, forKey: "pendingArrangement")
+    let refusedModel = DashboardModel(); refusedModel.enabledModules = []; refusedModel.stoppingModules = [.monitors]
+    let refusedHost = AppDelegate(model: refusedModel, preferences: refusedDefaults)
+    let refusedDraft = SetupDraft(current: refusedModel, defaults: refusedDefaults)
+    refusedDraft.setSelected(.monitors, enabled: true); refusedDraft.controls.onMonitorDisableModeChanged(false)
+    refusedModel.onFinishSetup(refusedDraft) { _ in }
+    expect(refusedDefaults.bool(forKey: "monitors.confirmDisable") && ModuleSettings(defaults: refusedDefaults).enabled.isEmpty,
+           "actual refused activation restores staged preferences for the owner which never activated")
+    expect(refusedDefaults.data(forKey: "pendingArrangement") == recovery,
+           "staging refusal never overwrites the existing display recovery journal")
+    let overrideBackend = SetupAudioBackend()
+    let overrideAudio = AudioModule(backend: overrideBackend, defaults: refusedDefaults)
+    overrideAudio.automaticAllowed = true; overrideAudio.start(); overrideAudio.automatic = true
+    overrideAudio.select("new", direction: .output)
+    overrideBackend.writes.removeAll()
+    overrideAudio.configureForSetup(automatic: true, output: ["old"], input: [], outputFallback: "", inputFallback: "")
+    expect(overrideAudio.isOverridden(.output) && overrideBackend.writes.isEmpty,
+           "batch setup configuration preserves an active Audio manual override when automatic routing stays On")
+    overrideAudio.stop()
+    withExtendedLifetime(refusedHost) {}
 }

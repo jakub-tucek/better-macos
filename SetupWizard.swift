@@ -225,6 +225,21 @@ final class SetupDraft: ObservableObject {
         (selected.contains(.bluetooth) && !bluetoothGranted ? ["Bluetooth: access is unresolved; device controls may be unavailable."] : [])
     }
     func syncSelection() { controls.enabledModules = selected }
+    func setSelected(_ module: AppModule, enabled: Bool) {
+        guard !applying else { return }
+        if enabled { selected.insert(module) } else { selected.remove(module) }
+        syncSelection()
+    }
+    @discardableResult func finish(using apply: (SetupDraft, @escaping ([String]) -> Void) -> Void) -> Bool {
+        guard step == .review, !applying else { return false }
+        applying = true
+        apply(self) { [self] result in results = result; applying = false; step = .results }
+        return true
+    }
+    @discardableResult func cancel() -> Bool {
+        guard !applying else { return false }
+        discardCheckpoint(); return true
+    }
     func next() {
         guard let index = steps.firstIndex(of: step), index + 1 < steps.count else { return }
         if step == .welcome { checkpointing = true }
@@ -309,7 +324,7 @@ struct SetupWizard: View {
             Divider()
             HStack {
                 if draft.step != .results {
-                    Button("Cancel") { draft.discardCheckpoint(); close() }
+                    Button("Cancel") { if draft.cancel() { close() } }
                     if draft.step != .welcome { Button("Back") { draft.back() } }
                     Button("Save draft & close") { draft.saveCheckpoint(); close() }
                 }
@@ -333,10 +348,7 @@ struct SetupWizard: View {
             .interactiveDismissDisabled(draft.applying)
             .alert("Apply these choices?", isPresented: $confirmFinish) {
                 Button("Finish") {
-                    draft.applying = true
-                    model.onFinishSetup(draft) { results in
-                        draft.results = results; draft.applying = false; draft.step = .results
-                    }
+                    draft.finish(using: model.onFinishSetup)
                 }
                 Button("Back to review", role: .cancel) {}
             } message: { Text("Only Finish applies feature and configuration changes. Results are reported independently; failures do not roll back successful features. See the review for side effects.") }
@@ -372,7 +384,7 @@ struct SetupWizard: View {
                 ForEach(group.modules) { module in
                     DashboardCard {
                         Toggle(module.title, isOn: Binding(get: { draft.selected.contains(module) }, set: { value in
-                            if value { draft.selected.insert(module) } else { draft.selected.remove(module) }; draft.syncSelection()
+                            draft.setSelected(module, enabled: value)
                         }))
                         Text(module.detail).font(.caption)
                         if [.arrangement, .windows, .quitGuard, .spaces].contains(module) { Label("Accessibility for supported controls", systemImage: "hand.raised").font(.caption) }
@@ -431,7 +443,7 @@ struct SetupWizard: View {
             ForEach(draft.unresolvedPermissions, id: \.self) { Text($0).foregroundStyle(.orange) }
             DashboardCard {
                 Text("What Finish can change").font(.headline)
-                Text("Enabling features restores their saved policies. Keep-awake app rules may activate immediately for running apps; Bluetooth automatic reconnect may connect chosen devices; automatic audio routing may choose saved routes. Animation changes may restart Dock and Finder. Window automatic restoration can run on later reconnect/wake.")
+                Text("Finish installs the reviewed policies before activating selected features. Reviewed keep-awake app rules may activate immediately for running apps; Bluetooth automatic reconnect may connect chosen devices; automatic audio routing may choose reviewed routes. Animation changes may restart Dock and Finder. Window automatic restoration can run on later reconnect/wake.")
                 Text("Setup never starts timed awake sessions, records clipboard copies, captures/moves windows, switches/rearranges displays, or applies pointer tuning. Mouse Apply stays explicit in Input settings.")
                 if draft.selected.contains(.clipboard) {
                     Text(draft.configuration.clipboardPersistence ? "Disk history requested: local and unencrypted; up to \(draft.configuration.clipboardDays) days for unpinned entries. Capture remains unchanged (paused on fresh launches)." : "Clipboard remains memory-only. Turning existing disk retention off deletes its archive.")

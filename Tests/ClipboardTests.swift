@@ -533,13 +533,14 @@ func runClipboardTests() throws {
     quitModel.onClipboardRecording(true)
     let widgetBeforeQuit = quitModel.widgetLayout
     let lateWidgets = WidgetLayout(entries: [WidgetEntry(.clipboard)])
-    quitModel.onSaveWidgets(lateWidgets)
+    quitModel.settingsWidgetEditor.begin(lateWidgets)
+    let quitDoneAccepted = quitModel.settingsWidgetEditor.done(save: quitModel.onSaveWidgets)
     quitModel.onOpenSettings(.clipboard)
     quitModel.onRunSetup()
     quitModel.onSkipSetup()
     var blockedSetup: [String] = []
     quitModel.onFinishSetup(SetupDraft(current: quitModel, defaults: defaults)) { blockedSetup = $0 }
-    expect(quitModel.widgetLayout == widgetBeforeQuit && blockedSetup.contains { $0.contains("shutting down") },
+    expect(!quitDoneAccepted && quitModel.settingsWidgetEditor.draft != nil && quitModel.widgetLayout == widgetBeforeQuit && blockedSetup.contains { $0.contains("shutting down") },
            "actual widget Done and wizard Finish callbacks reject mutation during asynchronous quit")
     expect(quitModel.settingsGroup == .general, "actual Settings, setup-open, and Skip callbacks are inert during asynchronous quit")
     expect(!quitModel.animationsBusy && quitModel.enabledModules == enabledBeforeQuit && !quitHistory.recording && !mouseLifecycle.recoveryRequired,
@@ -555,8 +556,8 @@ func runClipboardTests() throws {
             "late Clipboard veto keeps restored Mouse idle and recording safely paused")
     quitModel.onClipboardRecording(true)
     expect(quitHistory.recording, "canceled quit reopens the host mutation barrier")
-    quitModel.onSaveWidgets(lateWidgets)
-    expect(quitModel.widgetLayout == lateWidgets && quitHistory.recording,
+    let reopenedDoneAccepted = quitModel.settingsWidgetEditor.done(save: quitModel.onSaveWidgets)
+    expect(reopenedDoneAccepted && quitModel.settingsWidgetEditor.draft == nil && quitModel.widgetLayout == lateWidgets && quitHistory.recording,
            "canceled quit reopens widget persistence without stopping a recording session")
     failing.failing = false; quitHistory.poll()
     quitReply = nil

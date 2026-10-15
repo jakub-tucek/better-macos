@@ -113,12 +113,14 @@ final class DashboardModel: ObservableObject {
     @Published var stoppingModules = Set<AppModule>()
     @Published var navigation = DashboardNavigation()
     @Published var widgetLayout = WidgetLayout()
+    let popupWidgetEditor = WidgetEditingSession()
+    let settingsWidgetEditor = WidgetEditingSession()
     @Published var settingsGroup: SettingsGroup = .general
     @Published var popupHeight: CGFloat = 580
     @Published var launchWidget: WidgetKind?
     var onOpenSettings: (SettingsGroup?) -> Void = { _ in }
     var onRunSetup: () -> Void = {}
-    var onSaveWidgets: (WidgetLayout) -> Void = { _ in }
+    var onSaveWidgets: (WidgetLayout) -> Bool = { _ in false }
     var onFinishSetup: (SetupDraft, @escaping ([String]) -> Void) -> Void = { _, _ in }
     var onSkipSetup: () -> Void = {}
     var onAccessibilitySettings: () -> Void = {}

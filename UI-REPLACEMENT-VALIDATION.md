@@ -31,7 +31,7 @@ git diff --check
 ```
 
 `test.sh` builds native SwiftUI/AppKit code with warnings as errors, runs isolated
-checks, and runs installer tests. Latest run: **3,720 isolated checks passed**, all
+checks, and runs installer tests. Latest run: **3,751 isolated checks passed**, all
 seven installer checks passed, and `git diff --check` was clean. The fixture render
 command also passed; popup light/dark, grouped Displays, wizard selection, and empty
 recovery fixtures were inspected. New coverage includes:
@@ -48,6 +48,37 @@ recovery fixtures were inspected. New coverage includes:
   widget persistence works again after the quit is canceled, without ending capture.
 - Window configuration, permission, capture, and restore admission, including queued
   restore steps; existing host/clipboard/display/Mouse regression coverage remains.
+
+## Independent review fixes
+
+The first independent review blocked the replacement. These fixes await follow-up
+review; neither implementation checkboxes nor test counts imply native acceptance.
+
+1. **Activation ordering:** actual host Finish uses fake Audio, awake, and menu-spacing
+   backends with obsolete saved policies. Tests assert zero intermediate route writes,
+   assertion acquisitions, and spacing writes when the reviewed draft disables them.
+   All newly enabled owners receive reviewed preferences before any activation can
+   start a shared consumer. Refused activation restores only unactivated preferences;
+   tests verify existing recovery journals and unselected settings are untouched.
+2. **Authoritative outcomes:** Audio and awake expose feature-owned failure state;
+   Bluetooth reports its actual authorization, backend, radio, discovery and connection
+   state. Host operations retain typed activation failures. Tests exercise actual
+   Finish with routing/assertion/spacing failures, repeated identical error text,
+   denied Bluetooth access, radio off, and Bluetooth backend failure. A global error
+   banner is not used to infer success. Unfinished hardware work is explicitly pending.
+3. **Interaction seams:** the production Edit/Done/Cancel buttons use shared editor
+   sessions. Tests invoke those same actions through the actual host persistence
+   callback, including rejection during quit and successful retry after cancellation.
+   Actual offscreen native Settings windows/hosting controllers are reused across host
+   links while preserving the Settings editor draft. An asynchronous Finish uses fake
+   animation writes and a fake client-restart callback; native `performClose`, Cancel,
+   duplicate Finish, and a retained Skip cannot dismiss or repeat it. Completion shows
+   results, native close becomes available, and repeat setup starts a current draft.
+
+The window harness injects a presenter that never orders windows front or activates
+the app. It exercises native window/delegate behavior and production action seams,
+not coordinate clicks or VoiceOver traversal of SwiftUI buttons. No TCC grant is
+needed for this harness; live accessibility/button traversal remains a manual gap.
 
 The new tests use fake clipboard, archive, and window backends and isolated preference
 suites. No real clipboard/history was read, no live audio route/pointer/display/window
@@ -67,8 +98,10 @@ were clicked or that VoiceOver/keyboard traversal works. E remains **open**:
 
 - Live keyboard and VoiceOver traversal, drag/drop, focus transfer, native resizing,
   large text, light/dark appearance, long device names, and short-screen scrolling.
-- One-window reuse, preserved drafts, simultaneous Settings/popup use, and native
-  clipboard panel nonactivation under actual app activation/deactivation.
+- Live focus/activation, simultaneous Settings/popup use, and clipboard panel
+  nonactivation under actual app activation/deactivation. One-window identity,
+  hosting-controller reuse, editor preservation across Settings links, and Finish
+  close blocking are now covered by the offscreen native host harness above.
 - Permission request/deny/regrant flows under the installed app's real TCC identity.
 - Hardware checks for display confirmation/recovery, Bluetooth, audio routing,
   pointer tuning, real window restoration, and power assertions.

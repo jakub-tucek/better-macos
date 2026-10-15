@@ -59,11 +59,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let commandRunner: CommandRunning
     private let transactions = HostTransactions()
     private var moduleFailures: [AppModule: String] = [:]
+    private let presentWindow: (NSWindow) -> Void
+    private let restartAnimationClients: () -> Void
+    var setupSession: SetupDraft? { activeSetupDraft }
     private let terminationReply: (NSApplication, Bool) -> Void
 
      init(commandRunner: CommandRunning = CommandRunner(), spaces: SpacesModule? = nil, windowPositions: WindowPositions? = nil, clipboard: ClipboardModule? = nil, mouseLifecycle: MouseLifecycle? = nil, model: DashboardModel = DashboardModel(), preferences: UserDefaults = .standard,
           makeAudio: (() -> AudioModule)? = nil, makeKeepAwake: (() -> KeepAwakeModule)? = nil, makeBluetooth: (() -> BluetoothModule)? = nil,
           makeMenuBar: (() -> MenuBarModule)? = nil, menuBarSpacing: MenuBarSpacing? = nil, animations: AnimationPreferences? = nil,
+          presentWindow: @escaping (NSWindow) -> Void = { $0.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) },
+          restartAnimationClients: @escaping () -> Void = { _ = try? CommandRunner().run("/usr/bin/killall", ["Dock", "Finder"]) },
          terminationReply: @escaping (NSApplication, Bool) -> Void = { $0.reply(toApplicationShouldTerminate: $1) }) {
          self.commandRunner = commandRunner
          self.preferences = preferences
@@ -75,6 +80,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
          self.makeMenuBar = makeMenuBar ?? { MenuBarModule(defaults: preferences) }
          self.menuBarSpacing = menuBarSpacing ?? MenuBarSpacing(defaults: preferences)
          self.animations = animations ?? AnimationPreferences(defaults: preferences)
+         self.presentWindow = presentWindow
+         self.restartAnimationClients = restartAnimationClients
         self.model = model
         self.spaces = spaces
         self.windowPositions = windowPositions
@@ -181,11 +188,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.onOpenSettings = { [weak self] group in self?.actionHost?.showSettings(group) }
         model.onRunSetup = { [weak self] in self?.actionHost?.showSetup() }
         model.onSaveWidgets = { [weak self] layout in
-            guard let self, transactions.acceptsActions else { return }
+            guard let self, transactions.acceptsActions else { return false }
             var value = layout; value.normalize(); uiStore.save(value); model.widgetLayout = value
+            return true
         }
         model.onSkipSetup = { [weak self] in
-            guard let self, transactions.acceptsActions else { return }
+            guard let self, transactions.acceptsActions, activeSetupDraft?.applying != true else { return }
             uiStore.complete(); activeSetupDraft?.discardCheckpoint(); SetupDraft.clearCheckpoint(defaults: preferences); setupWindow?.close(); showDashboard()
         }
         model.onFinishSetup = { [weak self] draft, completion in
@@ -651,14 +659,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             window.minSize = NSSize(width: 680, height: 480)
             window.center(); settingsWindow = window
         }
-        settingsWindow?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        if let settingsWindow { presentWindow(settingsWindow) }
     }
 
     private func showSetup() {
         guard transactions.acceptsActions else { return }
         popover.performClose(nil)
-        if let setupWindow, setupWindow.isVisible { setupWindow.makeKeyAndOrderFront(nil); return }
+        if let setupWindow, activeSetupDraft != nil { presentWindow(setupWindow); return }
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 700), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.title = "Set up Fix macOS"
         window.isReleasedWhenClosed = false
@@ -668,14 +675,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.contentViewController = NSHostingController(rootView: SetupWizard(model: model, draft: draft, close: { [weak window] in window?.close() }))
         window.minSize = NSSize(width: 640, height: 480)
         window.center(); setupWindow = window
-        window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+        presentWindow(window)
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard sender === setupWindow else { return true }
-        guard activeSetupDraft?.applying != true else { return false }
-        activeSetupDraft?.discardCheckpoint()
-        return true
+        return activeSetupDraft?.cancel() ?? true
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === setupWindow else { return }
+        activeSetupDraft = nil; setupWindow = nil
     }
 
     private func configureSetup(_ draft: SetupDraft) {
@@ -764,7 +774,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 completion(results + ["Remaining setup changes were not applied: shutdown is in progress. Successful changes above remain applied."]); return
             }
             guard index < AppModule.allCases.count else {
-                model.onSaveWidgets(requestedWidgets)
+                _ = model.onSaveWidgets(requestedWidgets)
                 uiStore.complete(); draft.discardCheckpoint()
                 completion(results + ["Quick-action layout saved. No timed session, clipboard capture, window capture, or pointer Apply was started."])
                 return
@@ -1042,7 +1052,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     if recoverOnly { try animations.recoverPendingRestore() }
                     else { try animations.setEnabled(enabled, preserveChoice: preserveChoice) }
                     // Restart only after the complete preference transaction succeeds.
-                    _ = try? CommandRunner().run("/usr/bin/killall", ["Dock", "Finder"])
+                    restartAnimationClients()
                     DispatchQueue.main.async { [weak self] in
                         guard let self else { return }
                         model.animationsBusy = false

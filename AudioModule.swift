@@ -160,12 +160,19 @@ final class AudioModule {
     func configureForSetup(automatic desired: Bool, output: [String], input: [String], outputFallback: String, inputFallback: String) {
         guard automatic != desired || preferences(.output) != output || preferences(.input) != input ||
             fallback(.output) != outputFallback || fallback(.input) != inputFallback else { return }
-        // The off transition cannot write a route. Replace all inputs before the
-        // single explicit resume, rather than exposing intermediate preferences.
+        let wasAutomatic = automatic
+        let previousPending = pending
+        // The off transition cannot write a route. Replace all inputs before
+        // enabling rules, without turning an unchanged On choice into Resume.
+        // Existing manual overrides remain owned by the routing policy.
         automatic = false
         setPreferences(output, direction: .output); setPreferences(input, direction: .input)
         setFallback(outputFallback, direction: .output); setFallback(inputFallback, direction: .input)
-        automatic = desired
+        if wasAutomatic && desired {
+            defaults.set(true, forKey: "audio.automatic")
+            pending = previousPending
+            poll()
+        } else { automatic = desired }
     }
     func start() {
         guard !running else { return }
