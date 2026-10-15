@@ -129,7 +129,8 @@ claim that the baseline's release blockers are fixed.
 
 ### Clipboard · `clipboard`
 
-- **Owners:** [ClipboardHistory.swift](ClipboardHistory.swift) owns capture/retention
+- **Owners:** [ClipboardHistory.swift](Sources/Features/Clipboard/Policy/ClipboardHistory.swift),
+  in the static `ClipboardPolicy` module, owns capture/retention
   policy and archive I/O; [ClipboardModule.swift](ClipboardModule.swift) owns native
   pasteboard access, shortcut registration, panel, thumbnails and presentation.
 - **UI:** Clipboard settings, Clipboard widget and nonactivating ⌘⇧V panel. No
@@ -172,8 +173,10 @@ instead of importing its app/hotkey/menu implementation. The import is pinned at
 [Vendor/strafe/UPSTREAM.txt](Vendor/strafe/UPSTREAM.txt). This is a source dependency,
 not a feature-module directory, dynamic loader, or claim of full upstream app parity.
 
-The current build uses `clang`/`swiftc` with explicit source inputs, not a Swift package
-manifest. Vendoring keeps that input pinned for reproducible source selection and
+The app and vendor build uses `clang`/`swiftc` with explicit source inputs; the
+Foundation-only clipboard policy is a local [Swift package](Package.swift), linked
+statically by the same bundling script. See [package commands](docs/swiftpm.md).
+Vendoring keeps that input pinned for reproducible source selection and
 lets us maintain the local [SwitchEngine.swift](Vendor/strafe/Swift/SwitchEngine.swift)
 patch: cancel queued ramps, drain an active gesture before display changes/shutdown,
 and inject phase posting for tests. It does not guarantee bit-for-bit builds across
@@ -190,7 +193,9 @@ and the revision-bound [integration evidence](RELEASE-CHECKLIST.md#current-evide
 ## Test seams and evidence
 
 [test.sh](test.sh) compiles native host/UI and feature code into an isolated test
-executable. Feature protocols and injected factories, clocks, command runners,
+executable and runs named Swift Testing suites in
+[Tests/ClipboardPolicyTests](Tests/ClipboardPolicyTests). Both use the same packaged
+clipboard implementation. Feature protocols and injected factories, clocks, command runners,
 presenters and persistence backends let tests exercise production actions without
 performing the corresponding live OS effects.
 

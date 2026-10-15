@@ -1,4 +1,5 @@
 import AppKit
+import ClipboardPolicy
 
 private final class FakeClipboard: ClipboardAccess {
     var changeCount = 0

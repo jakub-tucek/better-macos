@@ -1,32 +1,38 @@
 import Foundation
 
-struct ClipboardExclusionsDraft {
-    var edited: String?
-    func text(applied: String) -> String { edited ?? applied }
-    mutating func apply(current: String, save: (String) -> Void) {
+public struct ClipboardExclusionsDraft {
+    public init() {}
+    public var edited: String?
+    public func text(applied: String) -> String { edited ?? applied }
+    public mutating func apply(current: String, save: (String) -> Void) {
         save(text(applied: current)); edited = nil
     }
 }
 
-enum ClipboardSelection {
-    static func index(previous: UUID?, entries: [ClipboardEntry], reset: Bool) -> Int? {
+public enum ClipboardSelection {
+    public static func index(previous: UUID?, entries: [ClipboardEntry], reset: Bool) -> Int? {
         if reset { return entries.isEmpty ? nil : 0 }
         guard let previous else { return nil }
         return entries.firstIndex { $0.id == previous }
     }
 }
 
-struct ClipboardEntry: Codable, Identifiable, Equatable {
-    let id: UUID
-    let created: Date
-    let source: String
-    let text: String?
-    let image: Data?
-    var pinned: Bool
-    var label: String { text ?? "Image (\((image?.count ?? 0) / 1024) KB)" }
+public struct ClipboardEntry: Codable, Identifiable, Equatable {
+    public let id: UUID
+    public let created: Date
+    public let source: String
+    public let text: String?
+    public let image: Data?
+    public var pinned: Bool
+    public var label: String { text ?? "Image (\((image?.count ?? 0) / 1024) KB)" }
+
+    public init(id: UUID, created: Date, source: String, text: String?, image: Data?, pinned: Bool) {
+        self.id = id; self.created = created; self.source = source
+        self.text = text; self.image = image; self.pinned = pinned
+    }
 }
 
-protocol ClipboardAccess: AnyObject {
+public protocol ClipboardAccess: AnyObject {
     var changeCount: Int { get }
     var markedPrivate: Bool { get }
     func text() -> String?
@@ -34,7 +40,7 @@ protocol ClipboardAccess: AnyObject {
     func write(_ entry: ClipboardEntry) -> Bool
 }
 
-protocol ClipboardPersistence {
+public protocol ClipboardPersistence {
     // Mutating operations may commit and then throw. Callers must reconcile
     // uncertain results before considering disk ownership/cleanup complete.
     func load() throws -> [ClipboardEntry]
@@ -43,19 +49,20 @@ protocol ClipboardPersistence {
 }
 
 /// A single bounded archive owns image bytes too: delete/expiry/Clear cannot orphan images.
-struct ClipboardArchive: ClipboardPersistence {
+public struct ClipboardArchive: ClipboardPersistence {
     // Raw caps can expand to ~81 MiB with base64 and worst-case JSON text escaping.
     static let encodedLimit = 96 * 1024 * 1024
     enum ArchiveError: Error { case oversized }
     let directory: URL
+    public init(directory: URL) { self.directory = directory }
     private var file: URL { directory.appendingPathComponent("history.json") }
-    func load() throws -> [ClipboardEntry] {
+    public func load() throws -> [ClipboardEntry] {
         guard FileManager.default.fileExists(atPath: file.path) else { return [] }
         let size = try file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard size <= Self.encodedLimit else { throw ArchiveError.oversized }
         return try JSONDecoder().decode([ClipboardEntry].self, from: Data(contentsOf: file))
     }
-    func save(_ entries: [ClipboardEntry]) throws {
+    public func save(_ entries: [ClipboardEntry]) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
                                                attributes: [.posixPermissions: 0o700])
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
@@ -66,25 +73,25 @@ struct ClipboardArchive: ClipboardPersistence {
         try data.write(to: file, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
     }
-    func clear() throws {
+    public func clear() throws {
         if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
     }
 }
 
-final class ClipboardHistory {
-    static let textLimit = 64 * 1024
-    static let imageLimit = 4 * 1024 * 1024
-    static let imageBudget = 32 * 1024 * 1024
+public final class ClipboardHistory {
+    public static let textLimit = 64 * 1024
+    public static let imageLimit = 4 * 1024 * 1024
+    public static let imageBudget = 32 * 1024 * 1024
     private let board: ClipboardAccess
     private let archive: ClipboardPersistence
     private let now: () -> Date
     private let source: () -> String?
     private var lastChange: Int
-    private(set) var entries: [ClipboardEntry] = []
-    private(set) var recording = false
-    private(set) var persistent = false
-    private(set) var ageDays = 7
-    private(set) var exclusions: Set<String> = []
+    public private(set) var entries: [ClipboardEntry] = []
+    public private(set) var recording = false
+    public private(set) var persistent = false
+    public private(set) var ageDays = 7
+    public private(set) var exclusions: Set<String> = []
     // Exactly one disk intent can be pending. Deliberate deletion supersedes
     // recovery/rollback, so a completed delete cannot leave hidden restore work.
     private enum StorageIntent {
@@ -95,7 +102,7 @@ final class ClipboardHistory {
         case delete
     }
     private var storageIntent: StorageIntent = .idle
-    var storagePending: Bool {
+    public var storagePending: Bool {
         if case .idle = storageIntent { return false }
         return true
     }
@@ -103,16 +110,16 @@ final class ClipboardHistory {
         if case .startup(let days) = storageIntent { return days }
         return nil
     }
-    var requestedPersistence: Bool { startupDays != nil || persistent }
-    var onChange: () -> Void = {}
-    var onError: () -> Void = {}
+    public var requestedPersistence: Bool { startupDays != nil || persistent }
+    public var onChange: () -> Void = {}
+    public var onError: () -> Void = {}
 
-    init(board: ClipboardAccess, archive: ClipboardPersistence, now: @escaping () -> Date = Date.init,
+    public init(board: ClipboardAccess, archive: ClipboardPersistence, now: @escaping () -> Date = Date.init,
          source: @escaping () -> String?) {
         self.board = board; self.archive = archive; self.now = now; self.source = source
         lastChange = board.changeCount // Never capture the clipboard present at startup/resume.
     }
-    func configurePersistence(_ enabled: Bool, ageDays: Int, load: Bool = false) throws {
+    public func configurePersistence(_ enabled: Bool, ageDays: Int, load: Bool = false) throws {
         if !enabled {
             // Disable preserves memory but revokes every previous disk restore
             // intent before attempting I/O, even if deletion commits then throws.
@@ -165,17 +172,17 @@ final class ClipboardHistory {
         storageIntent = .idle
         onChange()
     }
-    func setExclusions(_ values: Set<String>) {
+    public func setExclusions(_ values: Set<String>) {
         exclusions = values
         entries.removeAll { exclusions.contains($0.source) }
         changed()
     }
-    func setRecording(_ value: Bool) {
+    public func setRecording(_ value: Bool) {
         lastChange = board.changeCount
         recording = value && startupDays == nil
         onChange()
     }
-    func poll() {
+    public func poll() {
         if storagePending { retryStorage() }
         let old = entries
         prune()
@@ -195,17 +202,17 @@ final class ClipboardHistory {
                                       text: text, image: image, pinned: existing?.pinned ?? false), at: 0)
         prune(); changed()
     }
-    func copy(_ id: UUID) -> Bool {
+    public func copy(_ id: UUID) -> Bool {
         guard let entry = entries.first(where: { $0.id == id }), board.write(entry) else { return false }
         lastChange = board.changeCount
         return true
     }
-    func delete(_ id: UUID) { entries.removeAll { $0.id == id }; changed() }
-    func pin(_ id: UUID) {
+    public func delete(_ id: UUID) { entries.removeAll { $0.id == id }; changed() }
+    public func pin(_ id: UUID) {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[index].pinned.toggle(); changed()
     }
-    func clear() throws {
+    public func clear() throws {
         entries = []; lastChange = board.changeCount
         if let days = startupDays {
             persistent = true
@@ -216,11 +223,11 @@ final class ClipboardHistory {
         try finishArchiveDeletion()
     }
     @discardableResult
-    func flushPendingStorage() -> Bool {
+    public func flushPendingStorage() -> Bool {
         if storagePending { retryStorage() }
         return !storagePending
     }
-    func stop() { setRecording(false); entries = []; onChange() }
+    public func stop() { setRecording(false); entries = []; onChange() }
     private func prune() {
         let cutoff = now().addingTimeInterval(-Double(ageDays) * 86400)
         var ids = Set<UUID>()

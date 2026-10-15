@@ -1,5 +1,6 @@
 import AppKit
 import Carbon
+import ClipboardPolicy
 import ImageIO
 
 enum ClipboardPresentation {

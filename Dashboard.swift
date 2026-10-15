@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import ClipboardPolicy
 
 enum DashboardTab: String, CaseIterable {
     case modules = "Modules"

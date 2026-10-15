@@ -3,8 +3,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(mktemp -d "${TMPDIR:-/tmp}/fix-macos-build-test.XXXXXX")"
 trap 'rm -rf "$ROOT"' EXIT
-mkdir -p "$ROOT/source/Vendor/strafe/Swift" "$ROOT/bin"
-cp build.sh Info.plist LICENSE "$ROOT/source/"
+mkdir -p "$ROOT/source/Vendor/strafe/Swift" "$ROOT/source/Scripts" "$ROOT/source/Tests" "$ROOT/bin"
+cp build.sh test.sh Package.swift Info.plist LICENSE "$ROOT/source/"
+cp Scripts/clipboard-package.sh "$ROOT/source/Scripts/"
 cp Vendor/strafe/LICENSE Vendor/strafe/UPSTREAM.txt "$ROOT/source/Vendor/strafe/"
 touch "$ROOT/source/Vendor/strafe/Swift/fixture.swift"
 cat > "$ROOT/bin/mock" <<'MOCK'
@@ -13,10 +14,48 @@ set -euo pipefail
 case "${0##*/}" in
     git) echo aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ;;
     xcrun)
+        if [[ "$1" == --find ]]; then echo /mock/usr/bin/swiftc; exit 0; fi
+        if [[ "$1 $2" == 'swift build' ]]; then
+            [[ "${MOCK_FAIL:-}" != package ]] || exit 22
+            configuration=release
+            args=("$@")
+            for ((i=0; i < ${#args[@]}; i++)); do
+                if [[ "${args[i]}" == --configuration ]]; then configuration="${args[i+1]}"; fi
+            done
+            bin="$PWD/build/swiftpm/fixture arm64/$configuration"
+            if [[ "$*" == *--show-bin-path* ]]; then
+                [[ "${MOCK_FAIL:-}" != package-path ]] || exit 27
+                echo "$bin"; exit 0
+            fi
+            [[ "$*" == *'--product ClipboardPolicy'* && "$*" == *'--build-system native'* && "$*" == *'--triple arm64-apple-macosx15.0'* ]] || exit 23
+            mkdir -p "$bin/Modules"
+            if [[ "${MOCK_FAIL:-}" == package-output ]]; then exit 0; fi
+            touch "$bin/libClipboardPolicy.a" "$bin/Modules/ClipboardPolicy.swiftmodule"
+            exit 0
+        fi
+        if [[ "$1 $2" == 'swift test' ]]; then exit 0; fi
         [[ "${MOCK_FAIL:-}" != compile ]] || exit 17
-        [[ "$*" != *fixture-stale.o* ]] || exit 21
+        for arg in "$@"; do
+            case "$arg" in
+                *fixture-stale.o|*ClipboardHistory.swift|Sources/*.swift) exit 21 ;;
+            esac
+        done
+        if [[ "$1" == swiftc ]]; then
+            [[ "$*" == *'libClipboardPolicy.a'* && "$*" == *'/Modules'* ]] || exit 24
+            archives=0
+            for arg in "$@"; do
+                if [[ "$arg" == */libClipboardPolicy.a ]]; then archives=$((archives + 1)); fi
+            done
+            [[ "$archives" == 1 ]] || exit 26
+            for object in CStrafe IOHIDPayload MouseHID; do [[ "$*" == *"build/objects/$object.o"* ]] || exit 25; done
+        fi
         while [[ "$1" != -o ]]; do shift; done
-        printf '%s' fixture-binary > "$2" ;;
+        if [[ "$2" == build/isolated-tests ]]; then
+            printf '#!/bin/bash\nexit 0\n' > "$2"
+            chmod +x "$2"
+        else
+            printf '%s' fixture-binary > "$2"
+        fi ;;
     codesign)
         if [[ "$1" == --force ]]; then
             [[ "${MOCK_FAIL:-}" != sign ]] || exit 18
@@ -45,14 +84,20 @@ run_build
 echo 'PASS: staged build embeds repository source path, destination and HEAD, not staging paths'
 touch "$APP/Contents/Resources/fixture-stale-resource"
 cp -R "$APP" "$ROOT/previous.app"
-for failure in compile sign verify publish; do
+for failure in package package-path compile sign verify publish; do
     export MOCK_FAIL="$failure"
     if run_build; then echo "Expected $failure failure" >&2; exit 1; fi
     diff -r "$ROOT/previous.app" "$APP"
     [[ -z "$(find "$ROOT/source/build" -maxdepth 1 -name '.bundle.*' -print)" ]]
 done
 unset MOCK_FAIL
-echo 'PASS: compile, signing, verification and publication failures preserve previous bundle and clean staging'
+echo 'PASS: package, compile, signing, verification and publication failures preserve previous bundle and clean staging'
+# A successful SwiftPM command without its expected output must also fail closed.
+rm "$ROOT/source/build/swiftpm/fixture arm64/release/Modules/ClipboardPolicy.swiftmodule"
+export MOCK_FAIL=package-output
+if run_build; then echo 'Expected missing package output failure' >&2; exit 1; fi
+diff -r "$ROOT/previous.app" "$APP"
+unset MOCK_FAIL
 run_build
 [[ ! -e "$APP/Contents/Resources/fixture-stale-resource" ]]
 [[ -z "$(find "$ROOT/source/build" -maxdepth 1 -name '.bundle.*' -print)" ]]
@@ -61,3 +106,7 @@ cmp Vendor/strafe/LICENSE "$APP/Contents/Resources/Licenses/strafe-LICENSE.txt"
 cmp Vendor/strafe/UPSTREAM.txt "$APP/Contents/Resources/Licenses/strafe-UPSTREAM.txt"
 echo 'PASS: fresh publication removes stale resources and preserves complete notices'
 echo 'PASS: linking uses only the three freshly compiled owned objects'
+# Exercise the real legacy compiler input list too, without running native UI.
+for fixture in packaging build install; do printf '#!/bin/bash\nexit 0\n' > "$ROOT/source/Tests/$fixture.sh"; done
+bash "$ROOT/source/test.sh" > "$ROOT/output" 2>&1
+echo 'PASS: app and legacy tests link the package archive once, exclude its Swift sources and ignore stale C objects'

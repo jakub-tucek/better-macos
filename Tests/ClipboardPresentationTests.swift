@@ -1,4 +1,5 @@
 import AppKit
+import ClipboardPolicy
 
 func runClipboardPresentationTests() {
     let text = ClipboardEntry(id: UUID(), created: Date(), source: "fixture", text: "Displayed\n\tphrase " + String(repeating: "x", count: 300) + " hidden\n tail", image: nil, pinned: false)

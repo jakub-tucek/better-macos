@@ -1,4 +1,5 @@
 import AppKit
+import ClipboardPolicy
 import SwiftUI
 import IOKit.pwr_mgt
 
