@@ -211,3 +211,48 @@ Remaining live evidence requires the user's clarification: does the checkbox
 refuse to stay checked, or remain checked but fail at the next login? Capture the
 exact login-action error and its time. A user-authorized next-login check is still
 required; neither code changes nor this fake probe can establish it.
+
+## Main integration · 2026-10-15
+
+Independently reviewed CLEAN source commits `22aa2dcd495432c3599145bd1ec03a5661cf36b5`
+and `39a538e99f00fca59f3006dd2e8fc9eef643a7bf` integrated as `cff95b5` and
+**`109a8e0ca884dde47585378a528200e506e6208c`**, on clean main `4fea639`. Shared
+host/model/compiler inputs merged automatically without conflicts, retaining
+Bluetooth's operation/publication UUID and successful-manual-completion callback.
+Login errors remain dedicated inline state: success or failure does not overwrite
+or clear global Bluetooth errors. KeepAwake ownership, source layout, policy
+SwiftPM archive/module, `StoredState`, explicit C inputs and CI were preserved.
+
+One full integrated `bash test.sh` passed **4,439 legacy checks**, including both
+the **44 login** and **29 Bluetooth** additions over the shared baseline, **10
+Swift Testing policy tests in three suites**, **13 mocked installer scenarios**,
+compiler/build fixtures and real/relocated signed-bundle checks. This is the
+combined-main count, not a replacement for the source branch's historical 4,410.
+Log: `build/login-integration.log`. It records HEAD, scoped Xcode 27 / Swift 6.4 /
+SDK 27.0 compiler/SDK paths and versions, arm64, and metadata with `SDKROOT` unset.
+
+The **unmodified** pinned lint/format wrappers passed directly on the normal main
+path across **50 files**, with the existing four Windows exceptions unchanged;
+offline tooling and CI whitespace fixtures passed. No baseline/exclusion edits,
+absolute-path workaround or generated-source masking was introduced. The source
+worktree's temporary-path tooling failures above remain historical evidence.
+Logs: `build/login-integration-{lint,format,tools,ci}.log`.
+
+Strict configured-certificate signature, exact bundled notices, source/built plist
+lint, real/relocated integrity and metadata passed: the arm64/macOS 15+ bundle
+embeds the tested revision, version `0.4`, build `4`, SDK 27.0. The source branch's
+ten owned-view snapshots remain its revision-bound evidence; they were not rerun
+or counted as live app acceptance here.
+
+This improves truthful **registration intent/status and inline failure UX**, not
+proof of real registration, approval or next-login launch. No real login API write,
+Open Login Items action, app launch/quit/install, live preference/permission/device
+mutation, version bump, push/tag or publication was performed. Injected services
+and isolated fixtures only; hardware/native and next-login acceptance remain open.
+The pending logging branch was not integrated; any later login hooks must use the
+new typed `LoginServicing` boundary and receive review. This evidence-only commit
+does not embed its own revision in a final release artifact.
+
+All **13 shell inputs**, **235 local links and 39 fragments across 30 tracked
+Markdown documents**, exact Bluetooth-ownership preservation assertions and
+`git diff --check` passed. No temporary-path lint failure was masked on main.
