@@ -4,6 +4,11 @@ import CStrafe
 import CoreBluetooth
 import IOKit.pwr_mgt
 
+if let index = CommandLine.arguments.firstIndex(of: "--login-ui-fixtures"), index + 1 < CommandLine.arguments.count {
+    try renderLoginUIFixtures(directory: CommandLine.arguments[index + 1])
+    exit(0)
+}
+
 if let index = CommandLine.arguments.firstIndex(of: "--release-ui-fixtures"), index + 1 < CommandLine.arguments.count {
     try renderReleaseUIFixtures(directory: CommandLine.arguments[index + 1])
     exit(0)
@@ -398,6 +403,7 @@ displaySetModule.reconcile(ready: true, settled: true)
 expect(displaySetBackend.moves.count == 1, "repeated A B C snapshot does not repeat restoration")
 displaySetDefaults.removePersistentDomain(forName: displaySetDomain)
 runHostTransactionsTests()
+runLoginServiceTests()
 runKeepAwakeFeatureTests()
 try runUITests()
 try runClipboardTests()

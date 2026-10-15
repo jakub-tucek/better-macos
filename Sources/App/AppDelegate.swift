@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import ServiceManagement
 import CoreBluetooth
 import os
 
@@ -59,6 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var guiTestOriginalOutput: String?
     private let commandRunner: CommandRunning
     private let transactions: HostTransactions
+    private let loginService: LoginServicing
     private var moduleFailures: [AppModule: String] = [:]
     private lazy var choicePreparations = BuiltinChoicePreparations(
         keepAwake: awakeFeature,
@@ -96,8 +96,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
           displayRecoveryPending: (() -> Bool)? = nil,
           displaySnapshotRefresh: (() -> Void)? = nil,
           transactions: HostTransactions = HostTransactions(),
+          loginService: LoginServicing = SystemLoginService(),
           terminationReply: @escaping (NSApplication, Bool) -> Void = { $0.reply(toApplicationShouldTerminate: $1) }) {
          self.transactions = transactions
+         self.loginService = loginService
          self.commandRunner = commandRunner
          self.preferences = preferences
          self.modules = ModuleSettings(defaults: preferences)
@@ -358,11 +360,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.onSpeedChanged = { [weak self] speed in self?.actionHost?.spaces?.speed = speed; self?.actionHost?.refreshPreferences() }
         model.onLoginChanged = { [weak self] enabled in
             guard let self, transactions.acceptsActions else { return }
+            model.loginError = nil
             do {
-                if enabled { try SMAppService.mainApp.register() }
-                else { try SMAppService.mainApp.unregister() }
-            } catch { showError(error) }
-            refreshPreferences()
+                if enabled { try loginService.register() }
+                else { try loginService.unregister() }
+            } catch {
+                model.loginError = "Could not \(enabled ? "enable" : "disable") launch at login: \(error.localizedDescription)"
+            }
+            refreshLoginStatus()
+        }
+        model.onOpenLoginSettings = { [weak self] in
+            guard let self, transactions.acceptsActions else { return }
+            loginService.openSettings()
         }
         model.onClose = { [weak self] in self?.popover.performClose(nil) }
         model.onQuit = { NSApp.terminate(nil) }
@@ -655,6 +664,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func showSettings(_ group: SettingsGroup? = nil) {
         guard transactions.acceptsActions else { return }
+        refreshLoginStatus()
         if let group { model.settingsGroup = group }
         popover.performClose(nil)
         if settingsWindow == nil {
@@ -1033,8 +1043,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.spacesPermission = spaces?.hasPermission ?? false
         model.spacesAvailable = spaces?.isAvailable == true && spaces?.isDraining != true && controlState.inputReady
         model.spacesSpeed = spaces?.speed ?? .instant
-        model.launchAtLogin = SMAppService.mainApp.status == .enabled
+        refreshLoginStatus()
         publishModuleStatus()
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        refreshLoginStatus()
+    }
+
+    private func refreshLoginStatus() {
+        model.loginStatus = loginService.status
     }
 
     private var controlState: SystemControlLifecycle.State {

@@ -153,7 +153,9 @@ final class DashboardModel: ObservableObject {
     @Published var spacesPermission = false
     @Published var spacesAvailable = false
     @Published var spacesSpeed: TransitionSpeed = .instant
-    @Published var launchAtLogin = false
+    @Published var loginStatus: LoginStatus = .notRegistered
+    @Published var loginError: String?
+    var launchAtLogin: Bool { loginStatus.requested }
     @Published var updateStatus = "Not checked yet"
     @Published var updateChecking = false
     @Published var updateAvailable = false
@@ -240,6 +242,7 @@ final class DashboardModel: ObservableObject {
     var onRestoreAnimations: () -> Void = {}
     var onSpeedChanged: (TransitionSpeed) -> Void = { _ in }
     var onLoginChanged: (Bool) -> Void = { _ in }
+    var onOpenLoginSettings: () -> Void = {}
     var onCheckUpdates: () -> Void = {}
     var onInstallUpdate: () -> Void = {}
     var onClose: () -> Void = {}

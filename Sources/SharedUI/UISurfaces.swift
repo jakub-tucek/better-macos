@@ -734,7 +734,7 @@ struct SettingsView: View {
     private var general: some View {
         VStack(alignment: .leading, spacing: 18) {
             DashboardCard {
-                Toggle("Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: model.onLoginChanged))
+                LoginSettingsView(model: model)
                 Button("Run setup again…", action: model.onRunSetup)
                 Text("Setup starts from your current settings. Nothing is applied until Finish.").font(.caption)
             }
@@ -745,6 +745,23 @@ struct SettingsView: View {
                 if model.updateAvailable { Button("Install update…", action: model.onInstallUpdate) }
             }
             DisclosureGroup("Diagnostics") { Text(model.watchdogStatus).textSelection(.enabled) }
+        }
+    }
+}
+
+struct LoginSettingsView: View {
+    @ObservedObject var model: DashboardModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle("Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: model.onLoginChanged))
+            Text(model.loginStatus.message).font(.caption).foregroundStyle(.secondary)
+            if let error = model.loginError {
+                Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+            }
+            if model.loginStatus.needsAttention || model.loginError != nil {
+                Button("Open Login Items…", action: model.onOpenLoginSettings)
+            }
         }
     }
 }
