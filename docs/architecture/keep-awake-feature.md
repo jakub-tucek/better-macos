@@ -137,9 +137,45 @@ The full suite itself passed before that diagnostic error; corrected metadata
 checks derive `CFBundleExecutable` from the plist, and the final suite wrapper
 completes independently. Neither interruption was an implementation test failure.
 
-Independent review is required before merge. No real app launch/quit/install,
+At this implementation record, independent review was required before merge. No real app launch/quit/install,
 live preferences, clipboard/device changes, TCC changes, version bump, tag/push
 or publication was performed. Existing native/hardware and final release gates
 remain open; the evidence-only commit does not claim a rebuilt final artifact at
 its own revision. Existing guides are intentionally left for the parent integration
 to update alongside its independently reviewed work.
+
+## Main integration · 2026-10-15
+
+Independently reviewed CLEAN source commits `d1ec4bb` and `eff835f` integrated
+without conflicts as `d45ae21` and **`aec5532f5067eedee417b3cdbaad6a8ba266535e`**,
+on main `dc26aa2`. The equivalent source moves were already integrated and were
+not cherry-picked again. Current CI configuration and organized paths are retained;
+the parallel Settings scrolling investigation is outside this integration.
+
+At that integrated revision, one complete `bash test.sh` passed **4,366 legacy
+checks**, **10 Swift Testing policy tests in three suites**, **13 mocked installer
+scenarios**, production state compiler, source/package/link/rollback fixtures and
+real/relocated signed-bundle notice/dependency checks. Log:
+`build/keep-awake-feature-integration.log`. It records HEAD, command-scoped Xcode
+27 / Swift 6.4 / SDK 27.0 paths/version, arm64 and bundle metadata with `SDKROOT`
+explicitly unset. The known SwiftPM native-engine deprecation warning remains.
+
+Strict configured-certificate signature, source/built plist lint and metadata passed:
+the arm64/macOS 15+ bundle embeds the tested revision, version `0.4`, build `4`, SDK 27.0.
+Lint/format passed across **47 files**; offline tooling and CI whitespace fixtures
+passed. Logs: `build/keep-awake-feature-integration-{lint,format,tools,ci}.log`.
+
+This is **one concrete owned feature**, not a general framework, new package or
+universal quit lifecycle. Host admission, preferences, status coordination and quit
+authority remain intact; SwiftPM policy ownership, `StoredState` and three explicit
+C objects remain unchanged. Historical failures/counts and native/hardware limits
+remain revision-bound. No Settings UI source, real app launch/quit/install, live
+preferences/devices/permissions, version, push/tag or publication was changed.
+This evidence-only commit is not a final artifact at its own revision, another
+full CLT run, minimum-toolchain proof or hosted CI execution.
+
+All **13 shell inputs**, **233 local links and 37 fragments across 28 Markdown
+documents**, compiler-path/one-time-link assertions and `git diff --check` passed.
+Direct comparisons confirm Settings UI/setup views, the original assertion owner,
+HostTransactions, Clipboard/Audio/Bluetooth implementations, package and CI inputs
+are unchanged. The parallel scrolling defect remains outside this work's acceptance.

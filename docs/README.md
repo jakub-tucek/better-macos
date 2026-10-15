@@ -5,6 +5,7 @@
 - [Modules, source architecture, defaults and privacy](modules.md)
 - [Host coordination glossary](glossary.md)
 - [Partial built-in registration](architecture/builtin-registration.md)
+- [Keep awake owned-feature boundary](architecture/keep-awake-feature.md)
 - [SwiftPM ownership and named policy suites](swiftpm.md)
 - [Roadmap](roadmap.md)
 - [Validation and open acceptance](validation/README.md)

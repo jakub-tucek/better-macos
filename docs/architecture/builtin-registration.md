@@ -54,7 +54,10 @@ quit veto: its existing shutdown behavior is unchanged.
 ## Intentionally still host-composed
 
 Owner construction/callback wiring and `updateModules` reconciliation remain
-explicit and typed in `AppDelegate`. Audio remains one owner shared with Bluetooth,
+explicit and typed in `AppDelegate` for other features. The later
+[Keep awake owned-feature extraction](keep-awake-feature.md) privately owns its
+module/factory/callbacks and is the typed Keep awake choice-preparation slot; the
+old `KeepAwakeChoicePreparation` wrapper is removed. Audio remains one owner shared with Bluetooth,
 with independent automatic-routing admission. Mouse, Menu bar, Spaces and their
 restoration/drain behavior are unchanged. Setup preference staging, typed setup
 application, draft cancellation and explicit Mouse Apply are unchanged.

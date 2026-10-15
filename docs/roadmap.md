@@ -3,7 +3,8 @@
 Plan based on `2620a32` (2026-10-15), with implementation status updated below.
 Pinned developer tooling, the first Clipboard policy SwiftPM slice and partial static
 built-in registration, mechanical source organization and a CI workflow are available;
-broader lifecycle extraction remains proposed. Hosted CI execution is unverified. Current behavior lives in
+one concrete Keep awake owned-feature seam is also implemented; broader lifecycle
+extraction remains proposed. Hosted CI execution is unverified. Current behavior lives in
 [the module guide](modules.md); acceptance and failures live in [validation](validation/README.md).
 Keep the concise README and its install command. This plan promises no release date or tag.
 
@@ -14,7 +15,7 @@ Keep the concise README and its install command. This plan promises no release d
 | 0 | Finish release safety | Core fixes and watchdog/corrupt-journal regressions are reviewed and integrated through `dc96e9c`; complete native acceptance and record remaining hardware gaps at the tested revision. |
 | 1 | Documentation and developer baseline (partial) | Documentation consolidation and pinned tools/commands are implemented; CLT 27/Xcode 27 compatibility is verified. Establish a tested minimum toolchain. |
 | 2 | One SwiftPM slice and source organization | Clipboard policy is extracted and statically linked with named tests; first-party Swift is organized by owner under Sources without lifecycle changes. Preserve app/helper behavior and packaging; toolchain evidence remains revision-bound. |
-| 3 | Built-in feature registration (partial) | Inert feature/widget metadata and typed Keep awake/Clipboard/shared Displays choice preparation are integrated; owner factories, broader lifecycle extraction and a general framework remain pending. Preserve IDs, shared ownership and drain/veto behavior. |
+| 3 | Built-in feature registration (partial) | Metadata/choice preparation and one concrete Keep awake private-owner/presentation seam are integrated. Other factory/lifecycle extraction and a general framework remain pending; preserve IDs, shared ownership and drain/veto behavior. |
 | 4 | Test migration and CI (partial) | Arm64 preview workflow and offline CI regressions are configured; hosted execution is unverified and branch protection is not configured. Continue suite migration and clean/incremental verification. |
 | 5 | Native UI automation, if needed | Add a separate full-Xcode GUI job only for acceptance gaps that require app-driving tests. |
 | Later | Measured performance/storage work | Compare idle resource baselines; consider SQLite only if clipboard measurements justify migration. |
@@ -60,8 +61,9 @@ mode for release reproducibility; do not claim byte-identical output across SDKs
 
 - Implemented: [inert presentation catalog and typed choice preparation](architecture/builtin-registration.md)
   for Keep awake, Clipboard and shared Displays, preserving persisted IDs and
-  preference keys. Owner construction, reconciliation, setup staging and quit remain
-  explicitly host-composed; no general factory/lifecycle framework is complete.
+  preference keys. Keep awake now uses a [concrete owned feature and presentation adapter](architecture/keep-awake-feature.md);
+  other owners remain explicitly host-composed. Host admission, choice commits,
+  setup sequencing and quit remain authoritative; no general lifecycle framework is complete.
 - Keep feature-specific operations behind existing interfaces. Preserve asynchronous
   drains, cleanup failure/retry and unload/quit vetoes; `HostTransactions` retains
   action-admission and termination authority.

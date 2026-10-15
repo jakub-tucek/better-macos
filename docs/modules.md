@@ -4,6 +4,7 @@ Source map started at `f359f42`, with registration ownership updated through
 `66056f0` and reviewed mechanical source organization integrated at `480e957`. This describes existing
 code, not a completed architecture refactor. See [move evidence](validation/source-organization.md). Use
 [validation](validation/README.md) for acceptance and pending release blockers.
+Keep awake ownership is updated through integrated `aec5532` below.
 
 ## Modules, not a plugin system
 
@@ -125,13 +126,24 @@ claim that the baseline's release blockers are fixed.
 
 ### Keep awake · `keepAwake`
 
-- **Owner:** [KeepAwakeModule.swift](../Sources/Features/KeepAwake/KeepAwakeModule.swift), including `SystemPowerAssertions`.
-- **UI:** System settings and Keep awake widget; no TCC permission grant.
+- **Owner:** [KeepAwakeFeature.swift](../Sources/Features/KeepAwake/KeepAwakeFeature.swift)
+  privately owns the factory, optional [KeepAwakeModule.swift](../Sources/Features/KeepAwake/KeepAwakeModule.swift),
+  callbacks and typed state/actions. The existing module still owns assertion policy,
+  timers and app observation, including `SystemPowerAssertions`.
+- **Presentation:** [KeepAwakePresentation.swift](../Sources/Features/KeepAwake/KeepAwakePresentation.swift)
+  binds Dashboard callbacks, projects state and hosts injected app selection. System
+  settings/widget views are unchanged; no TCC permission grant. Host composition
+  retains admission, enabled preferences, setup sequencing, status-item coordination
+  and quit authority; it no longer accesses the private KeepAwakeModule owner.
 - **Resources/cleanup:** IOKit system/display assertions, deadline/update timer and
   app launch/exit observers. `deactivate()` removes observers/timer and stops reasons;
   assertion release failures have feature-owned error/cleanup state. The setup assertion
   fix is integrated; see [core evidence](validation/README.md#reviewed-core-integration--dc96e9c--2026-10-15)
   and the remaining [release gates](releases/checklist.md#native-acceptance).
+- **Boundary:** feature `prepareDisable()` retains/reactivates the same owner on
+  failure; actions and post-chooser selections recheck host admission. Shutdown
+  keeps the existing best-effort cleanup, without adding a quit veto. See the
+  [owned-feature contract and evidence](architecture/keep-awake-feature.md).
 
 ### Window positions · `windows`
 
