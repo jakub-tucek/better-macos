@@ -11,10 +11,15 @@ private final class SetupAudioBackend: AudioRoutingBackend {
 }
 private final class SetupPowerBackend: PowerAssertionBackend {
     var creates = 0
+    var requestedTimeouts: [TimeInterval] = []
     var fail = false
     var renewals = 0
     var failRenewal = false
-    func create(display: Bool, timeout: TimeInterval) throws -> IOPMAssertionID { creates += 1; if fail { throw ToggleError(message: "Repeated assertion failure") }; return IOPMAssertionID(creates) }
+    func create(display: Bool, timeout: TimeInterval) throws -> IOPMAssertionID {
+        creates += 1; requestedTimeouts.append(timeout)
+        if fail { throw ToggleError(message: "Repeated assertion failure") }
+        return IOPMAssertionID(creates)
+    }
     func setTimeout(_ id: IOPMAssertionID, seconds: TimeInterval) throws {
         renewals += 1
         if failRenewal { throw ToggleError(message: "Fixture renewal failure") }
@@ -58,6 +63,7 @@ private final class UIWindows: WindowPositionBackend {
 
 func runUITests() throws {
     runAwakeQuickActionTests()
+    runAwakeNativeEditorTests()
     runPopupSizingTests()
     let suite = "fix-mac-os.ui-tests.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
@@ -189,6 +195,144 @@ func runUITests() throws {
     runNativeUIInteractionTests()
     runSetupDesktopIntentTests()
     runSetupDesktopPermissionTests()
+}
+
+/// Real text field/editor and responder transitions in an unpresented native
+/// window. SwiftUI button events/AX actions are unavailable in that hidden host;
+/// Start invokes the exact action registered by the mounted production Button.
+private final class AwakeNativeEditorFixture {
+    let commands = AwakeDurationEditorCommands()
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 120), styleMask: [.titled], backing: .buffered, defer: false)
+    let view: NSHostingView<AnyView>
+    init(model: DashboardModel, showsStart: Bool = true) {
+        view = NSHostingView(rootView: AnyView(AwakeDurationEditor(model: model, showsStart: showsStart, commands: commands)))
+        window.contentView = view
+        window.isReleasedWhenClosed = false
+        settle()
+    }
+    func settle() {
+        for _ in 0..<8 {
+            view.layoutSubtreeIfNeeded()
+            window.display()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+    }
+    private func findField(_ view: NSView) -> NSTextField? {
+        if let field = view as? NSTextField, field.isEditable { return field }
+        return view.subviews.lazy.compactMap { self.findField($0) }.first
+    }
+    var text: String? { findField(view)?.stringValue }
+    func type(_ text: String) {
+        guard let field = findField(view) else { expect(false, "production editor exposes a native editable field"); return }
+        expect(window.makeFirstResponder(field), "hidden native duration field accepts first responder")
+        field.selectText(nil)
+        guard let editor = field.currentEditor() as? NSTextView else { expect(false, "production duration field owns a native field editor"); return }
+        editor.insertText(text, replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+        settle()
+        expect(self.text == text, "native field editor delivers raw input to the actual production TextField")
+    }
+    func leaveField() {
+        expect(window.makeFirstResponder(nil), "native duration editor relinquishes first responder")
+        settle()
+    }
+    func removeEditor() {
+        window.makeFirstResponder(nil)
+        view.rootView = AnyView(Text("Another destination"))
+        settle()
+        window.orderOut(nil)
+    }
+    func close() {
+        window.performClose(nil)
+        removeEditor()
+    }
+}
+
+private func runAwakeNativeEditorTests() {
+    _ = NSApplication.shared
+    let suite = "fix-mac-os.awake-native-editor.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    for module in AppModule.allCases { ModuleSettings(defaults: defaults).set(module, enabled: false) }
+    let power = SetupPowerBackend()
+    var clock: TimeInterval = 100
+    let awake = KeepAwakeModule(defaults: defaults, backend: power, now: { clock }, automaticUpdates: false, runningApps: { [:] }, processInstances: { [:] })
+    let model = DashboardModel()
+    let host = AppDelegate(model: model, preferences: defaults, makeKeepAwake: { awake })
+    model.onModuleChanged(.keepAwake, true)
+    let fixture = AwakeNativeEditorFixture(model: model)
+    fixture.type("7")
+    expect(awake.selectedMinutes == 30, "native typing does not persist an uncommitted draft")
+    expect(fixture.commands.start(), "mounted production Start action is available to the hidden native host")
+    fixture.settle()
+    expect(awake.selectedMinutes == 7 && defaults.integer(forKey: "keepAwake.minutes") == 7 && awake.remaining == 420 && power.requestedTimeouts == [420],
+           "production Start consumes native typed seven without Return or focus loss and requests the exact timeout")
+    clock += 3
+    fixture.type("13")
+    fixture.leaveField()
+    expect(awake.selectedMinutes == 13 && awake.remaining == 417 && power.requestedTimeouts == [420],
+           "native focus loss commits next duration without changing the active deadline or acquiring assertions")
+    fixture.type("17")
+    model.onKeepAwakeMinutesChanged(45)
+    fixture.settle()
+    expect(fixture.text == "17", "external model publication cannot replace a focused native draft")
+    fixture.leaveField()
+    fixture.commands.start()
+    expect(awake.selectedMinutes == 17 && awake.remaining == 417,
+           "focus-loss commit and subsequent Start preserve typed draft despite an intervening model change")
+    fixture.type("17")
+    model.onKeepAwakeMinutesChanged(60)
+    fixture.window.makeFirstResponder(nil)
+    fixture.commands.start()
+    fixture.settle()
+    expect(awake.selectedMinutes == 17 && fixture.text == "17" && awake.remaining == 417,
+           "pending model publication plus immediate focus loss and Start cannot replace the native draft")
+    model.onKeepAwakeStop()
+    for raw in ["", "0", "1.5", "999999999999999999999999999999"] {
+        fixture.type(raw)
+        fixture.leaveField()
+        fixture.commands.start()
+        fixture.settle()
+        expect(fixture.text == raw && awake.selectedMinutes == 17 && awake.remaining == 0 && power.requestedTimeouts == [420],
+               "native invalid edit survives focus loss and cannot start the previous duration")
+    }
+    fixture.type("19")
+    power.fail = true
+    fixture.commands.start()
+    fixture.settle()
+    expect(fixture.text == "19" && awake.selectedMinutes == 19 && awake.remaining == 0 && power.requestedTimeouts == [420, 1140],
+           "failed production Start preserves native text and explicit saved choice")
+    power.fail = false
+    fixture.commands.start()
+    expect(awake.remaining == 1140 && power.requestedTimeouts == [420, 1140, 1140],
+           "retrying actual Start after failure uses the unchanged native draft")
+    model.onKeepAwakeStop()
+    fixture.type("")
+    fixture.close()
+    expect(!fixture.commands.start() && awake.selectedMinutes == 19 && awake.remaining == 0,
+           "removing or closing an invalid native editor revokes Start without committing or starting stale input")
+    let reopened = AwakeNativeEditorFixture(model: model)
+    expect(reopened.text == "19", "reopened native editor restores the last valid choice, not the invalid discarded edit")
+    reopened.removeEditor()
+
+    let setup = SetupDraft(current: model, defaults: defaults)
+    let setupFixture = AwakeNativeEditorFixture(model: setup.controls, showsStart: false)
+    setupFixture.type("23")
+    setupFixture.leaveField()
+    setupFixture.removeEditor()
+    expect(setup.controls.keepAwakeMinutes == 23 && awake.selectedMinutes == 19 && !setupFixture.commands.start(),
+           "native setup navigation commits only its staged duration and never starts or persists a live session")
+    let invalidSetupFixture = AwakeNativeEditorFixture(model: setup.controls, showsStart: false)
+    invalidSetupFixture.type("")
+    invalidSetupFixture.leaveField()
+    expect(invalidSetupFixture.text == "" && setup.controls.keepAwakeMinutes == 23,
+           "invalid native setup edit remains visible after focus loss without replacing its last staged choice")
+    invalidSetupFixture.removeEditor()
+    expect(setup.controls.keepAwakeMinutes == 23 && awake.selectedMinutes == 19,
+           "navigating away from an invalid native setup edit cannot persist a stale live choice")
+    expect(setup.cancel(), "setup Cancel accepts the staged native edit")
+    expect(defaults.integer(forKey: "keepAwake.minutes") == 19 && !awake.active,
+           "canceling setup preserves the existing persisted duration and assertion state")
+    withExtendedLifetime(host) {}
 }
 
 private func runAwakeQuickActionTests() {

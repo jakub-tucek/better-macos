@@ -40,3 +40,33 @@ or real third-party app launch/quit notifications. No external apps were quit, n
 monitors or user preferences were changed, and the installed app was not relaunched.
 The policy's workspace snapshots are injected in tests; OS notification timing and
 visual layout still need interactive verification.
+
+## Native duration-entry regression coverage (2026-10-15)
+
+The duration fixture hosts the production `AwakeDurationEditor` in an unpresented
+`NSWindow`. It discovers the actual editable `NSTextField`, makes it first responder,
+and inserts raw text through its `NSTextView` field editor. Responder resignation
+exercises the real SwiftUI focus-loss callback. Tests cover:
+
+- Typing 7 and invoking Start without Return or prior focus loss: the real host
+  persists 7 and the fake assertion backend receives exactly 420 seconds.
+- Focus-loss commit during an existing session: only the next duration changes;
+  the existing deadline and assertion creation count are unchanged.
+- Intervening model publication, including pending publication followed immediately
+  by responder resignation and Start: the typed draft remains authoritative.
+- Empty, zero, fractional and overflowing edits across focus loss and Start;
+  invalid edits remain visible and never start the previously saved duration.
+- Failed Start and another Start after backend recovery, native fixture close and
+  reopen, and staged Setup edits across navigation and Cancel.
+
+**Button-delivery limitation:** synthetic mouse events and accessibility press did
+not invoke SwiftUI's button in the hidden window. Start therefore uses
+`AwakeDurationEditorCommands`, which holds the exact action registered by the
+mounted production Start button, and is revoked on removal. The fixture does not
+replace the native text binding or supply a separate draft. This verifies native
+text/focus integration plus the production button action, **not** real mouse click
+routing, keypad hardware, visual layout or window activation behavior.
+
+`bash test.sh` passed with 3,967 isolated checks and installer checks; no app bundle
+was launched, no real power assertions were created, and only disposable preference
+domains were used. Live device, clipboard and interactive verification were not run.

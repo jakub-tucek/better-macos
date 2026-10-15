@@ -403,17 +403,32 @@ struct AwakeDurationDraft {
     }
 }
 
+/// In-process hosts can invoke the rendered Start action without requiring an
+/// ordered/key window. This bridge never owns or substitutes the editor's draft.
+final class AwakeDurationEditorCommands {
+    fileprivate var startAction: (() -> Void)?
+    @discardableResult func start() -> Bool {
+        guard let startAction else { return false }
+        startAction()
+        return true
+    }
+}
+
 struct AwakeDurationEditor: View {
     @ObservedObject var model: DashboardModel
     var showsStart = false
+    private let commands: AwakeDurationEditorCommands?
     @State private var draft: AwakeDurationDraft
     @FocusState private var focused: Bool
 
-    init(model: DashboardModel, showsStart: Bool = false) {
+    init(model: DashboardModel, showsStart: Bool = false, commands: AwakeDurationEditorCommands? = nil) {
         self.model = model
         self.showsStart = showsStart
+        self.commands = commands
         _draft = State(initialValue: AwakeDurationDraft(minutes: model.keepAwakeMinutes))
     }
+
+    private func start() { draft.commit(to: model, start: true) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -433,7 +448,7 @@ struct AwakeDurationEditor: View {
                     .accessibilityLabel("Adjust duration by five minutes")
                 Spacer(minLength: 0)
                 if showsStart {
-                    Button("Start") { draft.commit(to: model, start: true) }
+                    Button("Start", action: start)
                         .disabled(draft.minutes == nil)
                 }
             }
@@ -443,6 +458,8 @@ struct AwakeDurationEditor: View {
             }
         }
         .help("1–1440 whole minutes; step controls adjust by 5 minutes")
+        .onAppear { if showsStart { commands?.startAction = start } }
+        .onDisappear { commands?.startAction = nil }
         .onChange(of: focused) { _, value in if !value { draft.commit(to: model) } }
         .onChange(of: model.keepAwakeMinutes) { _, minutes in
             if !focused && draft.minutes != nil { draft = AwakeDurationDraft(minutes: minutes) }
