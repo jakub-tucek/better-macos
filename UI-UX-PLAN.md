@@ -274,6 +274,11 @@ in isolated worktrees after the shared navigation/state decisions settle.
   are pending. Fake-interceptor host regressions failed before the fix and pass
   afterward; ordinary animation Off continues to preserve saved desktop intent.
   Independent follow-up acceptance is still pending.
+- Permission-path follow-up makes automatic desktop restoration permission-passive:
+  denied access and failed activation retain the pending ticket, later grant restores
+  once, and only explicit contextual user actions can request access. Real-host fake
+  permission/interceptor tests failed before the fix and pass afterward, including
+  repeated refreshes and ordinary animation re-enable after access revocation.
 
 ## Original preview proposal
 

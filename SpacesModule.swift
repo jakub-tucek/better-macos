@@ -17,6 +17,7 @@ final class SpacesModule {
     private var interceptor: SpaceIntercepting?
     private let makeInterceptor: (GestureSwitchEngine) -> SpaceIntercepting
     private let permissionCheck: () -> Bool
+    private let requestAccess: () -> Void
     private let conflictingAppRunning: () -> Bool
     private var observer: NSObjectProtocol?
     var observesSpaceChanges: Bool { observer != nil }
@@ -37,12 +38,17 @@ final class SpacesModule {
 
     init(defaults: UserDefaults = .standard, engine: GestureSwitchEngine = GestureSwitchEngine(),
          makeInterceptor: @escaping (GestureSwitchEngine) -> SpaceIntercepting = { SwipeInterceptor(engine: $0) },
-         permissionCheck: @escaping () -> Bool = { AXIsProcessTrusted() },
+          permissionCheck: @escaping () -> Bool = { AXIsProcessTrusted() },
+          requestPermission: @escaping () -> Void = {
+              let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+              _ = AXIsProcessTrustedWithOptions(options)
+          },
          conflictingAppRunning: @escaping () -> Bool = { NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.rileycx.strafe" } }) {
         self.defaults = defaults
         self.engine = engine
         self.makeInterceptor = makeInterceptor
         self.permissionCheck = permissionCheck
+        self.requestAccess = requestPermission
         self.conflictingAppRunning = conflictingAppRunning
         engine.setTransitionSpeed(speed)
         observer = NSWorkspace.shared.notificationCenter.addObserver(
@@ -52,8 +58,13 @@ final class SpacesModule {
 
     func restoreSavedState() throws {
         guard needsStartupRestore, isAvailable, !isDraining else { return }
+        if savedEnabled {
+            // Automatic callers only observe authorization. Denial (or a failed
+            // start) must retain the ticket so a later grant/refresh can retry.
+            guard hasPermission else { return }
+            try enableInterception(requestPermission: false)
+        }
         needsStartupRestore = false
-        if savedEnabled { try setEnabled(true) }
     }
 
     func requestRestore(enabled: Bool) {
@@ -90,13 +101,16 @@ final class SpacesModule {
             defaults.set(false, forKey: "spaces.enabled")
             return
         }
+        try enableInterception(requestPermission: true)
+    }
+
+    private func enableInterception(requestPermission: Bool) throws {
         guard isAvailable else {
             throw ToggleError(message: "Space interception is disabled for safety while investigating a system input freeze.")
         }
         guard !isDraining else { throw ToggleError(message: "Wait for the current desktop transition to finish.") }
         guard hasPermission else {
-            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-            _ = AXIsProcessTrustedWithOptions(options)
+            if requestPermission { requestAccess() }
             throw ToggleError(message: "Enable Fix macOS in System Settings → Privacy & Security → Accessibility, then try this switch again. Monitors and Bluetooth work without it.")
         }
         guard !conflictingAppRunning() else {

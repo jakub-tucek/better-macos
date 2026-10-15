@@ -59,6 +59,9 @@ Desktop-switching intent is saved before animation changes: reviewed Off cannot 
 restored from an obsolete saved On, and reviewed On remains pending when access or
 runtime readiness is unavailable. The ordinary animation Off toggle still preserves
 the saved desktop-switching preference while suspending interception.
+Automatic desktop restoration never requests Accessibility access. After **Do later**,
+the choice remains pending; granting access and a later ready refresh can activate it
+once. Permission requests remain explicit user actions.
 Setup never captures/moves windows, changes display positions, starts a timed awake
 session, or applies pointer tuning. Mouse proposals transfer to Input settings for
 explicit Apply. Enabling features can activate reviewed policies: running-app awake

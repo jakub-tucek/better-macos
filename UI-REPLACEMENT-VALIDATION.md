@@ -31,7 +31,7 @@ git diff --check
 ```
 
 `test.sh` builds native SwiftUI/AppKit code with warnings as errors, runs isolated
-checks, and runs installer tests. Latest run: **3,765 isolated checks passed**, all
+checks, and runs installer tests. Latest run: **3,780 isolated checks passed**, all
 seven installer checks passed, and `git diff --check` was clean. The fixture render
 command also passed; popup light/dark, grouped Displays, wizard selection, and empty
 recovery fixtures were inspected. New coverage includes:
@@ -119,6 +119,38 @@ clipboard access, or app launch/quit is used by these regression fixtures.
 The test-only dependency seams inject host readiness and the interceptor factory;
 production defaults still use the existing watchdog state and `SwipeInterceptor`.
 Follow-up independent review and live native acceptance remain pending.
+
+### Follow-up: permission-passive automatic desktop restoration
+
+Review found that a ready refresh after denied-access setup could call the explicit
+permission-requesting enable path and consume the pending restore ticket. An actual
+host regression with fake permission checking/requesting failed before the fix:
+`build/ui-desktop-permission-red.log` records the ready-refresh failure. A second
+regression exposed that ordinary Animation On did not re-arm an existing saved
+desktop choice after permission revocation (`ui-desktop-permission-animation-red.log`).
+Both logs are in ignored `build/`; no real access request was made.
+
+`SpacesModule.restoreSavedState()` now checks permission before attempting On and
+consumes the ticket only after successful restoration. Its activation helper cannot
+request access on the automatic path, including if permission changes between checks.
+The explicit user toggle still uses the permission-requesting path. Ordinary
+Animation On re-arms an existing choice even when access is missing, while preserving
+the legacy unset-choice behavior. No preference is silently opted into On by this fix.
+
+The passing real-host fixture verifies denied setup → repeated ready refreshes →
+permission granted: zero implicit access requests, a retained ticket while denied,
+exactly one eventual fake activation, and no extra activation on repeated refresh.
+Additional checks cover direct automatic callers, revocation between permission
+checks, failed-start retry, explicit-toggle request semantics, ordinary animation
+Off/On after revocation, canceled-quit-style restore requests, and the unset default.
+
+Automatic caller audit: setup continuation and ordinary host refresh share this
+central passive restore method. Animation completion and canceled quit only schedule
+restore intent. Screen-edge and Hold-to-quit startup use read-only trust checks;
+window Accessibility requests remain on their explicit button, and Bluetooth access
+requests remain on explicit controls/launch flags. No other automatic prompt path
+was found in these call sites. This inspection and fixture coverage do not replace
+installed-app TCC or live input acceptance; independent review remains pending.
 
 The new tests use fake clipboard, archive, and window backends and isolated preference
 suites. No real clipboard/history was read, no live audio route/pointer/display/window

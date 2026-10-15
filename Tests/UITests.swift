@@ -20,7 +20,8 @@ private final class SetupSpaceInterceptor: SpaceIntercepting {
     var isRunning = false
     var overrideEnabled = false
     var starts = 0
-    func start() { starts += 1; isRunning = true }
+    var failStart = false
+    func start() { starts += 1; isRunning = !failStart }
     func teardown() { isRunning = false }
 }
 
@@ -179,6 +180,130 @@ func runUITests() throws {
     runSetupOutcomeTests()
     runNativeUIInteractionTests()
     runSetupDesktopIntentTests()
+    runSetupDesktopPermissionTests()
+}
+
+private func runSetupDesktopPermissionTests() {
+    let suite = "fix-mac-os.setup-desktop-permission.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    for module in AppModule.allCases { ModuleSettings(defaults: defaults).set(module, enabled: module == .spaces) }
+    defaults.set(true, forKey: "animations.enabled")
+    defaults.set(false, forKey: "spaces.enabled")
+    var permission = false
+    var permissionRequests = 0
+    let interceptor = SetupSpaceInterceptor()
+    let engine = GestureSwitchEngine(spaceInfo: { nil }, postPhase: { _, _, _ in true })
+    let spaces = SpacesModule(defaults: defaults, engine: engine, makeInterceptor: { _ in interceptor },
+        permissionCheck: { permission }, requestPermission: { permissionRequests += 1 }, conflictingAppRunning: { false })
+    spaces.isAvailable = true
+    let model = DashboardModel(); model.enabledModules = [.spaces]; model.animationsEnabled = true
+    let animations = AnimationPreferences(defaults: defaults, read: { _ in nil }, write: { _, _ in })
+    let host = AppDelegate(spaces: spaces, model: model, preferences: defaults, animations: animations,
+        restartAnimationClients: {}, controlStateSnapshot: {
+            SystemControlLifecycle.State(watchdogReady: true, displaySettling: false)
+        })
+    let draft = SetupDraft(current: model, defaults: defaults)
+    draft.controls.onSpacesChanged(true)
+    model.onFinishSetup(draft) { _ in }
+    if case .pendingAccess = draft.outcomes[.spaces] { expect(true, "setup desktop On with denied permission reports Pending access") }
+    else { expect(false, "denied setup desktop On must remain Pending access") }
+    expect(spaces.savedEnabled && spaces.needsStartupRestore && !spaces.isEnabled && permissionRequests == 0,
+           "Finish retains denied desktop On intent without implicitly asking for permission")
+    for _ in 0..<3 { model.onMonitorDisableModeChanged(false) }
+    expect(permissionRequests == 0 && spaces.needsStartupRestore && spaces.savedEnabled && interceptor.starts == 0,
+           "ready host refreshes never prompt or consume the pending desktop ticket while permission is denied")
+    // Exercise the feature's automatic seam directly as well, not just a host guard.
+    do { try spaces.restoreSavedState() } catch {}
+    expect(permissionRequests == 0 && spaces.needsStartupRestore,
+           "direct automatic restoration is permission-passive and retains its ticket")
+    permission = true
+    model.onMonitorDisableModeChanged(false)
+    expect(spaces.savedEnabled && spaces.isEnabled && !spaces.needsStartupRestore && interceptor.starts == 1,
+           "a later permission grant activates the pending fake interceptor exactly once")
+    for _ in 0..<3 { model.onMonitorDisableModeChanged(false) }
+    expect(interceptor.starts == 1 && permissionRequests == 0,
+            "repeated ready/granted refreshes do not reactivate or ask for permission")
+    permission = false
+    for enabled in [false, true] {
+        model.onAnimationsChanged(enabled)
+        let deadline = Date().addingTimeInterval(3)
+        while model.animationsBusy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+    }
+    expect(!model.animationsBusy && spaces.savedEnabled && spaces.needsStartupRestore && !spaces.isEnabled && permissionRequests == 0,
+           "ordinary animation On re-arms an existing desktop choice after permission revocation without prompting")
+    permission = true
+    for _ in 0..<3 { model.onMonitorDisableModeChanged(false) }
+    expect(spaces.isEnabled && interceptor.starts == 2 && !spaces.needsStartupRestore && permissionRequests == 0,
+           "ordinary animation restoration after revocation resumes once when permission returns")
+    try? spaces.setEnabled(false)
+    let deadline = Date().addingTimeInterval(2)
+    while spaces.isDraining && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+    permission = false
+    do { try spaces.setEnabled(true); expect(false, "explicit desktop enable must surface denied permission") }
+    catch { expect(permissionRequests == 1 && !spaces.isEnabled,
+                   "the explicit contextual desktop toggle retains its permission-request behavior through the fake callback") }
+    // requestRestore is also used after canceled quit and animation completion.
+    spaces.requestRestore(enabled: true)
+    for enabled in [false, true] {
+        model.onAnimationsChanged(enabled)
+        let deadline = Date().addingTimeInterval(3)
+        while model.animationsBusy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+    }
+    expect(!model.animationsBusy && permissionRequests == 1 && spaces.savedEnabled && spaces.needsStartupRestore && !spaces.isEnabled,
+           "restore requests and ordinary animation Off/On stay permission-passive and keep denied intent pending")
+    permission = true
+    for _ in 0..<3 { model.onMonitorDisableModeChanged(false) }
+    expect(spaces.isEnabled && interceptor.starts == 3 && permissionRequests == 1 && !spaces.needsStartupRestore,
+           "animation/canceled-quit restoration intent activates once after a later grant without extra requests")
+    spaces.stop()
+    withExtendedLifetime(host) {}
+
+    var checks = 0
+    var raceRequests = 0
+    let raceInterceptor = SetupSpaceInterceptor()
+    let raceEngine = GestureSwitchEngine(spaceInfo: { nil }, postPhase: { _, _, _ in true })
+    let raceSpaces = SpacesModule(defaults: defaults, engine: raceEngine, makeInterceptor: { _ in raceInterceptor },
+        permissionCheck: { checks += 1; return checks == 1 }, requestPermission: { raceRequests += 1 }, conflictingAppRunning: { false })
+    raceSpaces.isAvailable = true
+    do { try raceSpaces.restoreSavedState() } catch {}
+    expect(raceRequests == 0 && raceSpaces.needsStartupRestore && raceInterceptor.starts == 0,
+           "revocation between automatic permission checks neither prompts nor consumes the restore ticket")
+    raceSpaces.stop()
+
+    let retryInterceptor = SetupSpaceInterceptor(); retryInterceptor.failStart = true
+    let retryEngine = GestureSwitchEngine(spaceInfo: { nil }, postPhase: { _, _, _ in true })
+    let retrySpaces = SpacesModule(defaults: defaults, engine: retryEngine, makeInterceptor: { _ in retryInterceptor },
+        permissionCheck: { true }, requestPermission: { fatalError("Automatic retry must not ask for access") }, conflictingAppRunning: { false })
+    retrySpaces.isAvailable = true
+    do { try retrySpaces.restoreSavedState() } catch {}
+    expect(retrySpaces.needsStartupRestore && !retrySpaces.isEnabled && retryInterceptor.starts == 1,
+           "a failed automatic interceptor start retains its pending ticket")
+    retryInterceptor.failStart = false
+    do { try retrySpaces.restoreSavedState(); try retrySpaces.restoreSavedState() } catch {}
+    expect(!retrySpaces.needsStartupRestore && retrySpaces.isEnabled && retryInterceptor.starts == 2,
+           "a successful automatic retry consumes its ticket only once")
+    retrySpaces.stop()
+
+    defaults.removeObject(forKey: "spaces.enabled")
+    defaults.set(false, forKey: "animations.enabled")
+    var legacyRequests = 0
+    let legacyInterceptor = SetupSpaceInterceptor()
+    let legacyEngine = GestureSwitchEngine(spaceInfo: { nil }, postPhase: { _, _, _ in true })
+    let legacySpaces = SpacesModule(defaults: defaults, engine: legacyEngine, makeInterceptor: { _ in legacyInterceptor },
+        permissionCheck: { false }, requestPermission: { legacyRequests += 1 }, conflictingAppRunning: { false })
+    legacySpaces.isAvailable = true
+    let legacyModel = DashboardModel(); legacyModel.enabledModules = [.spaces]
+    let legacyAnimations = AnimationPreferences(defaults: defaults, read: { _ in nil }, write: { _, _ in })
+    let legacyHost = AppDelegate(spaces: legacySpaces, model: legacyModel, preferences: defaults, animations: legacyAnimations,
+        restartAnimationClients: {}, controlStateSnapshot: { SystemControlLifecycle.State(watchdogReady: true, displaySettling: false) })
+    legacyModel.onAnimationsChanged(true)
+    let legacyDeadline = Date().addingTimeInterval(3)
+    while legacyModel.animationsBusy && Date() < legacyDeadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+    expect(!legacyModel.animationsBusy && defaults.object(forKey: "spaces.enabled") == nil && legacyRequests == 0 && legacyInterceptor.starts == 0,
+           "ordinary animation On preserves the legacy unset desktop-choice behavior when access is unavailable")
+    legacySpaces.stop()
+    withExtendedLifetime(legacyHost) {}
 }
 
 private func runSetupDesktopIntentTests() {

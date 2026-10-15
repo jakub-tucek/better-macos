@@ -1077,9 +1077,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                         guard let self else { return }
                         model.animationsBusy = false
                         completion?()
-                        if enabled && !preserveChoice && spaces?.hasPermission == true {
-                            // Starting waits for display/watchdog readiness via refreshPreferences.
-                            spaces?.requestRestore(enabled: preferences.object(forKey: "spaces.enabled") == nil || spaces?.savedEnabled == true)
+                        if enabled && !preserveChoice, let spaces,
+                           spaces.hasPermission || preferences.object(forKey: "spaces.enabled") != nil {
+                            // Re-arm an existing choice even without access; passive
+                            // restoration waits for permission/readiness without prompting.
+                            // Keep the legacy unset-choice default conditional on access.
+                            spaces.requestRestore(enabled: preferences.object(forKey: "spaces.enabled") == nil || spaces.savedEnabled)
                         }
                         refreshPreferences()
                         resultCompletion?(true)
