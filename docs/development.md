@@ -55,8 +55,8 @@ The full regression entry point is `bash test.sh` (build, packaging/build fixtur
 ten Swift Testing policy tests in three suites, legacy isolated runner and installer
 fixtures). [Named policy-suite commands and compilation ownership](swiftpm.md#commands-repository-root)
 are available separately; other feature suites still use the legacy runner.
-See [validation](../VALIDATION.md) and
-[release checks](../RELEASE-CHECKLIST.md) for safety/hardware acceptance; a build or
+See [validation](validation/README.md) and
+[release checks](releases/checklist.md) for safety/hardware acceptance; a build or
 lint pass does not replace them. Tooling verification does not run the full suite
 or manipulate live preferences, applications or devices. No CI is added here.
 
@@ -106,8 +106,8 @@ Hashes authenticate pinned upstream bytes, not a separate publisher signature.
   both configurations. First-party app code, `Sources/` and `Tests/` remain checked.
 
 Keep style expansion and formatter rewrites separate from architecture changes.
-Project context: [modules](../MODULES.md), [glossary](../GLOSSARY.md),
-[roadmap](../ROADMAP.md).
+Project context: [modules](modules.md), [glossary](glossary.md),
+[roadmap](roadmap.md).
 
 ## Main integration verification · 2026-10-15
 

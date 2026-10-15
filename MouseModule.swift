@@ -28,7 +28,7 @@ protocol MouseRecoveryStore {
     func load() throws -> MouseRecovery?
     /// Persist before returning for process-crash recovery. This contract does
     /// not promise power-loss durability; the opt-in writer's remaining limits
-    /// are documented in VALIDATION.md.
+    /// are documented in docs/validation/README.md.
     func save(_ recovery: MouseRecovery) throws
     func clear() throws
 }

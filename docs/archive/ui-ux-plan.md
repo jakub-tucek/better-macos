@@ -5,9 +5,9 @@ B–D are implemented at the `f359f42` documentation baseline; E native acceptan
 partial. Read imperative/proposed wording below as the original requirements, not
 unimplemented feature claims. Later compact-popup and clipboard changes supersede
 older dimensions and panel descriptions. See the
-[current acceptance matrix](VALIDATION.md#current-acceptance-matrix--f359f42--2026-10-15),
-[compact UI evidence](COMPACT-UI-VALIDATION.md), and
-[clipboard UI evidence](CLIPBOARD-UI-VALIDATION.md).
+[current acceptance matrix](../validation/README.md#acceptance-matrix-and-baseline--2026-10-15),
+[compact UI evidence](../validation/compact-ui.md), and
+[clipboard UI evidence](../validation/clipboard-ui.md).
 
 Status: production replacement implemented for B–D; parent-session independent review
 reports CLEAN at `7e3974cd`. Native acceptance E is partial/open: signed rebuild,
@@ -16,7 +16,7 @@ inspection were blocked by existing permissions. The first independent review bl
 activation ordering, outcome reporting, and interaction evidence; follow-up fixes
 passed the subsequent parent review. The user explicitly waived preview approval and
 requested immediate UI replacement. This document retains the agreed requirements;
-see [validation evidence and open acceptance checks](UI-REPLACEMENT-VALIDATION.md).
+see [validation evidence and open acceptance checks](../validation/ui-replacement.md).
 
 ## Goals
 
@@ -242,7 +242,7 @@ in isolated worktrees after the shared navigation/state decisions settle.
   completed. AX returned `apiDisabled`; screen-capture preflight was false. No grants
   were requested. Popup visibility/geometry, Settings gear reuse and content,
   widget/wizard interaction and the manual/hardware criteria remain open; see the
-  release-pass section in [validation](UI-REPLACEMENT-VALIDATION.md).
+  release-pass section in [validation](../validation/ui-replacement.md).
 
 ## 5. Test and review checklist
 

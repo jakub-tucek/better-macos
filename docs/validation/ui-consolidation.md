@@ -2,9 +2,9 @@
 
 > Historical implementation record. The card/navbar/quick-panel navigation and
 > 430 × 580 dimensions below predate the replacement UI; they do not describe the
-> current app. Use [current acceptance](VALIDATION.md),
-> [replacement evidence](UI-REPLACEMENT-VALIDATION.md), and
-> [compact-popup evidence](COMPACT-UI-VALIDATION.md). Counts and pending-review
+> current app. Use [current acceptance](README.md),
+> [replacement evidence](ui-replacement.md), and
+> [compact-popup evidence](compact-ui.md). Counts and pending-review
 > statements below belong to their recorded revisions. Retain the storage-intent
 > table/cases as policy evidence, not proof of current live UI acceptance.
 

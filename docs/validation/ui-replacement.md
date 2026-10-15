@@ -2,13 +2,13 @@
 
 > Revision-bound evidence, not a fresh release acceptance run. Later compact-popup
 > and clipboard-panel changes supersede older sizing/interaction descriptions; see
-> [compact UI](COMPACT-UI-VALIDATION.md), [clipboard UI](CLIPBOARD-UI-VALIDATION.md),
-> and the [current acceptance matrix](VALIDATION.md). Preserve historical counts and
+> [compact UI](compact-ui.md), [clipboard UI](clipboard-ui.md),
+> and the [current acceptance matrix](README.md). Preserve historical counts and
 > review chronology; native acceptance remains partial.
 
 ## Production scope
 
-Implemented B–D from [UI-UX-PLAN.md](UI-UX-PLAN.md). The user waived the preview
+Implemented B–D from [the UI/UX plan](../archive/ui-ux-plan.md). The user waived the preview
 approval gate. Parent-session independent review reports **CLEAN** at `7e3974cd`;
 native acceptance remains partial. This record is not full acceptance.
 

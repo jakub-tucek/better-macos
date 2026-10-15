@@ -53,5 +53,6 @@ Add states match inventory, and wizard Refresh remains visible after navigation.
 Only synthetic models, isolated preference suites and fake clipboard/storage
 boundaries were used. No live app relaunch/quit, live clipboard/archive access,
 device preferences/routes, external window changes, permissions or push. Main's
-untracked `RELEASE-CHECKLIST.md` was neither copied nor staged. Parent review is
+untracked `RELEASE-CHECKLIST.md` (historical root path, now
+[`docs/releases/checklist.md`](../releases/checklist.md)) was neither copied nor staged. Parent review is
 still required before integration; these checks do not qualify hardware behavior.

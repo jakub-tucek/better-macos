@@ -2,14 +2,14 @@
 ## Read by task
 
 - For feature ownership, shared dependencies, UI entry points or cleanup, read
-  [MODULES.md](MODULES.md). Built-in features are compiled into one app, not runtime plugins.
+  [module guide](docs/modules.md). Built-in features are compiled into one app, not runtime plugins.
 - For developer commands and pinned lint/format tools, read [docs/development.md](docs/development.md),
   including [tested CLT state compatibility](docs/validation/clt-compatibility.md). For Clipboard policy
   ownership and named suites, read [docs/swiftpm.md](docs/swiftpm.md). Further source
-  moves, feature registration and CI remain proposed in [ROADMAP.md](ROADMAP.md).
-- For testing or release claims, read [VALIDATION.md](VALIDATION.md) and its linked
+  moves, feature registration and CI remain proposed in [the roadmap](docs/roadmap.md).
+- For testing or release claims, read [validation](docs/validation/README.md) and its linked
   revision-bound evidence. Preserve historical failures and hardware acceptance gaps.
-- For host coordination terminology, use [GLOSSARY.md](GLOSSARY.md).
+- For host coordination terminology, use [the glossary](docs/glossary.md).
 
 ## Current commands and layout
 
@@ -60,7 +60,7 @@ Use isolated preferences/temp files and injected backends; default tests must no
 mutate live displays, input, audio, clipboard or system preferences. App launch,
 installation and live hardware checks require explicit authorization. Isolated checks
 are not native/hardware acceptance. Core fixes are reviewed, integrated and validated;
-see [release evidence](RELEASE-CHECKLIST.md#current-evidence) for revisions and open gates.
+see [release evidence](docs/releases/checklist.md#current-evidence) for revisions and open gates.
 
 User preference: Astra for planning; Sol for background implementation and independent
 review when appropriate. Delegate only when authorized; keep reviewer ownership

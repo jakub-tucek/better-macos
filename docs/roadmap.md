@@ -3,7 +3,7 @@
 Plan based on `2620a32` (2026-10-15), with implementation status updated below.
 Pinned developer tooling and the first Clipboard policy SwiftPM slice are available;
 broader source moves, feature registration and CI remain proposed. Current behavior lives in
-[MODULES.md](MODULES.md); acceptance and failures live in [VALIDATION.md](VALIDATION.md).
+[the module guide](modules.md); acceptance and failures live in [validation](validation/README.md).
 Keep the concise README and its install command. This plan promises no release date or tag.
 
 ## Priorities
@@ -11,7 +11,7 @@ Keep the concise README and its install command. This plan promises no release d
 | Priority | Work | Done when |
 | --- | --- | --- |
 | 0 | Finish release safety | Core fixes and watchdog/corrupt-journal regressions are reviewed and integrated through `dc96e9c`; complete native acceptance and record remaining hardware gaps at the tested revision. |
-| 1 | Documentation and developer baseline (partial) | Pinned tools/commands and CLT 27/Xcode 27 compatibility are verified; finish the documentation map/moves and establish a tested minimum toolchain. |
+| 1 | Documentation and developer baseline (partial) | Documentation consolidation and pinned tools/commands are implemented; CLT 27/Xcode 27 compatibility is verified. Establish a tested minimum toolchain. |
 | 2 | One SwiftPM slice and source organization (partial) | Clipboard policy is extracted and statically linked with named tests; combined clean CLT 27/Xcode 27 suites pass. Wider source organization remains pending; preserve app/helper behavior and packaging. |
 | 3 | Built-in feature registration | Register multiple different features through a small host interface without changing persisted IDs, shared ownership or drain/veto behavior. |
 | 4 | Test migration and CI | Run named isolated suites and shell/process regressions as PR gates; prove clean and incremental builds agree. |
@@ -21,12 +21,12 @@ Keep the concise README and its install command. This plan promises no release d
 Priority 0 remains open for native/physical acceptance and final release gates.
 Display-recovery ownership, setup awake-assertion removal, watchdog authorization
 and corrupt-journal preservation fixes are independently reviewed CLEAN and integrated. Use
-[release evidence](RELEASE-CHECKLIST.md#current-evidence) and
-[UI acceptance](UI-REPLACEMENT-VALIDATION.md), not test counts, to close these gates.
+[release evidence](releases/checklist.md#current-evidence) and
+[UI acceptance](validation/ui-replacement.md), not test counts, to close these gates.
 
 ## Build and source boundaries
 
-- Implemented: **one local Swift package** for [Clipboard policy](docs/swiftpm.md),
+- Implemented: **one local Swift package** for [Clipboard policy](swiftpm.md),
   with sole SwiftPM compilation ownership and static app/legacy-test linking.
   Future extraction should use meaningful targets for policy/backends and C boundaries;
   avoid a target per file or a package per feature. Reuse existing backend seams.
@@ -70,13 +70,13 @@ mode for release reproducibility; do not claim byte-identical output across SDKs
 
 ## Tooling, tests and CI
 
-- Implemented: [developer commands](docs/development.md), repository-local verified
+- Implemented: [developer commands](development.md), repository-local verified
   SwiftLint **0.65.1** and SwiftFormat **0.63.1**, non-mutating checks, narrow lint
   baseline, `.editorconfig` and offline tooling regressions. The standalone CLT 27.0
   `StateMacro` failure is resolved through the explicit public `StoredState` wrapper;
-  [combined clean CLT/Xcode evidence](docs/validation/clt-compatibility.md#combined-main-integration) is recorded at `dff0491`.
+  [combined clean CLT/Xcode evidence](validation/clt-compatibility.md#combined-main-integration) is recorded at `dff0491`.
   The first SwiftPM policy slice and ten named tests in three suites are implemented;
-  further source/document moves, suite migration and CI below remain pending.
+  further source moves, suite migration and CI below remain pending.
 - Document a tested compiler/SDK baseline. Today's scripts use Swift **5 language
   mode**; that differs from a Swift **6 toolchain**. The package declares tools 6.0
   and uses Swift Testing; only Apple Swift **6.4** has been validated here, including
@@ -103,23 +103,22 @@ mode for release reproducibility; do not claim byte-identical output across SDKs
   suites and packaging checks. Measure idle CPU, wakeups and memory with features
   disabled and enabled; distinguish required shared services from leaked work.
 
-## Documentation cleanup, after active validation settles
+## Documentation consolidation · implemented 2026-10-15
 
-Keep root `README.md`, `LICENSE` and the concise `AGENTS.md` for commands and
-safety rules. Move guides in a docs-only change, linking the module guide from README.
-These are candidate destinations, not moves made here:
+Root documentation now consists of `README.md`, `LICENSE` and `AGENTS.md`.
+Use the [documentation index](README.md) for the moved guides:
 
-| Existing files | Proposed home / treatment |
-| --- | --- |
-| `MODULES.md`, `GLOSSARY.md`, `ROADMAP.md` | `docs/modules.md`, `docs/glossary.md`, canonical `docs/roadmap.md`; retain a root glossary if instructions require it. |
-| `HOST-TRANSACTIONS-VALIDATION.md`, source-map architecture sections | `docs/architecture/` guide; retain revision-bound host evidence under validation. |
-| `VALIDATION.md`, `AWAKE-VALIDATION.md`, `WINDOW-POSITIONS-VALIDATION.md`, other `*-VALIDATION.md` | `docs/validation/` index and evidence; keep active core validation in place until its work finishes. |
-| `UI-UX-PLAN.md`, `ANIMATION-RESEARCH.md`, superseded UI validation | `docs/archive/` with revision/status labels after checking for still-open acceptance work. |
-| `RELEASE-CHECKLIST.md`, `RELEASE-NOTES-1.0-DRAFT.md`, `PACKAGING-VALIDATION.md` | `docs/releases/` checklist/notes, linked packaging evidence under validation. |
+- [Modules and source architecture](modules.md) and [host terminology](glossary.md).
+- [Validation index and revision-bound evidence](validation/README.md), including
+  host transactions, integrated core fixes and historical UI validation.
+- [Release checklist](releases/checklist.md) and [unreleased notes](releases/1.0-notes-draft.md).
+- [Archived UI requirements](archive/ui-ux-plan.md) and
+  [animation research](archive/animation-research.md), with original limits retained.
 
-Retain failure evidence and historical results. Delete only proven redundant content;
-check local Markdown links, anchors, scripts and instruction references after moves.
-Leave vendor licenses and attribution intact.
+This docs-only consolidation preserves evidence and vendor notices, updates inbound
+references and checks local links and anchors. It adds no registration framework,
+source architecture refactor or CI. Native/hardware acceptance and final release
+gates remain open.
 
 ## Deferred scope
 

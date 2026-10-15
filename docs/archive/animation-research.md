@@ -1,5 +1,8 @@
 # macOS animation research — 2026-10-14
 
+Archived investigation from 2026-10-14, not current runtime acceptance. Use
+[validation](../validation/README.md) for implemented behavior and open hardware checks.
+
 Target: locally confirmed **Tahoe 26.6.2 (25G83)**, with Reduce Motion already enabled. Internet/source investigation, installed-binary inspection, and a hidden AppKit timing probe; no persistent preferences changed, private APIs executed, or live animations tested. No inspected upstream source establishes exact **26.6.2** compatibility. “Source-confirmed” below means implementation inspected, not runtime validation.
 
 ## Conclusions

@@ -30,4 +30,4 @@ The installer installs dependencies and builds `~/Applications/Fix macOS.app`. E
 
 **Updating:** rerun the same command to build the latest `main`. Installer-managed copies also offer **Settings → General → Updates → Install update…**; this builds latest `main`, not a pinned release. Ad-hoc-signed updates may require renewed macOS permission grants.
 
-[Details, privacy & source credits](MODULES.md) · [MIT license](LICENSE)
+[Details, privacy & source credits](docs/modules.md) · [Documentation](docs/README.md) · [MIT license](LICENSE)
