@@ -161,6 +161,7 @@ func replacedDirectory() throws {
 do {
     for _ in 0..<10 { try existingDirectory() }
     try responsiveDelivery(); try replacedDirectory()
+    try runRetentionRegressions()
     print("\(regressionChecks) diagnostic review regression checks passed")
 }
 catch { fputs("FAIL: \(error.localizedDescription)\n", stderr); exit(1) }

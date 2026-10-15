@@ -177,22 +177,33 @@ final class RotatingDiagnosticSink: DiagnosticSink {
         try files.withLock(directory) { try writeLocked(line) }
     }
     private func writeLocked(_ line: Data) throws {
-        if try files.size(file(0)) + line.count > limit {
-            try files.remove(file(2))
-            for index in stride(from: 1, through: 0, by: -1) {
-                if try files.size(file(index)) > 0 { try files.move(file(index), to: file(index + 1)) }
-            }
-        }
-        try files.append(line, to: file(0))
-        // Own exact filename grammar only. The shared lock serializes retention
-        // with helper rotation; global budget may evict old live-session files.
-        let owned = try files.files(directory).filter { url in
+        // Count, eviction, rotation and creation share the directory lock. Never
+        // append a new file first and hope a subsequent cleanup can make room.
+        var owned = try files.files(directory).filter { url in
             url.lastPathComponent.range(of: #"^fixmacos-[0-9]+-[A-Fa-f0-9-]{36}-[012]\.jsonl$"#, options: .regularExpression) != nil
         }
-        var excess = owned.count - retainedFiles
-        for url in owned where excess > 0 && !url.lastPathComponent.hasPrefix(prefix + "-") {
-            try files.remove(url); excess -= 1
+        let currentSize = try files.size(file(0))
+        let rotating = currentSize > limit - line.count
+        if rotating {
+            // Removing the oldest own generation is part of rotation, not an
+            // eviction fallback. If it cannot be removed, do not overwrite it.
+            try files.remove(file(2))
+            owned.removeAll { $0 == file(2) }
         }
+        let createsCurrent = rotating || !owned.contains(file(0))
+        var needed = max(0, owned.count + (createsCurrent ? 1 : 0) - retainedFiles)
+        for url in owned where needed > 0 && !url.lastPathComponent.hasPrefix(prefix + "-") {
+            do { try files.remove(url); needed -= 1 }
+            catch { continue } // Immutable/failed candidates do not starve later ones.
+        }
+        // An already over-budget, undeletable directory cannot be repaired here.
+        // Drop without appending, creating or renaming another generation.
+        guard needed == 0 else { return }
+        if rotating {
+            if owned.contains(file(1)) { try files.move(file(1), to: file(2)) }
+            try files.move(file(0), to: file(1))
+        }
+        try files.append(line, to: file(0))
     }
 }
 
