@@ -1,6 +1,7 @@
 # Documentation
 
 - [Development commands and tooling](development.md)
+- [Configured CI and hosted-execution limits](ci.md)
 - [Modules, source architecture, defaults and privacy](modules.md)
 - [Host coordination glossary](glossary.md)
 - [Partial built-in registration](architecture/builtin-registration.md)

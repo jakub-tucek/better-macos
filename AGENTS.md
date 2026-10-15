@@ -7,7 +7,8 @@
   including [tested CLT state compatibility](docs/validation/clt-compatibility.md). For Clipboard policy
   ownership and named suites, read [docs/swiftpm.md](docs/swiftpm.md). For metadata and
   typed choice preparation, read [built-in registration](docs/architecture/builtin-registration.md).
-  Broader lifecycle extraction, source moves and CI remain proposed in [the roadmap](docs/roadmap.md).
+  For configured CI and unverified hosted execution, read [CI guidance](docs/ci.md).
+  Broader lifecycle extraction and source moves remain proposed in [the roadmap](docs/roadmap.md).
 - For testing or release claims, read [validation](docs/validation/README.md) and its linked
   revision-bound evidence. Preserve historical failures and hardware acceptance gaps.
 - For host coordination terminology, use [the glossary](docs/glossary.md).

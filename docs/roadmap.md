@@ -2,7 +2,8 @@
 
 Plan based on `2620a32` (2026-10-15), with implementation status updated below.
 Pinned developer tooling, the first Clipboard policy SwiftPM slice and partial static
-built-in registration are available; broader lifecycle/source moves and CI remain proposed. Current behavior lives in
+built-in registration and a CI workflow are available; broader lifecycle/source moves
+remain proposed. Hosted CI execution is unverified. Current behavior lives in
 [the module guide](modules.md); acceptance and failures live in [validation](validation/README.md).
 Keep the concise README and its install command. This plan promises no release date or tag.
 
@@ -14,7 +15,7 @@ Keep the concise README and its install command. This plan promises no release d
 | 1 | Documentation and developer baseline (partial) | Documentation consolidation and pinned tools/commands are implemented; CLT 27/Xcode 27 compatibility is verified. Establish a tested minimum toolchain. |
 | 2 | One SwiftPM slice and source organization (partial) | Clipboard policy is extracted and statically linked with named tests; combined clean CLT 27/Xcode 27 suites pass. Wider source organization remains pending; preserve app/helper behavior and packaging. |
 | 3 | Built-in feature registration (partial) | Inert feature/widget metadata and typed Keep awake/Clipboard/shared Displays choice preparation are integrated; owner factories, broader lifecycle extraction and a general framework remain pending. Preserve IDs, shared ownership and drain/veto behavior. |
-| 4 | Test migration and CI | Run named isolated suites and shell/process regressions as PR gates; prove clean and incremental builds agree. |
+| 4 | Test migration and CI (partial) | Arm64 preview workflow and offline CI regressions are configured; hosted execution is unverified and branch protection is not configured. Continue suite migration and clean/incremental verification. |
 | 5 | Native UI automation, if needed | Add a separate full-Xcode GUI job only for acceptance gaps that require app-driving tests. |
 | Later | Measured performance/storage work | Compare idle resource baselines; consider SQLite only if clipboard measurements justify migration. |
 
@@ -79,14 +80,16 @@ mode for release reproducibility; do not claim byte-identical output across SDKs
   `StateMacro` failure is resolved through the explicit public `StoredState` wrapper;
   [combined clean CLT/Xcode evidence](validation/clt-compatibility.md#combined-main-integration) is recorded at `dff0491`.
   The first SwiftPM policy slice and ten named tests in three suites are implemented;
-  further source moves, suite migration and CI below remain pending.
+  further source moves and suite migration remain pending. The configured
+  [CI workflow](ci.md) has **hosted execution unverified**; branch protection is not
+  configured and the tested minimum toolchain remains open.
 - Document a tested compiler/SDK baseline. Today's scripts use Swift **5 language
   mode**; that differs from a Swift **6 toolchain**. The package declares tools 6.0
   and uses Swift Testing; only Apple Swift **6.4** has been validated here, including
   standalone-CLT policy tests. A working minimum-toolchain app build remains unproven.
 - Preserve pinned development-only tool versions, version-checked bootstrap and
   `.editorconfig`. Expand the narrow ruleset only in reviewed increments; exclude
-  vendor, build and generated files and review baseline exceptions. Future CI checks
+  vendor, build and generated files and review baseline exceptions. CI checks
   must not mutate files; keep formatter rewrites separate from architecture changes.
 - Replace the monolithic test runner incrementally with named independent suites
   using Swift Testing where supported. Keep XCTest for UI/performance tests.
@@ -97,9 +100,11 @@ mode for release reproducibility; do not claim byte-identical output across SDKs
 - Implemented: `test.sh` links only three explicit owned C objects and the policy
   archive; fixtures reject stale objects, duplicate policy inputs and missing package
   outputs. Continue clean/incremental-build checks as more code moves.
-- On macOS arm64 CI, assert architecture and toolchain before lint, format-check,
-  build, unit/process tests and packaging/installer PR gates. Select an available
-  runner rather than assuming a hosted label implies Apple Silicon.
+- Implemented: CI selects the official `xcode-27` arm64 preview, pins checkout/log
+  actions and asserts architecture/compiler/SDK before existing checks. Committed
+  PR/push/manual whitespace ranges have offline fixtures and full-history checkout.
+  Local validation is not proof of hosted scheduling, GUI feasibility, a green
+  remote suite or required branch checks; record an authorized hosted run separately.
 - Add XcodeGen only when real XCUITest app automation needs an Xcode project, in a
   separate full-Xcode GUI job. Do not add Tuist or require Xcode for source installs.
 - Publish contributor commands for bootstrap, build, lint, format-check, individual

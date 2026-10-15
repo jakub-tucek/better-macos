@@ -4,8 +4,8 @@
 for pull requests targeting `main`, pushes to `main`, and manual dispatch. It has
 **not been executed on GitHub as part of this change**. Adding the workflow does
 not enable Actions, approve fork runs, configure organization policies or make its
-check required in branch protection. Review independently before integration;
-after an authorized push, record the actual run URL, source revision and results.
+check required in branch protection. Independently reviewed integration is recorded
+below; after an authorized push, record the actual run URL, source revision and results.
 
 ## Runner and toolchain choice
 
@@ -168,3 +168,39 @@ checks did not rerun `test.sh` or execute the workflow on GitHub.
 These checks do not establish hosted availability, a green CI suite or minimum
 toolchain support. No push, app install/launch, device mutation, tag, organization
 setting or branch-protection change was performed.
+
+## Main integration · 2026-10-15
+
+Independently reviewed CLEAN commits `d81d340` and `5958a32` integrated without
+conflicts as `9f26a88` and **`8a7eb9f1b16998a7e7a055514648738b66e07eff`**.
+Production/build/test sources were unchanged; the separate source-move branch
+awaiting review was not integrated. No full app suite was rerun for this CI-only change.
+
+Actual local checks at that integrated revision:
+
+- Offline whitespace fixtures passed: multi-commit PR/push patches, advanced base
+  and synthetic merge, clean/root/zero-before ranges, invalid metadata and pipeline
+  failure propagation. Log: `build/ci-integration-whitespace-fixtures.log`.
+- The real main PR/push range `76dd542..8a7eb9f` and manual range
+  `9f26a88..8a7eb9f` passed using full commit SHAs. Checkout is configured with
+  `fetch-depth: 0`; credential persistence remains disabled.
+- Ruby YAML parsing, all **eight** extracted workflow `run` blocks and helper/fixture
+  shell syntax passed; referenced commands exist. Read-only permissions, full-history
+  checkout and full-SHA action pins were checked. Ruby's YAML 1.1 parser represents
+  the `on` key as Boolean true; actionlint separately validates Actions structure.
+- Actionlint **1.7.12** passed with ShellCheck disabled and only the exact known
+  preview-label exclusion documented above. Its existing upstream archive was
+  SHA-256 verified before extraction into ignored `build/ci-validation/`; no network
+  download or global tool installation was needed.
+- The extracted preflight passed on local macOS 26.6.2 arm64 / Xcode 27 / Swift 6.4 /
+  SDK 27.0, with command-scoped installed `DEVELOPER_DIR` and unset `SDKROOT`.
+  Replacing only `bash test.sh` in its extracted logging step with intentional exit
+  **23** retained that status and diagnostic through `tee`, without executing tests.
+  Local probe logs: `build/ci-validation/integrated/ci-logs/`.
+- All **208 local links and 32 fragments across 26 tracked Markdown documents**,
+  committed/working diff checks and the CI-only file scope passed verification.
+
+**Hosted execution remains unverified; branch protection is not configured.** No
+remote green status, hosted runner execution, tested minimum toolchain, real app/OS
+install, device/preference/permission mutation, push, tag or release is claimed.
+Source organization remains pending its separate review/integration.

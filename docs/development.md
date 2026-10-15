@@ -58,7 +58,8 @@ are available separately; other feature suites still use the legacy runner.
 See [validation](validation/README.md) and
 [release checks](releases/checklist.md) for safety/hardware acceptance; a build or
 lint pass does not replace them. Tooling verification does not run the full suite
-or manipulate live preferences, applications or devices. No CI is added here.
+or manipulate live preferences, applications or devices. The [configured CI workflow](ci.md)
+uses these entry points; hosted execution and branch-protection requirements remain unverified/unconfigured.
 
 ## Pinned development tools
 
