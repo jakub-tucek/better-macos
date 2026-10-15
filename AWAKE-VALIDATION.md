@@ -70,3 +70,21 @@ routing, keypad hardware, visual layout or window activation behavior.
 `bash test.sh` passed with 3,967 isolated checks and installer checks; no app bundle
 was launched, no real power assertions were created, and only disposable preference
 domains were used. Live device, clipboard and interactive verification were not run.
+
+## Shared readable countdown (2026-10-15)
+
+The widget, Settings session card and fallback global Stop row share
+`AwakeCountdown` and the same session-status policy. Examples: `1 hr 24 min left`,
+`12 min 08 sec left`, `45 sec left`. Seconds round upward first; at hour scale,
+remaining minutes also round upward, so a positive partial minute is never lost.
+Exact hours omit the zero-minute component. Unit abbreviations stay `hr`, `min`
+and `sec` for both singular and plural values; countdown digits are monospaced.
+
+Boundary tests cover 59/60 and 3599/3600 seconds, fractional seconds, exact hours,
+the 24-hour cap and expiry. Zero, negative, non-finite and above-cap inputs return
+no countdown before integer conversion. Failure, app-only protection, ending
+ownership and pending/inactive sessions use state labels rather than false zero
+time or a healthy countdown. Duration preferences and entry behavior are unchanged.
+
+`bash test.sh` passed with 3,997 isolated checks and installer checks. No live app
+launch, power assertions, device or clipboard actions were performed for this work.

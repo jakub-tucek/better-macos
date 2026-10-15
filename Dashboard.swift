@@ -602,21 +602,22 @@ struct DashboardView: View {
 
     private var keepAwake: some View {
         let presets = [15, 30, 45, 60, 120]
-        let seconds = Int(ceil(model.keepAwakeRemaining))
-        let countdown = seconds >= 3600
-            ? String(format: "%d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60)
-            : String(format: "%d:%02d", seconds / 60, seconds % 60)
+        let status = AwakeSessionActions(model: model).status
+        let healthyCountdown = model.keepAwakeActive && !model.keepAwakeProtectionFailed
+            && AwakeCountdown.text(remaining: model.keepAwakeRemaining) != nil
         return VStack(alignment: .leading, spacing: 14) {
             if !isSetup { card {
                 HStack {
                     Label("Keep awake", systemImage: DashboardTab.keepAwake.symbol).font(.headline)
                     Spacer()
-                    Text(model.keepAwakeProtectionFailed ? "Needs retry" : (model.keepAwakeActive ? "Active" : "Off"))
+                    Text(healthyCountdown ? "Active" : status)
                         .foregroundStyle(model.keepAwakeActive ? .blue : .secondary)
                 }
                 if model.keepAwakeRemaining > 0 {
-                    Text(countdown).font(.system(size: 36, weight: .medium, design: .rounded)).monospacedDigit()
-                        .accessibilityLabel("Time remaining: \(countdown)")
+                    if healthyCountdown {
+                        Text(status).font(.system(size: 28, weight: .medium, design: .rounded)).monospacedDigit()
+                            .accessibilityLabel("Time remaining: \(status)")
+                    }
                     HStack {
                         Button("+15 min", action: model.onKeepAwakeExtend)
                             .disabled(model.keepAwakeRemaining >= 24 * 3600)

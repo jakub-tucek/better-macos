@@ -62,6 +62,7 @@ private final class UIWindows: WindowPositionBackend {
 }
 
 func runUITests() throws {
+    runAwakeCountdownTests()
     runAwakeQuickActionTests()
     runAwakeNativeEditorTests()
     runPopupSizingTests()
@@ -195,6 +196,38 @@ func runUITests() throws {
     runNativeUIInteractionTests()
     runSetupDesktopIntentTests()
     runSetupDesktopPermissionTests()
+}
+
+private func runAwakeCountdownTests() {
+    let examples: [(TimeInterval, String)] = [
+        (0.001, "1 sec left"), (1, "1 sec left"), (45, "45 sec left"),
+        (59, "59 sec left"), (59.001, "1 min 00 sec left"), (60, "1 min 00 sec left"),
+        (60.001, "1 min 01 sec left"), (728, "12 min 08 sec left"),
+        (3599, "59 min 59 sec left"), (3599.001, "1 hr left"), (3600, "1 hr left"),
+        (3600.001, "1 hr 1 min left"), (5000, "1 hr 24 min left"),
+        (5040, "1 hr 24 min left"), (7199, "2 hr left"), (7200, "2 hr left"),
+        (86400, "24 hr left")
+    ]
+    for (remaining, expected) in examples {
+        expect(AwakeCountdown.text(remaining: remaining) == expected, "readable awake countdown at \(remaining) seconds is \(expected)")
+    }
+    for remaining: TimeInterval in [0, -0.001, -.infinity, .infinity, .nan, 86401, .greatestFiniteMagnitude] {
+        expect(AwakeCountdown.text(remaining: remaining) == nil, "expired or invalid awake interval cannot produce a false zero countdown or conversion trap")
+    }
+    let model = DashboardModel()
+    let actions = AwakeSessionActions(model: model)
+    model.keepAwakeActive = true; model.keepAwakeRemaining = 728
+    expect(actions.status == "12 min 08 sec left", "shared session status uses the readable exact countdown")
+    model.keepAwakeProtectionFailed = true
+    expect(actions.status == "Protection needs retry", "failed timed session never presents a healthy countdown")
+    model.keepAwakeProtectionFailed = false; model.keepAwakeRemaining = 0
+    expect(actions.status == "Ending session", "expired assertion ownership without app rules does not imply app-only protection")
+    model.keepAwakeAppNames = ["Fixture app"]
+    expect(actions.status == "Active · app rules", "active app-only protection has a state label, never zero time left")
+    model.keepAwakeActive = false; model.keepAwakeAppNames = []
+    expect(actions.status == "Inactive", "expired inactive session does not display a zero countdown")
+    model.keepAwakeRemaining = 60
+    expect(actions.status == "Session pending", "unacquired timed intent does not claim active protection")
 }
 
 /// Real text field/editor and responder transitions in an unpresented native
@@ -375,10 +408,10 @@ private func runAwakeQuickActionTests() {
     expect(calls.isEmpty, "popup cannot start while feature recovery is stopping")
     expect(actions.status == "Inactive", "inactive popup does not imply indefinite protection")
     model.keepAwakeActive = true; model.keepAwakeRemaining = 61.1
-    expect(actions.status == "1:02 remaining", "timed popup countdown rounds up seconds without losing remaining time")
+    expect(actions.status == "1 min 02 sec left", "timed popup countdown rounds up seconds without losing remaining time")
     model.keepAwakeProtectionFailed = true
     expect(actions.status == "Protection needs retry", "protection failure takes precedence over a retained timed deadline")
-    model.keepAwakeProtectionFailed = false; model.keepAwakeRemaining = 0
+    model.keepAwakeProtectionFailed = false; model.keepAwakeRemaining = 0; model.keepAwakeAppNames = ["Fixture app"]
     expect(actions.status == "Active · app rules", "app-only protection stays distinct from timed and inactive sessions")
 
     let suite = "fix-mac-os.popup-awake.\(UUID().uuidString)"

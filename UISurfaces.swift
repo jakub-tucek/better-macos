@@ -181,7 +181,7 @@ struct SafetyAlerts: View {
             }
             if (showAwakeSession && model.keepAwakeCanStop) || model.keepAwakeProtectionFailed {
                 HStack {
-                    Text(model.keepAwakeProtectionFailed ? "Keep awake needs retry" : "Keep awake active")
+                    Text("Keep awake: \(AwakeSessionActions(model: model).status)").monospacedDigit()
                     Spacer()
                     Button("Stop", action: model.onKeepAwakeStop)
                 }
@@ -355,6 +355,26 @@ struct QuickActionsView: View {
     }
 }
 
+/// The owner bounds sessions at 24 hours. Reject invalid/out-of-domain values
+/// before integer conversion; never show zero while any positive time remains.
+enum AwakeCountdown {
+    static func text(remaining: TimeInterval) -> String? {
+        guard remaining.isFinite, remaining > 0, remaining <= 86400 else { return nil }
+        let seconds = Int(ceil(remaining))
+        if seconds >= 3600 {
+            // Round up minutes at hour scale, including the final partial minute.
+            let minutes = (seconds + 59) / 60
+            let hours = minutes / 60
+            let rest = minutes % 60
+            return rest == 0 ? "\(hours) hr left" : "\(hours) hr \(rest) min left"
+        }
+        if seconds >= 60 {
+            return String(format: "%d min %02d sec left", seconds / 60, seconds % 60)
+        }
+        return "\(seconds) sec left"
+    }
+}
+
 /// The popup and its isolated tests use the same action seam. Feature callbacks
 /// remain responsible for host admission, assertion ownership and recovery.
 struct AwakeSessionActions {
@@ -366,11 +386,11 @@ struct AwakeSessionActions {
     }
     var status: String {
         if model.keepAwakeProtectionFailed { return "Protection needs retry" }
-        if model.keepAwakeRemaining > 0 {
-            let seconds = Int(ceil(model.keepAwakeRemaining))
-            return String(format: "%d:%02d remaining", seconds / 60, seconds % 60)
+        if !model.keepAwakeActive {
+            return model.keepAwakeRemaining > 0 ? "Session pending" : "Inactive"
         }
-        return model.keepAwakeActive ? "Active · app rules" : "Inactive"
+        if let countdown = AwakeCountdown.text(remaining: model.keepAwakeRemaining) { return countdown }
+        return model.keepAwakeAppNames.isEmpty ? "Ending session" : "Active · app rules"
     }
     func start(minutes: Int) {
         guard model.enabledModules.contains(.keepAwake), !model.stoppingModules.contains(.keepAwake),
