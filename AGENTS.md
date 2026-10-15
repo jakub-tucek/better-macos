@@ -51,8 +51,8 @@ strict signature verification and staged replacement/rollback.
 Use isolated preferences/temp files and injected backends; default tests must not
 mutate live displays, input, audio, clipboard or system preferences. App launch,
 installation and live hardware checks require explicit authorization. Isolated checks
-are not native/hardware acceptance. Active core fixes in separate worktrees remain
-unresolved until reviewed, integrated and validated at a recorded revision.
+are not native/hardware acceptance. Core fixes are reviewed, integrated and validated;
+see [release evidence](RELEASE-CHECKLIST.md#current-evidence) for revisions and open gates.
 
 User preference: Astra for planning; Sol for background implementation and independent
 review when appropriate. Delegate only when authorized; keep reviewer ownership
