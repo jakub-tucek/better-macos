@@ -1,8 +1,8 @@
 # Development roadmap
 
 Plan based on `2620a32` (2026-10-15), with implementation status updated below.
-Pinned developer tooling and the first Clipboard policy SwiftPM slice are available;
-broader source moves, feature registration and CI remain proposed. Current behavior lives in
+Pinned developer tooling, the first Clipboard policy SwiftPM slice and partial static
+built-in registration are available; broader lifecycle/source moves and CI remain proposed. Current behavior lives in
 [the module guide](modules.md); acceptance and failures live in [validation](validation/README.md).
 Keep the concise README and its install command. This plan promises no release date or tag.
 
@@ -13,7 +13,7 @@ Keep the concise README and its install command. This plan promises no release d
 | 0 | Finish release safety | Core fixes and watchdog/corrupt-journal regressions are reviewed and integrated through `dc96e9c`; complete native acceptance and record remaining hardware gaps at the tested revision. |
 | 1 | Documentation and developer baseline (partial) | Documentation consolidation and pinned tools/commands are implemented; CLT 27/Xcode 27 compatibility is verified. Establish a tested minimum toolchain. |
 | 2 | One SwiftPM slice and source organization (partial) | Clipboard policy is extracted and statically linked with named tests; combined clean CLT 27/Xcode 27 suites pass. Wider source organization remains pending; preserve app/helper behavior and packaging. |
-| 3 | Built-in feature registration | Register multiple different features through a small host interface without changing persisted IDs, shared ownership or drain/veto behavior. |
+| 3 | Built-in feature registration (partial) | Inert feature/widget metadata and typed Keep awake/Clipboard/shared Displays choice preparation are integrated; owner factories, broader lifecycle extraction and a general framework remain pending. Preserve IDs, shared ownership and drain/veto behavior. |
 | 4 | Test migration and CI | Run named isolated suites and shell/process regressions as PR gates; prove clean and incremental builds agree. |
 | 5 | Native UI automation, if needed | Add a separate full-Xcode GUI job only for acceptance gaps that require app-driving tests. |
 | Later | Measured performance/storage work | Compare idle resource baselines; consider SQLite only if clipboard measurements justify migration. |
@@ -55,16 +55,19 @@ mode for release reproducibility; do not claim byte-identical output across SDKs
 
 ## Reusable modules: static registration first
 
-- Define explicit **built-in registration** for identity, settings/navigation and
-  host wiring. Preserve `AppModule` persisted IDs and existing preferences.
+- Implemented: [inert presentation catalog and typed choice preparation](architecture/builtin-registration.md)
+  for Keep awake, Clipboard and shared Displays, preserving persisted IDs and
+  preference keys. Owner construction, reconciliation, setup staging and quit remain
+  explicitly host-composed; no general factory/lifecycle framework is complete.
 - Keep feature-specific operations behind existing interfaces. Preserve asynchronous
   drains, cleanup failure/retry and unload/quit vetoes; `HostTransactions` retains
   action-admission and termination authority.
 - Keep one Audio owner shared with Bluetooth and shared Displays recovery reachable
   when individual display features are disabled. Registration must not duplicate them.
-- Prove the interface with different lifecycles, for example Keep awake, Clipboard
-  and Displays, before extracting more abstractions. Avoid universal `start/stop`
-  adapters and a generic event bus. Test disabled-feature teardown and shared dependencies.
+- The first seam is covered through actual UI/setup failures and retries for Keep
+  awake, Clipboard and Displays. Broader lifecycle/factory extraction requires another
+  reviewed slice; avoid universal `start/stop` adapters and a generic event bus.
+  Preserve disabled-feature teardown and shared-dependency regression coverage.
 - Aim for reusable **build-time packages** after that proof. External runtime plugins,
   discovery, ABI compatibility and third-party code loading stay outside this plan.
 

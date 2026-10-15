@@ -1,26 +1,31 @@
 # Built-in modules and source map
 
-Source baseline: `f359f42`; documentation follow-up to `8c96b83`. This map describes
-the existing code, not a completed architecture refactor. Use
+Source map started at `f359f42`, with registration ownership updated through
+`66056f0`. This describes existing code, not a completed architecture refactor. Use
 [validation](validation/README.md) for acceptance and pending release blockers.
 
 ## Modules, not a plugin system
 
-The eleven [AppModule](../AppModules.swift) cases identify built-in features, titles,
-descriptions, and persisted enable choices (`ModuleSettings`). They are not plugin
-implementations or a registration interface. Developers compile the feature owners
-into the app process through the explicit file list in [build.sh](../build.sh).
+The eleven [AppModule](../AppModules.swift) cases retain persisted enable-choice IDs
+(`ModuleSettings`). [BuiltinFeatures.swift](../BuiltinFeatures.swift) registers inert
+titles, descriptions, dashboard destinations, Settings order and six widget definitions;
+existing enum properties delegate to that catalog without constructing owners.
+Developers compile feature owners into the app through [build.sh](../build.sh).
 
 The host in [AppDelegate.swift](../AppDelegate.swift) wires actions, constructs owners,
-and handles activation, disable, readiness, and shutdown by hand. There is no common
-module lifecycle protocol, unified plugin registry, runtime discovery, or dynamic
-loader. Developers adding a feature must update host wiring, settings/navigation,
+and retains activation, reconciliation, readiness and shutdown authority.
+[BuiltinChoicePreparations.swift](../BuiltinChoicePreparations.swift) registers typed
+Keep awake disable, Clipboard unload and shared Displays preparation before choice
+commit. It preserves refusal/retry and does not replace admission or quit coordination.
+There is no universal lifecycle/factory framework, runtime discovery or dynamic
+loader. Developers adding a feature must update the catalog, host wiring, preparation,
 build inputs, and tests as needed; adding an enum case alone is insufficient.
 
 Most first-party Swift files remain at the repository root. This flat layout is
 organizational debt, not a hidden plugin-folder convention. `Vendor/` contains
 third-party engine code; `MouseHID/` contains our C API boundary; neither directory
-defines a user-installable plugin. Future registration/layout work belongs in the
+defines a user-installable plugin. See the [partial registration contract](architecture/builtin-registration.md);
+further lifecycle/layout work belongs in the
 [roadmap](roadmap.md), not in descriptions of current capabilities.
 
 ## Find the UI first
@@ -156,6 +161,8 @@ claim that the baseline's release blockers are fixed.
 | File | Responsibility |
 | --- | --- |
 | [AppDelegate.swift](../AppDelegate.swift) | Feature composition, callbacks, native windows, setup application, display transactions and termination wiring. |
+| [BuiltinFeatures.swift](../BuiltinFeatures.swift) | Inert feature/widget metadata and Settings order; no owner/view factories. |
+| [BuiltinChoicePreparations.swift](../BuiltinChoicePreparations.swift) | Typed pre-commit choice preparation for Keep awake, Clipboard and shared Displays; host retains admission/commit/reconciliation. |
 | [HostTransactions.swift](../HostTransactions.swift) | Action admission and ordered quit preparation/drain/cancel/approval; feature owners still perform cleanup. See [glossary](glossary.md). |
 | [SystemControlLifecycle.swift](../SystemControlLifecycle.swift) | Shared input/recovery readiness state and cursor reconciliation, not a general plugin lifecycle. |
 | [DisplayRefreshGate.swift](../DisplayRefreshGate.swift) | Coalesced display refresh/settling before input or window work resumes. |

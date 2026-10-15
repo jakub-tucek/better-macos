@@ -7,6 +7,7 @@ records retain paths and status from their named revisions; relocated links poin
 to the current documentation. Native/hardware acceptance remains open.
 
 - [CLT/Xcode compatibility and combined SwiftPM integration](clt-compatibility.md)
+- [Built-in registration integration and limits](../architecture/builtin-registration.md#main-integration--2026-10-15)
 - [Core recovery regressions](release-core.md) · [Host transactions](host-transactions.md)
 - [Keep awake](awake.md) · [Window positions](window-positions.md)
 - [Clipboard UI](clipboard-ui.md) · [Compact UI](compact-ui.md)
@@ -77,6 +78,18 @@ The earlier standalone-CLT `StateMacro` build gap is resolved for these tested t
 not every declared minimum Swift version. See [combined compatibility evidence](clt-compatibility.md#combined-main-integration)
 for exact toolchain/log paths, preserved failures and deferred installer preflight.
 Native/hardware acceptance and final release/publication gates remain open.
+
+### Built-in registration integration · `66056f0` · 2026-10-15
+
+The independently reviewed CLEAN catalog/typed-choice preparation series is integrated
+at `66056f0486e6ad84cdf81e75568cd3ed84945a99`. The single combined full run passed
+**4,335 legacy checks**, **10 Swift Testing tests in three suites**, **13 mocked
+installer scenarios**, compiler/build fixtures and real/relocated-bundle checks.
+Lint/format passed across 44 files; tooling fixtures, strict signature, notices,
+plist/revision and arm64/macOS 15+/SDK 27 metadata passed. The CLT state compiler
+fixture also passed; this run does not add another full CLT or minimum-toolchain claim.
+See [revision/log details and remaining scope](../architecture/builtin-registration.md#main-integration--2026-10-15).
+Host composition/quit authority, native/hardware acceptance and publication gates remain unchanged.
 
 ## How to read the historical records
 

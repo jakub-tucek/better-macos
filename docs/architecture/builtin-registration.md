@@ -5,7 +5,7 @@ feature lifecycle framework. All owners remain compiled into the app executable.
 
 ## Presentation catalog
 
-`BuiltinFeatures.swift` registers eleven `AppModule` identities and six widget
+[BuiltinFeatures.swift](../../BuiltinFeatures.swift) registers eleven `AppModule` identities and six widget
 kinds. The catalog contains values only: titles, descriptions, dashboard
 destinations, Settings membership/order and widget ownership/suggestion order.
 Existing `AppModule`, `SettingsGroup` and `WidgetKind` properties are compatibility
@@ -19,7 +19,7 @@ widget neither disables a feature nor clears its data.
 
 ## Registered choice preparation
 
-`BuiltinChoicePreparations.swift` registers three distinct capabilities used by
+[BuiltinChoicePreparations.swift](../../BuiltinChoicePreparations.swift) registers three distinct capabilities used by
 the production `AppDelegate.setModule` path:
 
 | Capability | Preparation | On refusal |
@@ -79,7 +79,9 @@ completion protection. Existing host quit, execution authorization, corrupt-jour
 shared ownership, setup staging and native state/editor tests remain in place.
 
 These isolated checks are not app-driving, TCC, physical-device or hardware
-acceptance. Historical release evidence and open acceptance gates remain valid.
+acceptance. The [module guide](../modules.md), [host glossary](../glossary.md),
+[roadmap](../roadmap.md) and [validation index](../validation/README.md) describe
+current ownership and remaining gates; historical evidence stays revision-bound.
 
 ### Implementation verification · 2026-10-15
 
@@ -113,6 +115,43 @@ Local logs are under
 exit. An earlier precommit full run also passed the same counts; it is not the
 revision-bound artifact record.
 
-Independent review is still required before integration. No installation, real
+At this implementation record, independent review was still required before integration. No installation, real
 app launch, permission grant, live clipboard capture/device mutation or system-preference
 mutation was performed. Existing native/hardware acceptance gaps remain open.
+
+## Main integration · 2026-10-15
+
+All three source commits were independently reviewed CLEAN and integrated in order,
+without conflicts, on top of the consolidated documentation paths:
+
+| Reviewed source | Main commit |
+| --- | --- |
+| `e0fb93d` — inert presentation catalog | `613b757` |
+| `4d9d50b` — typed choice preparation | `d16b178` |
+| `113736a` — revision-bound source evidence | `66056f0` |
+
+At **`66056f0486e6ad84cdf81e75568cd3ed84945a99`**, one integrated `bash test.sh`
+run passed **4,335 legacy checks**, **10 Swift Testing tests in three suites**,
+**13 mocked installer scenarios**, compiler/package/build fixtures and real/relocated
+signed-bundle notices/dependency checks. The log is
+`build/builtin-registration-integration.log`. It records HEAD, selected Xcode 27
+compiler/SDK paths and versions (Swift 6.4 / SDK 27.0), arm64 architecture and bundle
+metadata. `SDKROOT` was explicitly unset; no global tool selection changed.
+
+Strict configured-certificate signature, source/built plist lint and metadata passed:
+the arm64/macOS 15+ bundle embeds that revision, version `0.4`, build `4`, SDK 27.0.
+Lint/format passed across **44 files**, including both new registration files;
+offline tooling fixtures passed. Logs: `build/builtin-registration-integration-{lint,format,tools}.log`.
+The standalone CLT 27 state compiler fixture passed separately, in addition to the
+Xcode fixture in the suite. This is not another full CLT suite, minimum Swift 6.0
+acceptance, hardware validation or a final artifact at the evidence commit.
+
+SwiftPM retains sole ClipboardPolicy compilation ownership; app/tests import and
+statically link its archive, with the same three explicit C objects. No root guides
+were resurrected, README was unchanged, and the metadata/choice seam does not claim
+owner factories or a complete feature lifecycle framework. No real app launch/quit,
+install, live preferences/devices/permissions, version bump, push/tag or publication
+was performed. Native/hardware and final release gates remain open.
+
+All eleven shell files passed syntax checks; **198 local links and 32 fragments
+across 25 tracked Markdown documents** and `git diff --check` passed.
