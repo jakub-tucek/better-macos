@@ -63,6 +63,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let presentWindow: (NSWindow) -> Void
     private let restartAnimationClients: () -> Void
     private let controlStateSnapshot: (() -> SystemControlLifecycle.State)?
+    private let displayRecoveryPending: () -> Bool
+    private let displaySnapshotRefresh: (() -> Void)?
+    // UI counts and controller snapshots can lag a committed helper journal by
+    // the gate's quiet period. They must never decide recovery ownership.
+    private var needsDisplayRecovery: Bool { displayRecoveryPending() || rollbackUUID != nil }
     var setupSession: SetupDraft? { activeSetupDraft }
     private let terminationReply: (NSApplication, Bool) -> Void
 
@@ -72,6 +77,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
           presentWindow: @escaping (NSWindow) -> Void = { $0.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) },
           restartAnimationClients: @escaping () -> Void = { _ = try? CommandRunner().run("/usr/bin/killall", ["Dock", "Finder"]) },
           controlStateSnapshot: (() -> SystemControlLifecycle.State)? = nil,
+          displayRecoveryPending: (() -> Bool)? = nil,
+          displaySnapshotRefresh: (() -> Void)? = nil,
           transactions: HostTransactions = HostTransactions(),
           terminationReply: @escaping (NSApplication, Bool) -> Void = { $0.reply(toApplicationShouldTerminate: $1) }) {
          self.transactions = transactions
@@ -87,7 +94,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
          self.animations = animations ?? AnimationPreferences(defaults: preferences)
          self.presentWindow = presentWindow
          self.restartAnimationClients = restartAnimationClients
-         self.controlStateSnapshot = controlStateSnapshot
+          self.controlStateSnapshot = controlStateSnapshot
+          self.displayRecoveryPending = displayRecoveryPending ?? { DisplayController.hasPendingRecovery(defaults: preferences) }
+          self.displaySnapshotRefresh = displaySnapshotRefresh
         self.model = model
         self.spaces = spaces
         self.windowPositions = windowPositions
@@ -394,7 +403,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         if module == .monitors || module == .arrangement {
             guard !recovering else { moduleFailures[module] = "Display operation is busy."; showError(ToggleError(message: "Wait for the current display operation to finish.")); completion(false); return }
-            if !enabled && (model.disabledMonitorCount > 0 || model.pendingArrangement || rollbackUUID != nil) {
+            if !enabled && needsDisplayRecovery {
                 model.stoppingModules.insert(module)
                 restoreAll { [weak self] restored in
                     guard let self else { return }
@@ -601,7 +610,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
            let records = try? JSONDecoder().decode([DisplayRecord].self, from: data) {
             model.disabledMonitorCount = records.filter(\.disabledByApp).count
         }
-        let recoveryNeeded = model.pendingArrangement || model.disabledMonitorCount > 0
+        let recoveryNeeded = needsDisplayRecovery
         let observeScreens = modules.needsDisplays || spaces != nil || recoveryNeeded
         if observeScreens && screenObserver == nil {
             screenObserver = NotificationCenter.default.addObserver(
@@ -934,7 +943,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func refreshDisplaySnapshot() {
-        guard !recovering, modules.needsDisplays || model.pendingArrangement || model.disabledMonitorCount > 0 else { return }
+        if let displaySnapshotRefresh { displaySnapshotRefresh(); return }
+        guard !recovering, modules.needsDisplays || needsDisplayRecovery else { return }
         if controller == nil { controller = DisplayController() }
         guard let controller else { return }
         controller.refreshDisplays()
@@ -954,7 +964,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             openArrangementWhenReady = false
             showArrangementEditor()
         }
-        if !modules.needsDisplays && !model.pendingArrangement && model.disabledMonitorCount == 0 { updateModules() }
+        if !modules.needsDisplays && !needsDisplayRecovery { updateModules() }
         publishModuleStatus()
     }
 
@@ -1172,7 +1182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func setMonitor(_ uuid: String, enabled: Bool) {
-        guard modules.enabled.contains(.monitors), safety.isReady, !recovering, !displayRefresh.isSettling, !model.pendingArrangement,
+        guard modules.enabled.contains(.monitors), controlState.recoveryReady, !recovering, !displayRefresh.isSettling, !model.pendingArrangement,
               rollbackUUID == nil || (enabled && rollbackUUID == uuid),
               let executable = Bundle.main.executableURL?.path else {
             showError(ToggleError(message: "Wait for the watchdog, display changes, and current confirmation to finish."))
@@ -1316,7 +1326,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             prepareMouse: { self.mouseLifecycle.prepareToQuit() },
             quiesce: { self.windowPositions?.invalidate(); self.screenEdges?.stop() },
             prepareClipboard: { self.clipboard?.prepareTermination() != false },
-            needsDisplayRecovery: { self.model.disabledMonitorCount > 0 || self.rollbackUUID != nil || self.model.pendingArrangement },
+            needsDisplayRecovery: { self.needsDisplayRecovery },
             restoreDisplays: { self.restoreAll(completion: $0) },
             suspendSpaces: spaces.map { module in { module.suspend(completion: $0) } },
             resumeClipboard: { self.clipboard?.resumeMonitoring() },

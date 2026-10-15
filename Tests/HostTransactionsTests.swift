@@ -1,4 +1,125 @@
 import Foundation
+import AppKit
+
+private final class JournalDisplayRunner: CommandRunning {
+    let defaults: UserDefaults
+    let restoreStarted = DispatchSemaphore(value: 0)
+    let finishRestore = DispatchSemaphore(value: 0)
+    var failRestore = false
+    var failDisable = false
+    init(_ defaults: UserDefaults) { self.defaults = defaults }
+    func run(_ executable: String, _ arguments: [String]) throws -> String {
+        if arguments.first == "--set-display" {
+            let record = DisplayRecord(uuid: "fixture", name: "Fixture", lastID: 1, bootSession: nil, disabledByApp: true)
+            defaults.set(try JSONEncoder().encode([record]), forKey: "displayRecords")
+            if failDisable { throw ToggleError(message: "Injected post-commit helper failure") }
+        } else if arguments == ["--restore"] {
+            restoreStarted.signal()
+            finishRestore.wait()
+            if failRestore { throw ToggleError(message: "Injected recovery failure") }
+            defaults.removeObject(forKey: "displayRecords")
+        } else { throw ToggleError(message: "Unexpected fixture command") }
+        return ""
+    }
+}
+
+private func runDisplayOwnershipTests() {
+    for scenario in ["quit", "quit-failure", "module", "module-failure", "keep", "helper-failure"] {
+        let suite = "fix-mac-os.display-ownership.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = ModuleSettings(defaults: defaults)
+        for module in AppModule.allCases { settings.set(module, enabled: module == .monitors) }
+        let mouse = MouseLifecycle(settings: settings, makeModule: { MouseModule(backend: FakeMouseBackend(), recovery: FakeMouseRecovery()) })
+        let runner = JournalDisplayRunner(defaults)
+        runner.failRestore = scenario.hasSuffix("-failure") && scenario != "helper-failure"
+        runner.failDisable = scenario == "helper-failure"
+        let model = DashboardModel()
+        model.confirmMonitorDisable = scenario == "keep"
+        var replies: [Bool] = []
+        var snapshots = 0
+        let host = AppDelegate(commandRunner: runner, mouseLifecycle: mouse, model: model, preferences: defaults,
+            controlStateSnapshot: { SystemControlLifecycle.State(watchdogReady: true, displaySettling: false) },
+            displayRecoveryPending: { DisplayController.hasPendingRecovery(defaults: defaults) },
+            displaySnapshotRefresh: { snapshots += 1 }, terminationReply: { _, approved in replies.append(approved) })
+        func wait(_ condition: () -> Bool) {
+            let deadline = Date().addingTimeInterval(1)
+            while !condition() && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
+            expect(condition(), "\(scenario): fake helper completes without waiting for a display snapshot")
+        }
+        model.onMonitorChanged("fixture", false)
+        wait { !model.monitorBusy }
+        expect(DisplayController.hasPendingRecovery(defaults: defaults) && model.disabledMonitorCount == 0 && snapshots == 0,
+               "\(scenario): successful helper journal precedes the deliberately stale dashboard snapshot")
+        if scenario == "keep" { model.onKeepDisabled("fixture") }
+        if scenario.hasPrefix("module") {
+            model.onModuleChanged(.monitors, false)
+            expect(settings.enabled.contains(.monitors) && model.stoppingModules.contains(.monitors),
+                   "\(scenario): last display owner is not disabled before recovery finishes")
+        } else {
+            expect(host.applicationShouldTerminate(NSApplication.shared) == .terminateLater && replies.isEmpty,
+                   "\(scenario): immediate quit must wait for durable display ownership, including manual Keep")
+        }
+        expect(runner.restoreStarted.wait(timeout: .now() + 1) == .success,
+               "\(scenario): recovery helper is requested before the deferred snapshot")
+        // Let the centralized gate fire while recovery is blocked; it must not be canceled by module shutdown.
+        RunLoop.main.run(until: Date().addingTimeInterval(1.6))
+        expect(snapshots == 1 && replies.isEmpty && settings.enabled.contains(.monitors),
+               "\(scenario): discovery gate and owning module remain alive until recovery outcome")
+        runner.finishRestore.signal()
+        wait { !model.monitorBusy }
+        if scenario.hasPrefix("module") {
+            expect(settings.enabled.contains(.monitors) == runner.failRestore && model.stoppingModules.isEmpty,
+                   "\(scenario): module shutdown follows recovery success, retaining failed ownership for retry")
+        } else {
+            wait { !replies.isEmpty }
+            expect(replies == [!runner.failRestore], "\(scenario): quit approval follows recovery outcome exactly once")
+        }
+        expect(DisplayController.hasPendingRecovery(defaults: defaults) == runner.failRestore,
+               "\(scenario): only successful restoration clears durable recovery ownership")
+        if runner.failRestore {
+            runner.failRestore = false
+            if scenario.hasPrefix("module") { model.onModuleChanged(.monitors, false) }
+            else {
+                expect(host.applicationShouldTerminate(NSApplication.shared) == .terminateLater,
+                       "\(scenario): canceled quit can retry retained journal ownership")
+            }
+            expect(runner.restoreStarted.wait(timeout: .now() + 1) == .success,
+                   "\(scenario): failed recovery remains retriable without deadlocking the helper queue")
+            runner.finishRestore.signal()
+            wait { !model.monitorBusy }
+            if scenario.hasPrefix("module") {
+                expect(!settings.enabled.contains(.monitors), "\(scenario): successful retry finally releases module ownership")
+            } else {
+                wait { replies.count == 2 }
+                expect(replies == [false, true], "\(scenario): fresh quit approves only after successful retry")
+            }
+        }
+        withExtendedLifetime(host) {}
+    }
+
+    let suite = "fix-mac-os.display-journal.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    expect(!DisplayController.hasPendingRecovery(defaults: defaults), "empty isolated journal owns no recovery")
+    defaults.set(Data("corrupt".utf8), forKey: "displayRecords")
+    expect(DisplayController.hasPendingRecovery(defaults: defaults), "malformed display records fail closed for recovery ownership")
+    defaults.removeObject(forKey: "displayRecords")
+    defaults.set(Data(), forKey: "pendingArrangement")
+    expect(DisplayController.hasPendingRecovery(defaults: defaults), "pending arrangement journal owns recovery without a UI snapshot")
+    defaults.removeObject(forKey: "pendingArrangement")
+    defaults.set(true, forKey: "disabledByApp")
+    expect(DisplayController.hasPendingRecovery(defaults: defaults), "legacy disable journal still owns recovery")
+    defaults.removeObject(forKey: "disabledByApp")
+    let settings = ModuleSettings(defaults: defaults)
+    for module in AppModule.allCases { settings.set(module, enabled: false) }
+    let model = DashboardModel(); model.disabledMonitorCount = 1; model.pendingArrangement = true
+    let mouse = MouseLifecycle(settings: settings, makeModule: { MouseModule(backend: FakeMouseBackend(), recovery: FakeMouseRecovery()) })
+    let host = AppDelegate(mouseLifecycle: mouse, model: model, preferences: defaults,
+        displayRecoveryPending: { DisplayController.hasPendingRecovery(defaults: defaults) })
+    expect(host.applicationShouldTerminate(NSApplication.shared) == .terminateNow,
+           "stale UI recovery indicators cannot invent ownership after the durable journal is clear")
+}
 
 private final class QuitFixture {
     let host = HostTransactions()
@@ -43,6 +164,7 @@ private final class QuitFixture {
 }
 
 func runHostTransactionsTests() {
+    runDisplayOwnershipTests()
     for veto in ["busy", "mouse", "clipboard"] {
         let fixture = QuitFixture()
         fixture.busy = veto == "busy"

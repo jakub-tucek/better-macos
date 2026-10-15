@@ -52,6 +52,17 @@ enum DisplaySafety {
 }
 
 final class DisplayController {
+    /// Read durable helper ownership without constructing a graphics controller.
+    /// A malformed journal must not silently authorize abandoning recovery.
+    static func hasPendingRecovery(defaults: UserDefaults) -> Bool {
+        // Helpers are separate processes; refresh the preferences cache first.
+        defaults.synchronize()
+        if defaults.data(forKey: "pendingArrangement") != nil || defaults.bool(forKey: "disabledByApp") { return true }
+        guard let data = defaults.data(forKey: "displayRecords") else { return false }
+        guard let records = try? JSONDecoder().decode([DisplayRecord].self, from: data) else { return true }
+        return records.contains(where: \.disabledByApp)
+    }
+
     private let defaults = UserDefaults.standard
     private let framework: UnsafeMutableRawPointer?
     private let configureEnabled: (@convention(c) (CGDisplayConfigRef?, UInt32, Bool) -> Int32)?
