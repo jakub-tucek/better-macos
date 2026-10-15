@@ -31,35 +31,67 @@ protocol DiagnosticFiles {
     func withLock(_ directory: URL, work: () throws -> Void) throws
 }
 
-struct LocalDiagnosticFiles: DiagnosticFiles {
-    private let manager = FileManager.default
+/// One prepared sink owns one directory descriptor until deinit. After validation,
+/// no operation resolves that directory's pathname again (even enumeration).
+final class LocalDiagnosticFiles: DiagnosticFiles {
+    private var directoryFD: Int32 = -1
+    private var root: URL?
+    deinit { if directoryFD >= 0 { close(directoryFD) } }
+    private var denied: CocoaError { CocoaError(.fileWriteNoPermission) }
     func prepare(_ directory: URL) throws {
-        // Do not recursively create or chmod broad parent directories.
-        do {
-            try manager.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-        } catch CocoaError.fileWriteFileExists {
-            // Another session may already own it, including a concurrent creator.
-            // Never accept EEXIST without the type/ownership checks below.
+        if directoryFD >= 0 { guard root == directory else { throw denied }; return }
+        // mkdir is deliberately non-recursive. EEXIST is accepted only after
+        // opening the directory without following its final component.
+        guard mkdir(directory.path, 0o700) == 0 || errno == EEXIST else { throw denied }
+        let descriptor = open(directory.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard descriptor >= 0 else { throw denied }
+        var accepted = false
+        defer { if !accepted { close(descriptor) } }
+        var info = stat()
+        guard fstat(descriptor, &info) == 0, info.st_mode & S_IFMT == S_IFDIR,
+              info.st_uid == getuid(), fchmod(descriptor, 0o700) == 0 else { throw denied }
+        root = directory; directoryFD = descriptor; accepted = true
+    }
+    private func name(_ file: URL) throws -> String {
+        guard directoryFD >= 0, file.deletingLastPathComponent().path == root?.path else { throw denied }
+        let name = file.lastPathComponent
+        guard !name.isEmpty, name != ".", name != "..", !name.contains("/"), !name.utf8.contains(0) else { throw denied }
+        return name
+    }
+    private func info(_ name: String) throws -> stat? {
+        var result = stat()
+        if fstatat(directoryFD, name, &result, AT_SYMLINK_NOFOLLOW) != 0 {
+            if errno == ENOENT { return nil }
+            throw denied
         }
-        let attributes = try manager.attributesOfItem(atPath: directory.path)
-        guard attributes[.type] as? FileAttributeType == .typeDirectory,
-              (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid() else { throw CocoaError(.fileWriteNoPermission) }
-        try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        return result
+    }
+    private func regular(_ info: stat) -> Bool {
+        info.st_mode & S_IFMT == S_IFREG && info.st_uid == getuid() && info.st_nlink == 1
+    }
+    private func openFile(_ name: String, flags: Int32) throws -> Int32 {
+        var descriptor: Int32 = -1
+        // Bounded retry for interrupted/concurrent creation. A removed directory
+        // still fails closed; retries never resolve the original pathname.
+        for _ in 0..<3 {
+            descriptor = openat(directoryFD, name, flags | O_CREAT | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK, 0o600)
+            if descriptor >= 0 || (errno != ENOENT && errno != EINTR) { break }
+        }
+        guard descriptor >= 0 else { throw denied }
+        var information = stat()
+        guard fstat(descriptor, &information) == 0, regular(information), fchmod(descriptor, 0o600) == 0 else {
+            close(descriptor); throw denied
+        }
+        return descriptor
     }
     func size(_ file: URL) throws -> Int {
-        guard manager.fileExists(atPath: file.path) else { return 0 }
-        let attributes = try manager.attributesOfItem(atPath: file.path)
-        guard attributes[.type] as? FileAttributeType == .typeRegular else { throw CocoaError(.fileWriteNoPermission) }
-        return (attributes[.size] as? NSNumber)?.intValue ?? 0
+        guard let information = try info(name(file)) else { return 0 }
+        guard regular(information) else { throw denied }
+        return Int(information.st_size)
     }
     func append(_ data: Data, to file: URL) throws {
-        // O_NOFOLLOW rejects a symlink even if replaced after the size check.
-        let descriptor = open(file.path, O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK, 0o600)
-        guard descriptor >= 0 else { throw CocoaError(.fileWriteUnknown) }
+        let descriptor = try openFile(name(file), flags: O_WRONLY | O_APPEND)
         defer { close(descriptor) }
-        var info = stat()
-        guard fstat(descriptor, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
-              info.st_uid == getuid(), fchmod(descriptor, 0o600) == 0 else { throw CocoaError(.fileWriteNoPermission) }
         try data.withUnsafeBytes { buffer in
             var offset = 0
             while offset < buffer.count {
@@ -71,34 +103,41 @@ struct LocalDiagnosticFiles: DiagnosticFiles {
         }
     }
     func remove(_ file: URL) throws {
-        if manager.fileExists(atPath: file.path) {
-            guard try manager.attributesOfItem(atPath: file.path)[.type] as? FileAttributeType == .typeRegular else {
-                throw CocoaError(.fileWriteNoPermission)
-            }
-            try manager.removeItem(at: file)
-        }
+        let name = try name(file)
+        guard let information = try info(name) else { return }
+        guard regular(information), unlinkat(directoryFD, name, 0) == 0 else { throw denied }
     }
-    func move(_ source: URL, to destination: URL) throws { try manager.moveItem(at: source, to: destination) }
+    func move(_ source: URL, to destination: URL) throws {
+        let source = try name(source), destination = try name(destination)
+        guard let information = try info(source), regular(information) else { throw denied }
+        if let existing = try info(destination) { guard regular(existing) else { throw denied } }
+        guard renameat(directoryFD, source, directoryFD, destination) == 0 else { throw denied }
+    }
     func files(_ directory: URL) throws -> [URL] {
-        try manager.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey, .isSymbolicLinkKey]).filter {
-            guard let values = try? $0.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else { return false }
-            return values.isRegularFile == true && values.isSymbolicLink != true
-        }.sorted {
-            let left = try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-            let right = try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-            return (left ?? .distantPast) < (right ?? .distantPast)
+        guard directory == root else { throw denied }
+        // openat(".") obtains an independent enumeration offset, without resolving
+        // a replaced path or sharing dup()'s directory stream offset.
+        let descriptor = openat(directoryFD, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        guard descriptor >= 0 else { throw denied }
+        guard let stream = fdopendir(descriptor) else { close(descriptor); throw denied }
+        defer { closedir(stream) }
+        var found: [(String, timespec)] = []
+        while let entry = readdir(stream) {
+            let name = withUnsafePointer(to: &entry.pointee.d_name) {
+                $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXNAMLEN) + 1) { String(cString: $0) }
+            }
+            guard name != ".", name != "..", let information = try info(name), regular(information) else { continue }
+            found.append((name, information.st_mtimespec))
         }
+        return found.sorted {
+            if $0.1.tv_sec != $1.1.tv_sec { return $0.1.tv_sec < $1.1.tv_sec }
+            return $0.1.tv_nsec < $1.1.tv_nsec
+        }.map { directory.appendingPathComponent($0.0, isDirectory: false) }
     }
     func withLock(_ directory: URL, work: () throws -> Void) throws {
-        let file = directory.appendingPathComponent(".rotation.lock")
-        let descriptor = open(file.path, O_WRONLY | O_CREAT | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK, 0o600)
-        guard descriptor >= 0 else { throw CocoaError(.fileWriteNoPermission) }
+        guard directory == root else { throw denied }
+        let descriptor = try openFile(".rotation.lock", flags: O_WRONLY)
         defer { close(descriptor) }
-        var info = stat()
-        guard fstat(descriptor, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
-              info.st_uid == getuid(), fchmod(descriptor, 0o600) == 0 else { throw CocoaError(.fileWriteNoPermission) }
-        // Never stall a feature on another process's logger. A busy lock drops
-        // this event; later events retry. No recursive error logging.
         guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else { return }
         defer { flock(descriptor, LOCK_UN) }
         try work()
@@ -119,7 +158,7 @@ final class RotatingDiagnosticSink: DiagnosticSink {
         self.files = files
         prefix = "fixmacos-\(pid)-\(session)"
     }
-    private func file(_ index: Int) -> URL { directory.appendingPathComponent("\(prefix)-\(index).jsonl") }
+    private func file(_ index: Int) -> URL { directory.appendingPathComponent("\(prefix)-\(index).jsonl", isDirectory: false) }
     func write(_ line: Data) throws {
         guard line.count <= limit else { return }
         if !prepared { try files.prepare(directory); prepared = true }
