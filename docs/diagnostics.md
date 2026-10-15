@@ -3,9 +3,24 @@
 The app and its helpers write newline-delimited JSON automatically to
 `~/Library/Logs/Fix macOS/`. No upload service or logging opt-in is involved.
 Each process/session has `fixmacos-<pid>-<session>-0.jsonl` (current), then `-1`
-and `-2` (older). Files are capped at 512 KiB; all sessions share a 24-file
-budget (12 MiB). Old files, including old live-session files, can be evicted.
+and `-2` (older). Logger-created files are capped at 512 KiB; sessions in one
+validated directory share a 24-file budget (12 MiB). Old files, including old
+live-session files, can be evicted.
 Only this exact owned filename grammar is pruned; unrelated files are untouched.
+The budget counts owned, regular, single-link files validated by the backend;
+symlinks, directories and hardlinked files are not adopted as managed records.
+Capacity is reserved **before** a new current file is created, including during
+rotation. Failed eviction candidates are skipped so other eligible files can
+free capacity. If no capacity can be freed, delivery is dropped without creating
+another file or overflowing the current file. An existing in-budget file can
+still append if no new generation is needed and the size limit permits it.
+Counting, eviction and creation share the same nonblocking directory lock.
+
+An externally/pre-existing over-budget or oversized directory cannot always be
+repaired: immutable/undeletable files are never force-cleared or overwritten.
+Pruning is best effort; if the file budget cannot be restored, even existing-file
+appends are dropped. This prevents additional managed-file growth but does not
+promise deletion of undeletable files or retroactive size repair.
 The directory is mode 0700, files 0600. `.rotation.lock` coordinates helpers;
 a busy lock drops an event. The caller admits at most 128 active/pending records
 under a short in-memory lock (at most 16 KiB of fields per admitted event);
@@ -163,6 +178,10 @@ acceptance. **Independent re-review remains required before any merge.**
 
 ## Corrected-series isolated validation · 2026-10-15
 
+Subsequent independent follow-up confirmed the original three blockers resolved,
+but reproduced a separate failed-eviction retention bug; see below. These older
+passing checks did not cover immutable eviction failures.
+
 Frozen implementation/test revision
 `a993b423c52b03fa061ed0b8f46351e4de6550c8` passed:
 
@@ -187,3 +206,52 @@ live clipboard/preferences dump, login registration, device action or permission
 mutation occurred. These results address the reproduced logging blockers in
 isolated checks, not the original feature reports or native/hardware acceptance.
 **Independent re-review is still mandatory; nothing has been merged to main.**
+
+## Follow-up: failed-eviction retention admission
+
+At `35c33a2`, the real-filesystem reproduction with the oldest managed file marked
+user-immutable and thirty new sessions produced **31 JSONL files and seven write
+failures**. Appending preceded pruning, and the first failed unlink prevented
+later eligible evictions. The all-blocked, rotation-at-capacity and distinct-sink
+concurrent cases also failed. Red evidence: `diagnostics-retention-red.log`.
+
+`82aea5b` reserves capacity before creation/rotation, continues after an eligible
+candidate cannot be unlinked, and drops delivery if capacity cannot be freed.
+All work remains descriptor-relative under the existing directory lock; the
+bounded asynchronous caller path is unchanged. No production code clears
+immutable flags or falls back to pathname-based cleanup.
+
+The focused real-filesystem regressions now pass **81 checks** (including the
+earlier diagnostics cases) plus the safety-entry source guard:
+
+- The original oldest-immutable case stays at **24 files / zero write failures**,
+  preserves immutable and unrelated files, and actually delivers the newest
+  session rather than dropping every full-budget event.
+- With every candidate immutable, repeated new-session writes create no files;
+  a pre-existing over-budget directory does not grow. Existing-file appends work
+  within budget and size, but blocked rotation and over-budget appends drop
+  without changing current contents.
+- Rotation at capacity skips a blocked candidate, evicts a later eligible one,
+  and keeps file counts and sizes bounded. Distinct real sinks use a gated native
+  `flock` to prove contention drops before creation; concurrent rotation probes
+  check counts inside actual locked appends, not just after cleanup.
+
+Only fixture-created files under unique temporary roots receive `UF_IMMUTABLE`;
+fixture teardown restores those flags before removing its own temporary root,
+including on assertion failures. No live log paths or user files are used.
+Focused green evidence: `diagnostics-retention-green.log`.
+
+Frozen implementation/test revision
+`82aea5b4e25d849ee257f35f5f4bddadc7bdaaec` passed one complete
+`MAC_UTILS_SIGNING_IDENTITY=- DEVELOPER_DIR=/Library/Developer/CommandLineTools bash test.sh`
+run: **81 diagnostic regressions** plus the safety-entry source guard,
+**4,401 legacy checks**, **10 policy tests / 3 suites**, **13 mocked installer
+scenarios**, compiler/build fixtures and real/relocated bundle checks. The built
+plist revision matches. Pinned lint and format passed across **52 Swift files**;
+touched shell syntax and whitespace checks passed. Full evidence is
+`diagnostics-82aea5b-clt.log` and `diagnostics-82aea5b-{lint,format}.log` (ignored,
+local to this worktree). This documentation commit does not claim a rebuilt
+artifact at its own revision. No live log directory, app launch/quit/install,
+system preferences, permissions or devices were mutated; immutable flags were
+used and restored only on fixture-owned temporary files.
+**The same independent reviewer must re-review before any merge.**
