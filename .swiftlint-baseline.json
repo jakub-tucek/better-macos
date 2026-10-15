@@ -7,7 +7,7 @@
       "ruleIdentifier": "force_cast",
       "ruleName": "Force Cast",
       "severity": "error",
-      "location": { "line": 338, "character": 41, "file": "WindowPositions.swift" }
+      "location": { "line": 338, "character": 41, "file": "Sources/Features/Windows/WindowPositions.swift" }
     }
   },
   {
@@ -18,7 +18,7 @@
       "ruleIdentifier": "force_cast",
       "ruleName": "Force Cast",
       "severity": "error",
-      "location": { "line": 338, "character": 91, "file": "WindowPositions.swift" }
+      "location": { "line": 338, "character": 91, "file": "Sources/Features/Windows/WindowPositions.swift" }
     }
   },
   {
@@ -29,7 +29,7 @@
       "ruleIdentifier": "force_cast",
       "ruleName": "Force Cast",
       "severity": "error",
-      "location": { "line": 401, "character": 40, "file": "WindowPositions.swift" }
+      "location": { "line": 401, "character": 40, "file": "Sources/Features/Windows/WindowPositions.swift" }
     }
   },
   {
@@ -40,7 +40,7 @@
       "ruleIdentifier": "force_cast",
       "ruleName": "Force Cast",
       "severity": "error",
-      "location": { "line": 401, "character": 104, "file": "WindowPositions.swift" }
+      "location": { "line": 401, "character": 104, "file": "Sources/Features/Windows/WindowPositions.swift" }
     }
   }
 ]

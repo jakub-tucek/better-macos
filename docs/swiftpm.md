@@ -19,7 +19,7 @@ resolves the SDK 27 app-build gap with the package retained; see
 `Package.swift` defines one static `ClipboardPolicy` product and one test target.
 [ClipboardHistory.swift](../Sources/Features/Clipboard/Policy/ClipboardHistory.swift)
 contains the existing capture, retention and archive policy. Native pasteboard/UI
-integration stays in `ClipboardModule.swift`. There are no package dependencies,
+integration stays in `Sources/Features/Clipboard/ClipboardModule.swift`. There are no package dependencies,
 resources, dynamic libraries or runtime plugin loading.
 
 ## Commands (repository root)
@@ -60,6 +60,12 @@ or directory) and `libClipboardPolicy.a` is present. Manual app and legacy test
 compilation import that module and link that archive, never compile its sources.
 SwiftPM is the sole build owner of those sources; normal per-configuration builds
 are intentional. C linking uses the three explicit owned objects, not a glob.
+
+The source-organization move leaves that target path unchanged. `Package.swift`
+explicitly selects `Sources/Features/Clipboard/Policy`, not `Sources/` or the
+Clipboard parent; sibling App/Core/SharedUI/native feature sources remain manual
+compiler inputs. No excludes are necessary with this narrow target path. Adding
+a target must preserve this sole policy ownership rather than sweep up the app.
 
 Standalone CLT 6.4's native engine fails to discover its Testing developer framework.
 The test helper adds the selected CLT framework, macro-plugin and runtime search

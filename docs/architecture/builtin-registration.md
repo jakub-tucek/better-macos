@@ -5,7 +5,7 @@ feature lifecycle framework. All owners remain compiled into the app executable.
 
 ## Presentation catalog
 
-[BuiltinFeatures.swift](../../BuiltinFeatures.swift) registers eleven `AppModule` identities and six widget
+[BuiltinFeatures.swift](../../Sources/App/BuiltinFeatures.swift) registers eleven `AppModule` identities and six widget
 kinds. The catalog contains values only: titles, descriptions, dashboard
 destinations, Settings membership/order and widget ownership/suggestion order.
 Existing `AppModule`, `SettingsGroup` and `WidgetKind` properties are compatibility
@@ -19,7 +19,7 @@ widget neither disables a feature nor clears its data.
 
 ## Registered choice preparation
 
-[BuiltinChoicePreparations.swift](../../BuiltinChoicePreparations.swift) registers three distinct capabilities used by
+[BuiltinChoicePreparations.swift](../../Sources/App/BuiltinChoicePreparations.swift) registers three distinct capabilities used by
 the production `AppDelegate.setModule` path:
 
 | Capability | Preparation | On refusal |
@@ -65,8 +65,9 @@ by a generic registration loop. The catalog does not infer dependencies from UI
 groups, and the choice seam does not expose universal start/stop callbacks.
 
 Further lifecycle extraction or reusable build-time packages require another
-reviewed slice. Source-folder moves, dynamic discovery/loading, event buses,
-ownership graph engines and generalized setup schemas are outside this change.
+reviewed slice. The later mechanical [source organization](../modules.md#modules-not-a-plugin-system)
+preserves these boundaries. Dynamic discovery/loading, event buses, ownership graph
+engines and generalized setup schemas remain outside this registration seam.
 
 ## Regression surface
 

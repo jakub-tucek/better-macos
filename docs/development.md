@@ -35,6 +35,13 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer bash scripts/dev build
 
 ## Commands
 
+App sources are organized under `Sources/App`, `Sources/Core`,
+`Sources/Features/<owner>` and `Sources/SharedUI`; the [module guide](modules.md)
+maps ownership. `build.sh` and `test.sh` retain explicit Swift inputs (different
+entry points), and `Tests/swiftui-compatibility.sh` compiles the production
+`Sources/SharedUI/StoredState.swift`. Folder moves do not add SwiftPM targets:
+only Clipboard policy and its named tests belong to the existing package.
+
 From the repository root (the wrapper also works from another directory):
 
 ```sh
@@ -94,7 +101,7 @@ Hashes authenticate pinned upstream bytes, not a separate publisher signature.
   disables SourceKit loading so these checks also run with standalone CLT. The
   tooling regression rejects configured rules requiring SourceKit.
 - `.swiftlint-baseline.json` records exactly four existing `AXValue` forced casts
-  in `WindowPositions.swift` (baseline lines 338 and 401). Each is preceded by a
+  in `Sources/Features/Windows/WindowPositions.swift` (baseline lines 338 and 401). Each is preceded by a
   `CFGetTypeID(...) == AXValueGetTypeID()` guard. This narrowly accepts existing
   bridging code, not arbitrary new forced casts. Review exceptions when touching
   that code; do not blanket-regenerate the baseline to make checks pass.

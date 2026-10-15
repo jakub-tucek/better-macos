@@ -6,37 +6,47 @@ Source map started at `f359f42`, with registration ownership updated through
 
 ## Modules, not a plugin system
 
-The eleven [AppModule](../AppModules.swift) cases retain persisted enable-choice IDs
-(`ModuleSettings`). [BuiltinFeatures.swift](../BuiltinFeatures.swift) registers inert
+The eleven [AppModule](../Sources/App/AppModules.swift) cases retain persisted enable-choice IDs
+(`ModuleSettings`). [BuiltinFeatures.swift](../Sources/App/BuiltinFeatures.swift) registers inert
 titles, descriptions, dashboard destinations, Settings order and six widget definitions;
 existing enum properties delegate to that catalog without constructing owners.
 Developers compile feature owners into the app through [build.sh](../build.sh).
 
-The host in [AppDelegate.swift](../AppDelegate.swift) wires actions, constructs owners,
+The host in [AppDelegate.swift](../Sources/App/AppDelegate.swift) wires actions, constructs owners,
 and retains activation, reconciliation, readiness and shutdown authority.
-[BuiltinChoicePreparations.swift](../BuiltinChoicePreparations.swift) registers typed
+[BuiltinChoicePreparations.swift](../Sources/App/BuiltinChoicePreparations.swift) registers typed
 Keep awake disable, Clipboard unload and shared Displays preparation before choice
 commit. It preserves refusal/retry and does not replace admission or quit coordination.
 There is no universal lifecycle/factory framework, runtime discovery or dynamic
 loader. Developers adding a feature must update the catalog, host wiring, preparation,
 build inputs, and tests as needed; adding an enum case alone is insufficient.
 
-Most first-party Swift files remain at the repository root. This flat layout is
-organizational debt, not a hidden plugin-folder convention. `Vendor/` contains
-third-party engine code; `MouseHID/` contains our C API boundary; neither directory
-defines a user-installable plugin. See the [partial registration contract](architecture/builtin-registration.md);
-further lifecycle/layout work belongs in the
-[roadmap](roadmap.md), not in descriptions of current capabilities.
+First-party app Swift lives under `Sources/`: `App/` owns entry points, composition,
+setup and native host integration; `Core/` owns host transactions, readiness and
+shared command execution; `SharedUI/` holds the shared Settings/widget shell,
+feature configuration views and `StoredState`. `Features/<owner>/` co-locates
+feature implementations: Displays, Windows, Audio, Bluetooth, Clipboard, Mouse,
+Animations, MenuBar, QuitGuard and KeepAwake. Shared display geometry, refresh and
+cursor recovery remain together under Displays; Windows retains its own owner/UI.
+These folders are not module/package boundaries: no lifecycle extraction occurred.
+`Sources/App/main.swift` remains the app/helper/CLI entry point; tests retain
+`Tests/main.swift`. `Package.swift` stays at the root and explicitly owns only
+`Sources/Features/Clipboard/Policy` plus its named test target. App/legacy compiler
+inputs remain explicit, with policy imported and statically linked, not recompiled.
+`Vendor/` contains pinned third-party engine code; `MouseHID/` contains our unchanged
+C API boundary. Neither defines a user-installable plugin. See the
+[partial registration contract](architecture/builtin-registration.md) and [roadmap](roadmap.md)
+for the broader lifecycle work that remains proposed.
 
 ## Find the UI first
 
-- [UISurfaces.swift](../UISurfaces.swift): `SettingsGroup`, six `WidgetKind` cases,
+- [UISurfaces.swift](../Sources/SharedUI/UISurfaces.swift): `SettingsGroup`, six `WidgetKind` cases,
   widget editor/popup, Settings shell, and quick-action views.
-- [Dashboard.swift](../Dashboard.swift): `DashboardModel`, `AppModule.dashboardFeature`
+- [Dashboard.swift](../Sources/SharedUI/Dashboard.swift): `DashboardModel`, `AppModule.dashboardFeature`
   mapping, shared controls, and feature configuration views. The filename predates
   the current popup/Settings split; it does not mean this is a separate plugin.
-- [SetupWizard.swift](../SetupWizard.swift): setup drafts and selected-feature
-  configuration. [AppDelegate.swift](../AppDelegate.swift) applies Finish through host
+- [SetupWizard.swift](../Sources/App/SetupWizard.swift): setup drafts and selected-feature
+  configuration. [AppDelegate.swift](../Sources/App/AppDelegate.swift) applies Finish through host
   operations; views do not own the OS effects.
 
 The entries below name the Settings destination and quick surface. Their shared
@@ -48,8 +58,8 @@ claim that the baseline's release blockers are fixed.
 
 ### Monitor switching · `monitors`
 
-- **Owner:** [DisplayController.swift](../DisplayController.swift); host helper/confirmation
-  orchestration in [AppDelegate.swift](../AppDelegate.swift), command dispatch in [main.swift](../main.swift).
+- **Owner:** [DisplayController.swift](../Sources/Features/Displays/DisplayController.swift); host helper/confirmation
+  orchestration in [AppDelegate.swift](../Sources/App/AppDelegate.swift), command dispatch in [main.swift](../Sources/App/main.swift).
 - **UI:** Displays settings and Displays widget. No Accessibility grant for switching.
 - **Resources/cleanup:** display recovery records and confirmation timers; restore
   through the host/helper/watchdog path. The controller also serves arrangement and
@@ -57,9 +67,9 @@ claim that the baseline's release blockers are fixed.
 
 ### Display arrangement · `arrangement`
 
-- **Owner:** [DisplayController.swift](../DisplayController.swift), geometry in
-  [DisplayTopology.swift](../DisplayTopology.swift), cursor mapping in [ScreenEdges.swift](../ScreenEdges.swift).
-- **UI:** Displays settings/widget shortcut; [DisplayArrangementEditor.swift](../DisplayArrangementEditor.swift).
+- **Owner:** [DisplayController.swift](../Sources/Features/Displays/DisplayController.swift), geometry in
+  [DisplayTopology.swift](../Sources/Features/Displays/DisplayTopology.swift), cursor mapping in [ScreenEdges.swift](../Sources/Features/Displays/ScreenEdges.swift).
+- **UI:** Displays settings/widget shortcut; [DisplayArrangementEditor.swift](../Sources/Features/Displays/DisplayArrangementEditor.swift).
   Matched edges requires Accessibility; opening/editing arrangement is a separate operation.
 - **Resources/cleanup:** pending-arrangement recovery, cursor event tap, editor, and
   fresh-layout state. Host disable stops cursor mapping/closes the editor; shared
@@ -67,8 +77,8 @@ claim that the baseline's release blockers are fixed.
 
 ### Bluetooth reconnect · `bluetooth`
 
-- **Owner:** [BluetoothModule.swift](../BluetoothModule.swift), including backend/policy;
-  [CommandRunner.swift](../CommandRunner.swift) runs external tools such as `blueutil`.
+- **Owner:** [BluetoothModule.swift](../Sources/Features/Bluetooth/BluetoothModule.swift), including backend/policy;
+  [CommandRunner.swift](../Sources/Core/CommandRunner.swift) runs external tools such as `blueutil`.
 - **UI:** Sound & connections settings, Bluetooth widget; contextual Bluetooth access.
 - **Resources/cleanup:** polling timer, connection-cycle cancellation, pending manual
   and audio intents, authorization manager. `stop(completion:)` cancels work and waits
@@ -76,7 +86,7 @@ claim that the baseline's release blockers are fixed.
 
 ### Audio · `audio`
 
-- **Owner:** [AudioModule.swift](../AudioModule.swift), including `CoreAudioBackend`.
+- **Owner:** [AudioModule.swift](../Sources/Features/Audio/AudioModule.swift), including `CoreAudioBackend`.
 - **UI:** Sound & connections settings and Audio widget. Selecting a microphone does
   not record audio or require microphone-recording permission.
 - **Resources/cleanup:** discovery timer, route preferences, overrides and pending
@@ -86,8 +96,8 @@ claim that the baseline's release blockers are fixed.
 
 ### Animations · `spaces`
 
-- **Owners:** [AnimationPreferences.swift](../AnimationPreferences.swift) for system
-  preference changes; [SpacesModule.swift](../SpacesModule.swift) for fast Space switching.
+- **Owners:** [AnimationPreferences.swift](../Sources/Features/Animations/AnimationPreferences.swift) for system
+  preference changes; [SpacesModule.swift](../Sources/Features/Animations/SpacesModule.swift) for fast Space switching.
 - **UI:** System settings, with desktop switching under Advanced; no widget.
   Desktop interception requires Accessibility and watchdog/readiness checks.
 - **Resources/cleanup:** preference recovery marker, Space observer, interceptor/event
@@ -97,7 +107,7 @@ claim that the baseline's release blockers are fixed.
 
 ### Menu bar · `menuBar`
 
-- **Owners:** `MenuBarModule` and `MenuBarSpacing` in [MenuBarModule.swift](../MenuBarModule.swift).
+- **Owners:** `MenuBarModule` and `MenuBarSpacing` in [MenuBarModule.swift](../Sources/Features/MenuBar/MenuBarModule.swift).
 - **UI:** System settings plus the module's chevron/divider status items; no popup widget
   or Screen Recording permission.
 - **Resources/cleanup:** status items and original global spacing preferences/recovery
@@ -106,7 +116,7 @@ claim that the baseline's release blockers are fixed.
 
 ### Hold to quit · `quitGuard`
 
-- **Owner/UI:** [QuitGuard.swift](../QuitGuard.swift) owns the input state machine and
+- **Owner/UI:** [QuitGuard.swift](../Sources/Features/QuitGuard/QuitGuard.swift) owns the input state machine and
   countdown HUD. Configuration lives in Input settings; plain ⌘Q is the quick action.
 - **Permission/resources:** Accessibility; session keyboard tap/run-loop source,
   countdown polling, captured foreground identity and HUD. `stop()` cancels the hold,
@@ -114,7 +124,7 @@ claim that the baseline's release blockers are fixed.
 
 ### Keep awake · `keepAwake`
 
-- **Owner:** [KeepAwakeModule.swift](../KeepAwakeModule.swift), including `SystemPowerAssertions`.
+- **Owner:** [KeepAwakeModule.swift](../Sources/Features/KeepAwake/KeepAwakeModule.swift), including `SystemPowerAssertions`.
 - **UI:** System settings and Keep awake widget; no TCC permission grant.
 - **Resources/cleanup:** IOKit system/display assertions, deadline/update timer and
   app launch/exit observers. `deactivate()` removes observers/timer and stops reasons;
@@ -124,9 +134,9 @@ claim that the baseline's release blockers are fixed.
 
 ### Window positions · `windows`
 
-- **Owner:** [WindowPositions.swift](../WindowPositions.swift), including matching,
+- **Owner:** [WindowPositions.swift](../Sources/Features/Windows/WindowPositions.swift), including matching,
   planning and `AXWindowPositionBackend`.
-- **UI:** Displays settings via [WindowPositionsView.swift](../WindowPositionsView.swift);
+- **UI:** Displays settings via [WindowPositionsView.swift](../Sources/Features/Windows/WindowPositionsView.swift);
   Window layouts widget and optional Displays restore controls. Accessibility required.
 - **Resources/cleanup:** saved layout/configuration data in preferences, wake/sleep
   observers and generation-checked queued moves. `stop()` invalidates work and removes
@@ -137,7 +147,7 @@ claim that the baseline's release blockers are fixed.
 
 - **Owners:** [ClipboardHistory.swift](../Sources/Features/Clipboard/Policy/ClipboardHistory.swift),
   in the static `ClipboardPolicy` module, owns capture/retention
-  policy and archive I/O; [ClipboardModule.swift](../ClipboardModule.swift) owns native
+  policy and archive I/O; [ClipboardModule.swift](../Sources/Features/Clipboard/ClipboardModule.swift) owns native
   pasteboard access, shortcut registration, panel, thumbnails and presentation.
 - **UI:** Clipboard settings, Clipboard widget and nonactivating ⌘⇧V panel. No
   Accessibility or Screen Recording grant for these clipboard operations.
@@ -148,8 +158,8 @@ claim that the baseline's release blockers are fixed.
 
 ### Mouse · `mouse`
 
-- **Owners:** `MouseModule`/`MouseLifecycle` in [MouseModule.swift](../MouseModule.swift),
-  [MouseSystemBackend.swift](../MouseSystemBackend.swift), and C boundary [MouseHID/MouseHID.c](../MouseHID/MouseHID.c).
+- **Owners:** `MouseModule`/`MouseLifecycle` in [MouseModule.swift](../Sources/Features/Mouse/MouseModule.swift),
+  [MouseSystemBackend.swift](../Sources/Features/Mouse/MouseSystemBackend.swift), and C boundary [MouseHID/MouseHID.c](../MouseHID/MouseHID.c).
 - **UI:** Input settings with explicit Apply/Restore; no widget or Accessibility tap.
 - **Resources/cleanup:** mouse-class IOKit runtime values and recovery JSON. Lifecycle
   startup/disable/quit paths restore originals and retain unresolved owned changes.
@@ -160,14 +170,14 @@ claim that the baseline's release blockers are fixed.
 
 | File | Responsibility |
 | --- | --- |
-| [AppDelegate.swift](../AppDelegate.swift) | Feature composition, callbacks, native windows, setup application, display transactions and termination wiring. |
-| [BuiltinFeatures.swift](../BuiltinFeatures.swift) | Inert feature/widget metadata and Settings order; no owner/view factories. |
-| [BuiltinChoicePreparations.swift](../BuiltinChoicePreparations.swift) | Typed pre-commit choice preparation for Keep awake, Clipboard and shared Displays; host retains admission/commit/reconciliation. |
-| [HostTransactions.swift](../HostTransactions.swift) | Action admission and ordered quit preparation/drain/cancel/approval; feature owners still perform cleanup. See [glossary](glossary.md). |
-| [SystemControlLifecycle.swift](../SystemControlLifecycle.swift) | Shared input/recovery readiness state and cursor reconciliation, not a general plugin lifecycle. |
-| [DisplayRefreshGate.swift](../DisplayRefreshGate.swift) | Coalesced display refresh/settling before input or window work resumes. |
-| [SafetyWatchdog.swift](../SafetyWatchdog.swift), [main.swift](../main.swift) | Independent watchdog and helper/CLI entry paths in the same built executable. |
-| [SourceUpdates.swift](../SourceUpdates.swift) | Source-history checks and installer launch; not feature registration or plugin updates. |
+| [AppDelegate.swift](../Sources/App/AppDelegate.swift) | Feature composition, callbacks, native windows, setup application, display transactions and termination wiring. |
+| [BuiltinFeatures.swift](../Sources/App/BuiltinFeatures.swift) | Inert feature/widget metadata and Settings order; no owner/view factories. |
+| [BuiltinChoicePreparations.swift](../Sources/App/BuiltinChoicePreparations.swift) | Typed pre-commit choice preparation for Keep awake, Clipboard and shared Displays; host retains admission/commit/reconciliation. |
+| [HostTransactions.swift](../Sources/Core/HostTransactions.swift) | Action admission and ordered quit preparation/drain/cancel/approval; feature owners still perform cleanup. See [glossary](glossary.md). |
+| [SystemControlLifecycle.swift](../Sources/Core/SystemControlLifecycle.swift) | Shared input/recovery readiness state and cursor reconciliation, not a general plugin lifecycle. |
+| [DisplayRefreshGate.swift](../Sources/Features/Displays/DisplayRefreshGate.swift) | Coalesced display refresh/settling before input or window work resumes. |
+| [SafetyWatchdog.swift](../Sources/App/SafetyWatchdog.swift), [main.swift](../Sources/App/main.swift) | Independent watchdog and helper/CLI entry paths in the same built executable. |
+| [SourceUpdates.swift](../Sources/App/SourceUpdates.swift) | Source-history checks and installer launch; not feature registration or plugin updates. |
 
 Storage has feature owners: `ModuleSettings` stores enable choices, `UISettingsStore`
 in `UISurfaces.swift` stores UI/setup state, and feature files own their policy data

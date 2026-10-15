@@ -2,8 +2,8 @@
 
 Plan based on `2620a32` (2026-10-15), with implementation status updated below.
 Pinned developer tooling, the first Clipboard policy SwiftPM slice and partial static
-built-in registration and a CI workflow are available; broader lifecycle/source moves
-remain proposed. Hosted CI execution is unverified. Current behavior lives in
+built-in registration, mechanical source organization and a CI workflow are available;
+broader lifecycle extraction remains proposed. Hosted CI execution is unverified. Current behavior lives in
 [the module guide](modules.md); acceptance and failures live in [validation](validation/README.md).
 Keep the concise README and its install command. This plan promises no release date or tag.
 
@@ -13,7 +13,7 @@ Keep the concise README and its install command. This plan promises no release d
 | --- | --- | --- |
 | 0 | Finish release safety | Core fixes and watchdog/corrupt-journal regressions are reviewed and integrated through `dc96e9c`; complete native acceptance and record remaining hardware gaps at the tested revision. |
 | 1 | Documentation and developer baseline (partial) | Documentation consolidation and pinned tools/commands are implemented; CLT 27/Xcode 27 compatibility is verified. Establish a tested minimum toolchain. |
-| 2 | One SwiftPM slice and source organization (partial) | Clipboard policy is extracted and statically linked with named tests; combined clean CLT 27/Xcode 27 suites pass. Wider source organization remains pending; preserve app/helper behavior and packaging. |
+| 2 | One SwiftPM slice and source organization | Clipboard policy is extracted and statically linked with named tests; first-party Swift is organized by owner under Sources without lifecycle changes. Preserve app/helper behavior and packaging; toolchain evidence remains revision-bound. |
 | 3 | Built-in feature registration (partial) | Inert feature/widget metadata and typed Keep awake/Clipboard/shared Displays choice preparation are integrated; owner factories, broader lifecycle extraction and a general framework remain pending. Preserve IDs, shared ownership and drain/veto behavior. |
 | 4 | Test migration and CI (partial) | Arm64 preview workflow and offline CI regressions are configured; hosted execution is unverified and branch protection is not configured. Continue suite migration and clean/incremental verification. |
 | 5 | Native UI automation, if needed | Add a separate full-Xcode GUI job only for acceptance gaps that require app-driving tests. |
@@ -36,7 +36,9 @@ and corrupt-journal preservation fixes are independently reviewed CLEAN and inte
   Preserve the Apple Silicon/macOS 15+ CLT source-install path without full Xcode.
 - Put C integration behind explicit C targets for MouseHID and vendored payloads;
   keep `Vendor/` contents and notices unchanged during this refactor.
-- Move toward this layout without treating directory names as package boundaries:
+- Implemented: mechanical first-party Swift organization below, without treating
+  directory names as package boundaries. MouseHID remains the unchanged manual C
+  boundary; exposing it through a package target is still proposed:
 
 ```text
 Sources/
@@ -44,7 +46,7 @@ Sources/
   Core/         # host transactions, recovery/readiness and shared policy
   Features/     # Displays/, Audio/, Bluetooth/, Clipboard/, Mouse/, ...
   SharedUI/     # Settings shell, widgets and shared controls
-MouseHID/       # C boundary, exposed through a package target
+MouseHID/       # unchanged C boundary; package target remains proposed
 Vendor/        # existing pinned sources and notices
 Tests/         # named suites plus shell/process fixtures
 docs/          # current guides and revision-labelled evidence
@@ -80,7 +82,7 @@ mode for release reproducibility; do not claim byte-identical output across SDKs
   `StateMacro` failure is resolved through the explicit public `StoredState` wrapper;
   [combined clean CLT/Xcode evidence](validation/clt-compatibility.md#combined-main-integration) is recorded at `dff0491`.
   The first SwiftPM policy slice and ten named tests in three suites are implemented;
-  further source moves and suite migration remain pending. The configured
+  mechanical source organization is implemented; further suite migration remains pending. The configured
   [CI workflow](ci.md) has **hosted execution unverified**; branch protection is not
   configured and the tested minimum toolchain remains open.
 - Document a tested compiler/SDK baseline. Today's scripts use Swift **5 language

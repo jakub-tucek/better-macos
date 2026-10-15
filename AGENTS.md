@@ -8,7 +8,7 @@
   ownership and named suites, read [docs/swiftpm.md](docs/swiftpm.md). For metadata and
   typed choice preparation, read [built-in registration](docs/architecture/builtin-registration.md).
   For configured CI and unverified hosted execution, read [CI guidance](docs/ci.md).
-  Broader lifecycle extraction and source moves remain proposed in [the roadmap](docs/roadmap.md).
+  Broader lifecycle extraction remains proposed in [the roadmap](docs/roadmap.md).
 - For testing or release claims, read [validation](docs/validation/README.md) and its linked
   revision-bound evidence. Preserve historical failures and hardware acceptance gaps.
 - For host coordination terminology, use [the glossary](docs/glossary.md).
@@ -26,8 +26,10 @@ bash test.sh        # build, packaging/build fixtures, Swift Testing, legacy/ins
 git diff --check
 ```
 
-The scripts target arm64/macOS 15+ in Swift 5 language mode. Most first-party Swift
-files are at the root; `MouseHID/` is the C boundary and `Tests/` holds test seams.
+The scripts target arm64/macOS 15+ in Swift 5 language mode. First-party app Swift
+lives in `Sources/App`, `Core`, `Features/<owner>` and `SharedUI`; see the module
+guide for ownership. `Sources/App/main.swift` is the app/helper entry point;
+`Tests/main.swift` is the isolated runner. `MouseHID/` is the C boundary.
 SwiftPM alone compiles `Sources/Features/Clipboard/Policy`; app/legacy tests import
 and statically link `ClipboardPolicy`, never compile its sources manually. Update
 explicit inputs in build/test scripts only for sources outside that package.

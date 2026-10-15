@@ -6,6 +6,7 @@ trap 'rm -rf "$ROOT"' EXIT
 mkdir -p "$ROOT/source/Vendor/strafe/Swift" "$ROOT/source/Scripts" "$ROOT/source/Tests" "$ROOT/bin"
 cp build.sh test.sh Package.swift Info.plist LICENSE "$ROOT/source/"
 cp Scripts/clipboard-package.sh "$ROOT/source/Scripts/"
+cp -R Sources Tests "$ROOT/source/"
 cp Vendor/strafe/LICENSE Vendor/strafe/UPSTREAM.txt "$ROOT/source/Vendor/strafe/"
 touch "$ROOT/source/Vendor/strafe/Swift/fixture.swift"
 cat > "$ROOT/bin/mock" <<'MOCK'
@@ -37,10 +38,18 @@ case "${0##*/}" in
         [[ "${MOCK_FAIL:-}" != compile ]] || exit 17
         for arg in "$@"; do
             case "$arg" in
-                *fixture-stale.o|*ClipboardHistory.swift|Sources/*.swift) exit 21 ;;
+                *fixture-stale.o|*ClipboardHistory.swift|Sources/Features/Clipboard/Policy/*) exit 21 ;;
+                *.swift)
+                    [[ -f "$arg" ]] || exit 28
+                    case "$arg" in Sources/*|Tests/*|Vendor/*) ;; *) exit 29 ;; esac ;;
             esac
         done
         if [[ "$1" == swiftc ]]; then
+            if [[ "$*" == *'-o build/isolated-tests'* ]]; then
+                [[ "$*" == *'Tests/main.swift'* && "$*" != *'Sources/App/main.swift'* ]] || exit 30
+            else
+                [[ "$*" == *'Sources/App/main.swift'* && "$*" != *'Tests/main.swift'* ]] || exit 31
+            fi
             [[ "$*" == *'libClipboardPolicy.a'* && "$*" == *'/Modules'* ]] || exit 24
             archives=0
             for arg in "$@"; do
@@ -92,6 +101,12 @@ for failure in package package-path compile sign verify publish; do
 done
 unset MOCK_FAIL
 echo 'PASS: package, compile, signing, verification and publication failures preserve previous bundle and clean staging'
+# A missing moved source must fail even with an existing bundle and stale objects.
+mv "$ROOT/source/Sources/SharedUI/StoredState.swift" "$ROOT/StoredState.swift"
+if run_build; then echo 'Expected missing source failure' >&2; exit 1; fi
+diff -r "$ROOT/previous.app" "$APP"
+mv "$ROOT/StoredState.swift" "$ROOT/source/Sources/SharedUI/StoredState.swift"
+echo 'PASS: missing organized source fails closed rather than reusing stale build outputs'
 # A successful SwiftPM command without its expected output must also fail closed.
 rm "$ROOT/source/build/swiftpm/fixture arm64/release/Modules/ClipboardPolicy.swiftmodule"
 export MOCK_FAIL=package-output

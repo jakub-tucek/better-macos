@@ -81,6 +81,15 @@ cp "$FIXTURE/Fixture.swift" "$FIXTURE/before"
 expect_failure 'trailingSpace' bash "$FIXTURE/scripts/dev" format-check
 cmp "$FIXTURE/before" "$FIXTURE/Fixture.swift"
 printf 'let value = 1\n' >"$FIXTURE/Fixture.swift"
+# Organized app and policy roots must remain checked, not hidden by exclusions.
+for directory in Sources/App Sources/Core Sources/SharedUI Sources/Features/Mouse Sources/Features/Clipboard/Policy; do
+    mkdir -p "$FIXTURE/$directory"
+    printf 'import Foundation\nimport Foundation\n' >"$FIXTURE/$directory/Checked.swift"
+    expect_failure 'duplicate_imports' bash "$FIXTURE/scripts/dev" lint
+    printf 'let value = 1  \n' >"$FIXTURE/$directory/Checked.swift"
+    expect_failure 'trailingSpace' bash "$FIXTURE/scripts/dev" format-check
+    rm "$FIXTURE/$directory/Checked.swift"
+done
 for directory in Vendor build .build .swiftpm worktrees .worktrees generated Generated; do
     mkdir -p "$FIXTURE/$directory"
     printf 'import Foundation\nimport Foundation  \n' >"$FIXTURE/$directory/Ignored.swift"
