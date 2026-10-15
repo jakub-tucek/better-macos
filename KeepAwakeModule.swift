@@ -276,6 +276,13 @@ final class KeepAwakeModule {
         if cleanupPending { try releaseAssertions() }
         let timeout = assertionTimeout(remaining: remaining)
         guard timeout > 0 else { try releaseAssertions(); return }
+        // Display policy can be removed while timed/app system ownership stays
+        // active. Release before renewal so an unrelated system failure cannot
+        // keep the old display policy alive. Retain failed IDs for retry.
+        if !keepDisplayAwake, let id = displayAssertion {
+            try backend.release(id)
+            displayAssertion = nil
+        }
         if let id = systemAssertion { try backend.setTimeout(id, seconds: timeout) }
         else { systemAssertion = try backend.create(display: false, timeout: timeout) }
         if keepDisplayAwake {

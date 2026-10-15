@@ -1386,6 +1386,82 @@ final class FakePowerAssertions: PowerAssertionBackend {
         entries.removeValue(forKey: id)
     }
 }
+// Setup replaces policy without replacing existing timed/app ownership.
+for reason in ["timed", "app", "timed-paused"] {
+    for releaseFails in [false, true] {
+        let suite = "fix-mac-os.setup-display-assertion.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let power = FakePowerAssertions()
+        var clock: TimeInterval = 100
+        let apps = reason == "timed" ? [:] : ["fixture.app": "Fixture"]
+        let module = KeepAwakeModule(defaults: defaults, backend: power, now: { clock }, automaticUpdates: false,
+            runningApps: { apps }, processInstances: { ["fixture.app": [42]] })
+        try module.configureForSetup(minutes: 30, display: true, apps: apps)
+        module.activate()
+        if reason == "timed-paused" { try module.stop() }
+        if reason != "app" { try module.start() }
+        clock += 12
+        let remaining = module.remaining
+        let paused = module.appsPaused
+        let activeApps = module.activeAppNames
+        let systemID = power.entries.first(where: { !$0.value.display })!.key
+        let displayID = power.entries.first(where: { $0.value.display })!.key
+        if releaseFails { power.failRelease = displayID }
+        do {
+            try module.configureForSetup(minutes: 45, display: false, apps: apps)
+            expect(!releaseFails, "\(reason): failed display release must throw from setup reconciliation")
+        } catch {
+            expect(releaseFails, "\(reason): display policy reconciliation only throws the injected release failure")
+        }
+        expect(!module.keepDisplayAwake && module.selectedMinutes == 45 && module.selectedApps == apps,
+               "\(reason): reviewed setup policy persists even when assertion removal needs retry")
+        expect(module.remaining == remaining && module.appsPaused == paused && module.activeAppNames == activeApps,
+               "\(reason): setup preserves existing deadline and app pause intent")
+        expect(power.entries[systemID] != nil && power.entries.count == (releaseFails ? 2 : 1),
+               "\(reason): display policy Off releases only the display assertion, retaining system ownership")
+        if releaseFails {
+            expect(module.protectionFailed && power.entries[displayID] != nil,
+                   "\(reason): failed display release retains its exact ID and exposes protection failure")
+            if case .failed = module.configurationOutcome {} else { expect(false, "failed removal must not report setup applied") }
+            // Unchanged policy must still retry the failed release instead of early returning.
+            do { try module.configureForSetup(minutes: 45, display: false, apps: apps); expect(false, "same-policy retry must attempt retained display ID") }
+            catch {}
+            power.failRelease = nil
+            try module.configureForSetup(minutes: 45, display: false, apps: apps)
+            expect(power.entries[displayID] == nil && power.entries[systemID] != nil && !module.protectionFailed,
+                   "\(reason): successful same-policy retry removes retained display ID without replacing system ownership")
+        }
+        if case .applied = module.configurationOutcome {} else { expect(false, "successful removal must report setup applied") }
+        expect(module.remaining == remaining && module.appsPaused == paused,
+               "\(reason): retries do not grant a fresh timed duration or resume paused app rules")
+        try module.deactivate()
+    }
+}
+
+// Removing display policy must not depend on successful system-assertion renewal.
+do {
+    let suite = "fix-mac-os.setup-independent-display.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let power = FakePowerAssertions()
+    let module = KeepAwakeModule(defaults: defaults, backend: power, now: { 100 }, automaticUpdates: false,
+        runningApps: { [:] }, processInstances: { [:] })
+    try module.configureForSetup(minutes: 30, display: true, apps: [:])
+    try module.start()
+    let systemID = power.entries.first(where: { !$0.value.display })!.key
+    let displayID = power.entries.first(where: { $0.value.display })!.key
+    power.failTimeoutID = systemID
+    do { try module.configureForSetup(minutes: 30, display: false, apps: [:]); expect(false, "system renewal failure remains visible") }
+    catch {}
+    expect(power.entries[displayID] == nil && power.entries[systemID] != nil,
+           "display policy removal proceeds independently of failing system renewal")
+    if case .failed = module.configurationOutcome {} else { expect(false, "system renewal failure cannot report setup applied") }
+    power.failTimeoutID = nil
+    try module.retry()
+    try module.deactivate()
+}
+
 let awakeDomain = "fix-macos.keep-awake-test.\(UUID().uuidString)"
 let awakeDefaults = UserDefaults(suiteName: awakeDomain)!
 let power = FakePowerAssertions()

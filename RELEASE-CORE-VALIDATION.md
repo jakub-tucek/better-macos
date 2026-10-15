@@ -25,3 +25,29 @@ fakes. No real display controller is constructed by these regressions.
 
 This is automated fake-backend validation, not live monitor/watchdog acceptance.
 No app launch/quit, live display mutation, release tag, or push was performed.
+
+## P2 — Keep Awake setup display-policy removal
+
+Setup saved Display Awake = false, but reconciliation only handled the true
+policy. Existing display assertions therefore survived while timed/app system
+ownership continued. Reconciliation now removes the display assertion separately,
+before system renewal, retaining its ID if release fails. The existing failed
+setup outcome and unchanged-policy retry path remain authoritative.
+
+Regression: `bash test.sh` failed before the fix at
+`timed: display policy Off releases only the display assertion, retaining system ownership`.
+After the fix, `bash test.sh` passed: **4,099 isolated checks**, build, and all
+installer fixtures. Tests cover timed, app-only, and timed-with-paused-app-rule
+ownership; policy persistence; unchanged deadlines and pauses; failed releases;
+retained IDs; repeated same-policy retries; failed versus applied configuration
+outcomes; and removal despite an unrelated system-renewal failure. All added
+assertion tests use FakePowerAssertions, a fixed/injected clock, isolated
+preferences, and disabled automatic observers/timers. No real IOKit assertion or
+sleep/wake action was requested.
+
+`git diff --check` passed. The full existing test script was run unmodified;
+installer launch/quit operations are fixtures, not operations on the installed
+app. Live preferences/journals, clipboard, routes, pointer, display/window geometry,
+and power assertions were not deliberately modified for acceptance testing.
+Parent-session independent review and any authorized live acceptance remain
+outside this worktree's scope.
