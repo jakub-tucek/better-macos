@@ -4,6 +4,11 @@ import CStrafe
 import CoreBluetooth
 import IOKit.pwr_mgt
 
+if let index = CommandLine.arguments.firstIndex(of: "--compact-ui-fixtures"), index + 1 < CommandLine.arguments.count {
+    try renderCompactUIFixtures(directory: CommandLine.arguments[index + 1])
+    exit(0)
+}
+
 // Explicit, bounded OS probe; never part of the normal isolated suite.
 if CommandLine.arguments.contains("--awake-power-probe") {
     let backend = SystemPowerAssertions()

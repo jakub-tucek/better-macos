@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import IOKit.pwr_mgt
 
 private final class SetupAudioBackend: AudioRoutingBackend {
@@ -51,6 +52,7 @@ private final class UIWindows: WindowPositionBackend {
 }
 
 func runUITests() throws {
+    runAwakeQuickActionTests()
     let suite = "fix-mac-os.ui-tests.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
@@ -181,6 +183,103 @@ func runUITests() throws {
     runNativeUIInteractionTests()
     runSetupDesktopIntentTests()
     runSetupDesktopPermissionTests()
+}
+
+private func runAwakeQuickActionTests() {
+    let model = DashboardModel()
+    model.enabledModules = []
+    let actions = AwakeSessionActions(model: model)
+    var calls: [String] = []
+    model.onKeepAwakeMinutesChanged = { calls.append("duration:\($0)"); model.keepAwakeMinutes = $0 }
+    model.onKeepAwakeStart = { calls.append("start:\(model.keepAwakeMinutes)") }
+    actions.start(minutes: 15)
+    expect(calls.isEmpty, "popup presets never activate a disabled feature")
+    model.enabledModules = [.keepAwake]
+    for minutes in AwakeSessionActions.presets { actions.start(minutes: minutes) }
+    expect(calls == AwakeSessionActions.presets.flatMap { ["duration:\($0)", "start:\($0)"] }, "one-click presets set the duration before invoking the existing admitted Start callback")
+    calls.removeAll()
+    for minutes in [0, 1445] { actions.start(minutes: minutes) }
+    expect(calls.isEmpty, "popup refuses out-of-cap durations")
+    actions.start(minutes: 5); actions.start(minutes: 1440)
+    expect(calls == ["duration:5", "start:5", "duration:1440", "start:1440"], "custom duration preserves existing five-minute minimum and 24-hour cap")
+    calls.removeAll(); model.stoppingModules = [.keepAwake]
+    actions.start(minutes: 30)
+    expect(calls.isEmpty, "popup cannot start while feature recovery is stopping")
+    expect(actions.status == "Inactive", "inactive popup does not imply indefinite protection")
+    model.keepAwakeActive = true; model.keepAwakeRemaining = 61.1
+    expect(actions.status == "1:02 remaining", "timed popup countdown rounds up seconds without losing remaining time")
+    model.keepAwakeProtectionFailed = true
+    expect(actions.status == "Protection needs retry", "protection failure takes precedence over a retained timed deadline")
+    model.keepAwakeProtectionFailed = false; model.keepAwakeRemaining = 0
+    expect(actions.status == "Active · app rules", "app-only protection stays distinct from timed and inactive sessions")
+
+    let suite = "fix-mac-os.popup-awake.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    for module in AppModule.allCases { ModuleSettings(defaults: defaults).set(module, enabled: false) }
+    let power = SetupPowerBackend()
+    let awake = KeepAwakeModule(defaults: defaults, backend: power, now: { 100 }, automaticUpdates: false, runningApps: { [:] }, processInstances: { [:] })
+    let hostModel = DashboardModel()
+    let host = AppDelegate(model: hostModel, preferences: defaults, makeKeepAwake: { awake })
+    hostModel.onModuleChanged(.keepAwake, true)
+    AwakeSessionActions(model: hostModel).start(minutes: 45)
+    expect(awake.remaining == 2700 && awake.active && power.creates == 1, "production popup action reaches real host Start with fake assertions and selected preset")
+    hostModel.onKeepAwakeExtend()
+    expect(awake.remaining == 3600, "popup extension callback extends the owned timed session by fifteen minutes")
+    hostModel.onKeepAwakeStop()
+    expect(!awake.active && awake.remaining == 0, "popup End session callback releases timed ownership through the host")
+    power.fail = true
+    AwakeSessionActions(model: hostModel).start(minutes: 30)
+    expect(awake.protectionFailed && AwakeSessionActions(model: hostModel).status == "Protection needs retry", "failed production Start never renders a healthy countdown")
+    power.fail = false
+    hostModel.onKeepAwakeStop()
+    try? awake.deactivate()
+    withExtendedLifetime(host) {}
+}
+
+/// Explicit snapshot route: only a fresh model and a window owned by this test
+/// process. No AppDelegate, clipboard, host modules, permissions or screen capture.
+func renderCompactUIFixtures(directory: String) throws {
+    let root = URL(fileURLWithPath: directory, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    _ = NSApplication.shared
+    for dark in [false, true] {
+        for scenario in ["inactive", "active", "recovery", "editing", "empty"] {
+            let active = scenario == "active" || scenario == "recovery"
+            let model = DashboardModel()
+            model.watchdogReady = true
+            model.enabledModules = [.keepAwake, .audio, .clipboard, .bluetooth]
+            model.widgetLayout = WidgetLayout(entries: [.init(.keepAwake), .init(.audio, expanded: true), .init(.clipboard), .init(.bluetooth)])
+            model.keepAwakeActive = active; model.keepAwakeCanStop = active
+            model.keepAwakeRemaining = active ? 1794 : 0
+            model.keepAwakeAppNames = active ? ["Fixture Presentation"] : []
+            model.keepDisplayAwake = active
+            model.clipboardRecording = false
+            model.audioDevices = [AudioDevice(uid: "fixture-output", name: "Studio headphones — USB audio", directions: [.output], bluetooth: false), AudioDevice(uid: "fixture-input", name: "Built-in microphone", directions: [.input], bluetooth: false)]
+            model.audioRoutes = [.output: "fixture-output", .input: "fixture-input"]
+            model.audioStatus = "Preferred routes"
+            if scenario == "recovery" {
+                model.widgetLayout.entries.removeAll()
+                model.keepAwakeProtectionFailed = true
+                model.keepAwakeAppsPaused = true
+                model.errorMessage = "Fixture: assertion release needs retry."
+            }
+            if scenario == "empty" { model.widgetLayout.entries.removeAll() }
+            if scenario == "editing" { model.popupWidgetEditor.begin(model.widgetLayout) }
+            let view = NSHostingView(rootView: QuickActionsView(model: model))
+            view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 390, height: model.popupHeight), styleMask: [.borderless], backing: .buffered, defer: false)
+            window.contentView = view
+            view.frame = window.contentView!.bounds
+            view.layoutSubtreeIfNeeded()
+            window.display()
+            guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { throw CocoaError(.fileWriteUnknown) }
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            guard let data = bitmap.representation(using: .png, properties: [:]) else { throw CocoaError(.fileWriteUnknown) }
+            try data.write(to: root.appendingPathComponent("popup-\(scenario)-\(dark ? "dark" : "light").png"))
+            window.orderOut(nil)
+        }
+    }
 }
 
 private func runSetupDesktopPermissionTests() {
