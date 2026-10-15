@@ -240,6 +240,7 @@ private func runClipboardStorageTransitionTests(date: Date) throws {
 }
 
 func runClipboardTests() throws {
+    runClipboardPresentationTests()
     try runClipboardPanelTests()
     let table = ClipboardTable()
     var copies = 0

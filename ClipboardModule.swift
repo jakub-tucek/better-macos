@@ -3,15 +3,19 @@ import Carbon
 import ImageIO
 
 enum ClipboardPresentation {
+    private static func normalized(_ text: String) -> String {
+        text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+    }
+    private static func searchable(_ entry: ClipboardEntry) -> String {
+        if let text = entry.text { return normalized(text) }
+        return "PNG image · " + ByteCountFormatter.string(fromByteCount: Int64(entry.image?.count ?? 0), countStyle: .file)
+    }
     static func preview(_ entry: ClipboardEntry) -> String {
-        guard let text = entry.text else {
-            return "PNG image · " + ByteCountFormatter.string(fromByteCount: Int64(entry.image?.count ?? 0), countStyle: .file)
-        }
-        return String(text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").prefix(240))
+        String(searchable(entry).prefix(240))
     }
     static func rows(_ entries: [ClipboardEntry], query: String) -> [ClipboardEntry] {
-        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let matches = entries.filter { query.isEmpty || $0.label.localizedCaseInsensitiveContains(query) }
+        let query = normalized(query)
+        let matches = entries.filter { query.isEmpty || searchable($0).localizedCaseInsensitiveContains(query) }
         return matches.filter(\.pinned) + matches.filter { !$0.pinned }
     }
     static func age(_ date: Date, now: Date = Date()) -> String {
