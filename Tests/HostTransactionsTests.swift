@@ -52,6 +52,124 @@ private func runDisplayWatchdogAdmissionTests() {
     }
 }
 
+private final class JournalLoadingRestoreRunner: CommandRunning {
+    let defaults: UserDefaults
+    let started = DispatchSemaphore(value: 0)
+    let finish = DispatchSemaphore(value: 0)
+    let discovered = DispatchSemaphore(value: 0)
+    init(_ defaults: UserDefaults) { self.defaults = defaults }
+    func run(_ executable: String, _ arguments: [String]) throws -> String {
+        guard arguments == ["--restore"] else { throw ToggleError(message: "Unexpected journal test command") }
+        started.signal()
+        finish.wait()
+        try restoreFromCLI(try DisplayController(defaults: defaults, legacyDefaults: nil, discoverDisplays: { _ in self.discovered.signal() }))
+        return ""
+    }
+}
+
+private func runUnreadableDisplayJournalTests() {
+    // Exercise production initialization plus the exact CLI restore routine, not
+    // just the cheap host predicate. Inject discovery so even the buggy loader
+    // cannot query graphics state during the red run.
+    for legacy in [false, true] {
+        for invalid: Any in [Data("broken journal".utf8), Data("{}".utf8), "wrong preference type"] {
+            let suite = "fix-mac-os.unreadable-display-journal.\(UUID().uuidString)"
+            let legacySuite = "fix-mac-os.unreadable-legacy-display-journal.\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suite)!
+            let legacyDefaults = UserDefaults(suiteName: legacySuite)!
+            defer {
+                defaults.removePersistentDomain(forName: suite)
+                legacyDefaults.removePersistentDomain(forName: legacySuite)
+            }
+            let source = legacy ? legacyDefaults : defaults
+            source.set(invalid, forKey: "displayRecords")
+            // Legacy ownership and other metadata must survive as well.
+            source.set(false, forKey: "disabledByApp")
+            source.set("fixture", forKey: "targetUUID")
+            source.set(1, forKey: "lastDisplayID")
+            let original = source.persistentDomain(forName: legacy ? legacySuite : suite)!
+            expect(DisplayController.hasPendingRecovery(defaults: source),
+                   "unreadable journal types remain authoritative pending recovery")
+            var discoveries = 0
+            var failed = false
+            do {
+                try restoreFromCLI(try DisplayController(defaults: defaults, legacyDefaults: legacyDefaults,
+                    discoverDisplays: { _ in discoveries += 1 }))
+            } catch { failed = true }
+            expect(failed && discoveries == 0,
+                   "unreadable \(legacy ? "legacy" : "current") journal fails production helper initialization before discovery")
+            expect(NSDictionary(dictionary: source.persistentDomain(forName: legacy ? legacySuite : suite)!).isEqual(to: original),
+                   "production loader preserves unreadable journal bytes, type, and legacy ownership metadata")
+            if legacy {
+                expect(defaults.object(forKey: "displayRecords") == nil && defaults.object(forKey: "disabledByApp") == nil,
+                       "unreadable legacy data is validated before any migration writes")
+            }
+        }
+    }
+
+    for legacy in [false, true] {
+        let suite = "fix-mac-os.valid-display-loader.\(UUID().uuidString)"
+        let legacySuite = "fix-mac-os.valid-legacy-display-loader.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let legacyDefaults = UserDefaults(suiteName: legacySuite)!
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            legacyDefaults.removePersistentDomain(forName: legacySuite)
+        }
+        let source = legacy ? legacyDefaults : defaults
+        let record = DisplayRecord(uuid: "fixture", name: "Fixture", lastID: 1, bootSession: nil, disabledByApp: true)
+        do {
+            source.set(try JSONEncoder().encode([record]), forKey: "displayRecords")
+            var discoveries = 0
+            let controller = try DisplayController(defaults: defaults, legacyDefaults: legacyDefaults, discoverDisplays: { _ in discoveries += 1 })
+            expect(controller.disabledUUIDs == ["fixture"] && discoveries == 1,
+                   "valid \(legacy ? "legacy" : "current") production loader retains ownership and reaches injected discovery")
+            let loaded = try DisplayController.loadRecords(defaults: defaults)
+            expect(loaded.map(\.uuid) == ["fixture"],
+                   "valid records remain persisted after initialization/migration")
+        } catch { expect(false, "valid journal must still initialize and migrate: \(error)") }
+    }
+
+    for action in ["quit", "module"] {
+        let suite = "fix-mac-os.unreadable-journal-host.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let bytes = Data("unreadable display records".utf8)
+        defaults.set(bytes, forKey: "displayRecords")
+        let settings = ModuleSettings(defaults: defaults)
+        for module in AppModule.allCases { settings.set(module, enabled: module == .monitors) }
+        let mouse = MouseLifecycle(settings: settings, makeModule: { MouseModule(backend: FakeMouseBackend(), recovery: FakeMouseRecovery()) })
+        let runner = JournalLoadingRestoreRunner(defaults)
+        let model = DashboardModel()
+        var replies: [Bool] = []
+        let host = AppDelegate(commandRunner: runner, mouseLifecycle: mouse, model: model, preferences: defaults,
+            controlStateSnapshot: { SystemControlLifecycle.State(watchdogReady: false, displaySettling: false) },
+            displayRecoveryPending: { DisplayController.hasPendingRecovery(defaults: defaults) },
+            displaySnapshotRefresh: {}, terminationReply: { _, approved in replies.append(approved) })
+        if action == "quit" {
+            expect(host.applicationShouldTerminate(NSApplication.shared) == .terminateLater && replies.isEmpty,
+                   "corrupt-journal quit waits for production helper initialization result")
+        } else {
+            model.onModuleChanged(.monitors, false)
+            expect(model.stoppingModules.contains(.monitors) && settings.enabled.contains(.monitors),
+                   "corrupt-journal module unload waits for production helper initialization result")
+        }
+        expect(runner.started.wait(timeout: .now() + 1) == .success, "corrupt-journal host requests recovery even without watchdog")
+        runner.finish.signal()
+        let deadline = Date().addingTimeInterval(1)
+        while model.monitorBusy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
+        expect(!model.monitorBusy && model.errorMessage != nil && settings.enabled.contains(.monitors),
+               "production journal loading error refuses \(action) approval/unload and retains display module ownership")
+        if action == "quit" { expect(replies == [false], "journal initialization error cancels quit rather than reporting false recovery success") }
+        else { expect(model.stoppingModules.isEmpty, "journal initialization error leaves module available for retry") }
+        expect(defaults.data(forKey: "displayRecords") == bytes && DisplayController.hasPendingRecovery(defaults: defaults),
+               "host recovery failure retains exact corrupt bytes and durable pending ownership")
+        expect(runner.discovered.wait(timeout: .now()) == .timedOut,
+               "host helper rejects unreadable journal before graphics discovery")
+        withExtendedLifetime(host) {}
+    }
+}
+
 private func runDisplayOwnershipTests() {
     for scenario in ["quit", "quit-failure", "module", "module-failure", "keep", "helper-failure", "quit-watchdog-lost", "module-watchdog-lost"] {
         let suite = "fix-mac-os.display-ownership.\(UUID().uuidString)"
@@ -196,6 +314,7 @@ private final class QuitFixture {
 
 func runHostTransactionsTests() {
     runDisplayWatchdogAdmissionTests()
+    runUnreadableDisplayJournalTests()
     runDisplayOwnershipTests()
     for veto in ["busy", "mouse", "clipboard"] {
         let fixture = QuitFixture()

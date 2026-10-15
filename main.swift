@@ -1,15 +1,6 @@
 import AppKit
 import ServiceManagement
 
-func restoreFromCLI(_ controller: DisplayController) throws {
-    try controller.restorePendingArrangement()
-    for uuid in controller.disabledUUIDs {
-        try controller.setEnabled(true, for: uuid)
-        Thread.sleep(forTimeInterval: 1)
-        try controller.finishRestore(uuid)
-    }
-}
-
 func runChild(_ arguments: [String], capture: Bool = false) throws -> Data {
     let process = Process()
     let output = Pipe()
@@ -112,7 +103,8 @@ if let index = CommandLine.arguments.firstIndex(of: "--watchdog") {
         print("Launch at login disabled.")
     } catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
 } else if CommandLine.arguments.contains("--status") {
-    print(DisplayController().status())
+    do { print(try DisplayController().status()) }
+    catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
 } else if CommandLine.arguments.contains("--snapshot") {
     do { print(String(decoding: try DisplayController().snapshot(), as: UTF8.self)) }
     catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
@@ -121,7 +113,7 @@ if let index = CommandLine.arguments.firstIndex(of: "--watchdog") {
     catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
 } else if let index = CommandLine.arguments.firstIndex(of: "--set-display"), index + 2 < CommandLine.arguments.count {
     do {
-        let controller = DisplayController()
+        let controller = try DisplayController()
         let state = CommandLine.arguments[index + 2]
         guard state == "on" || state == "off" else { throw ToggleError(message: "Expected on or off") }
         let uuid = CommandLine.arguments[index + 1]
@@ -142,8 +134,8 @@ if let index = CommandLine.arguments.firstIndex(of: "--watchdog") {
         print("App-disabled monitors restored; original layout restored if the setup is unchanged.")
     } catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
 } else if CommandLine.arguments.contains("--test-cycle") || CommandLine.arguments.contains("--test-multi") {
-    let controller = DisplayController()
     do {
+        let controller = try DisplayController()
         let selected: [Monitor]
         if CommandLine.arguments.contains("--test-multi") {
             selected = Array(controller.monitors.filter { $0.enabled && $0.id.map { CGDisplayIsBuiltin($0) == 0 } == true }.prefix(2))

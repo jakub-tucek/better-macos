@@ -750,13 +750,16 @@ expect(!safeSpaces.isAvailable && !safeSpaces.isEnabled, "Gesture interception s
 do { try safeSpaces.setEnabled(true); expect(false, "Space interception must remain blocked") }
 catch { expect(!safeSpaces.isEnabled, "Attempting to enable Space interception fails closed") }
 safeSpaces.stop()
-let safeDisplays = DisplayController()
+let safeDisplaySuite = "fix-mac-os.safe-display-controller.\(UUID().uuidString)"
+let safeDisplayDefaults = UserDefaults(suiteName: safeDisplaySuite)!
+let safeDisplays = try DisplayController(defaults: safeDisplayDefaults, legacyDefaults: nil, discoverDisplays: { _ in })
+safeDisplayDefaults.removePersistentDomain(forName: safeDisplaySuite)
 expect(!safeDisplays.canDisableDisplays, "Unsupervised display controllers cannot disable screens by default")
 do { try safeDisplays.setEnabled(false, for: "fixture-not-a-real-display"); expect(false, "Display disabling must remain blocked") }
 catch { expect(true, "Display disabling is rejected before starting a configuration transaction") }
 safeDisplays.canDisableDisplays = true
 do { try safeDisplays.setEnabled(false, for: "fixture-not-a-real-display"); expect(false, "An authorized controller must still validate the target") }
-catch { expect(true, "Authorization does not bypass display identity validation") }
+catch { expect(true, "Authorization does not bypass unavailable display-control support") }
 
 var metadataReads = 0
 let refreshGate = DisplayRefreshGate(delay: 0.02) { metadataReads += 1 }

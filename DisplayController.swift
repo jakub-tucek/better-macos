@@ -51,6 +51,16 @@ enum DisplaySafety {
     }
 }
 
+// Shared by the CLI helper and isolated helper-boundary tests.
+func restoreFromCLI(_ controller: DisplayController) throws {
+    try controller.restorePendingArrangement()
+    for uuid in controller.disabledUUIDs {
+        try controller.setEnabled(true, for: uuid)
+        Thread.sleep(forTimeInterval: 1)
+        try controller.finishRestore(uuid)
+    }
+}
+
 final class DisplayController {
     /// Read durable helper ownership without constructing a graphics controller.
     /// A malformed journal must not silently authorize abandoning recovery.
@@ -58,12 +68,21 @@ final class DisplayController {
         // Helpers are separate processes; refresh the preferences cache first.
         defaults.synchronize()
         if defaults.data(forKey: "pendingArrangement") != nil || defaults.bool(forKey: "disabledByApp") { return true }
-        guard let data = defaults.data(forKey: "displayRecords") else { return false }
-        guard let records = try? JSONDecoder().decode([DisplayRecord].self, from: data) else { return true }
+        guard let records = try? loadRecords(defaults: defaults) else { return true }
         return records.contains(where: \.disabledByApp)
     }
 
-    private let defaults = UserDefaults.standard
+    /// Read-only validation, shared by initialization and pending ownership.
+    static func loadRecords(defaults: UserDefaults) throws -> [DisplayRecord] {
+        guard let value = defaults.object(forKey: "displayRecords") else { return [] }
+        guard let data = value as? Data,
+              let records = try? JSONDecoder().decode([DisplayRecord].self, from: data) else {
+            throw ToggleError(message: "The display recovery journal is unreadable. Recovery information has been retained; repair the journal before changing displays.")
+        }
+        return records
+    }
+
+    private let defaults: UserDefaults
     private let framework: UnsafeMutableRawPointer?
     private let configureEnabled: (@convention(c) (CGDisplayConfigRef?, UInt32, Bool) -> Int32)?
     private var records: [DisplayRecord] = []
@@ -76,25 +95,32 @@ final class DisplayController {
         return String(cString: bytes)
     }
 
-    init() {
+    init(defaults: UserDefaults = .standard,
+         legacyDefaults: UserDefaults? = UserDefaults(suiteName: "local.jakub.monitor-toggle"),
+         discoverDisplays: ((DisplayController) -> Void)? = nil) throws {
+        self.defaults = defaults
+        // Validate before migration, graphics discovery, or any journal writes.
+        // In particular, never convert an unreadable journal into an empty one.
+        defaults.synchronize()
+        let journalDefaults = defaults.object(forKey: "displayRecords") == nil ? (legacyDefaults ?? defaults) : defaults
+        records = try Self.loadRecords(defaults: journalDefaults)
         if defaults.object(forKey: "displayRecords") == nil,
-           let legacy = UserDefaults(suiteName: "local.jakub.monitor-toggle") {
+           let legacy = legacyDefaults {
             for key in ["displayRecords", "savedLayout", "disabledByApp", "targetUUID", "lastDisplayID", "disabledBootSession"] {
                 if let value = legacy.object(forKey: key) { defaults.set(value, forKey: key) }
             }
         }
-        // CLI recovery needs a WindowServer connection too.
-        _ = NSApplication.shared
-        _ = NSScreen.screens
-        framework = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY)
+        // CLI recovery needs a WindowServer connection too. Injected discovery
+        // bypasses both that connection and framework loading in isolated tests.
+        if discoverDisplays == nil {
+            _ = NSApplication.shared
+            _ = NSScreen.screens
+            framework = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY)
+        } else { framework = nil }
         if let framework, let symbol = dlsym(framework, "CGSConfigureDisplayEnabled") {
             configureEnabled = unsafeBitCast(symbol, to: (@convention(c) (CGDisplayConfigRef?, UInt32, Bool) -> Int32).self)
         } else {
             configureEnabled = nil
-        }
-        if let data = defaults.data(forKey: "displayRecords"),
-           let saved = try? JSONDecoder().decode([DisplayRecord].self, from: data) {
-            records = saved
         }
         // Preserve recovery information from the original single-Dell app.
         if defaults.bool(forKey: "disabledByApp"),
@@ -106,7 +132,8 @@ final class DisplayController {
         }
         saveRecords()
         defaults.removeObject(forKey: "disabledByApp")
-        refreshDisplays()
+        if let discoverDisplays { discoverDisplays(self) }
+        else { refreshDisplays() }
     }
 
     var supported: Bool { configureEnabled != nil }

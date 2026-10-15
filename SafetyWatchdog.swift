@@ -51,8 +51,7 @@ enum SafetyWatchdog {
                     // Recovery is attempted only for explicitly app-disabled
                     // displays, and that child is independently time-limited.
                     defaults.synchronize()
-                    let records = defaults.data(forKey: "displayRecords").flatMap { try? JSONSerialization.jsonObject(with: $0) as? [[String: Any]] }
-                    if defaults.data(forKey: "pendingArrangement") != nil || records?.contains(where: { $0["disabledByApp"] as? Bool == true }) == true {
+                    if DisplayController.hasPendingRecovery(defaults: defaults) {
                         let recovery = Process()
                         recovery.executableURL = URL(fileURLWithPath: session.executable)
                         recovery.arguments = ["--restore"]

@@ -945,7 +945,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func refreshDisplaySnapshot() {
         if let displaySnapshotRefresh { displaySnapshotRefresh(); return }
         guard !recovering, modules.needsDisplays || needsDisplayRecovery else { return }
-        if controller == nil { controller = DisplayController() }
+        if controller == nil {
+            do { controller = try DisplayController() }
+            catch { showError(error); return }
+        }
         guard let controller else { return }
         controller.refreshDisplays()
         item.button?.toolTip = "Fix macOS\n" + controller.status()
