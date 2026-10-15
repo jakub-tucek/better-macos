@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  isolated:
+    name: arm64 isolated checks
+    # Official public-preview label; see docs/ci.md before changing the image.
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      MAC_UTILS_SIGNING_IDENTITY: '-'
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Assert host and selected toolchain
+        run: |
+          mkdir -p "$RUNNER_TEMP/ci-logs"
+          {
+            uname -a
+            sw_vers
+            git rev-parse HEAD
+            printf 'ImageOS=%s ImageVersion=%s\n' "${ImageOS:-unknown}" "${ImageVersion:-unknown}"
+            [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] || {
+              echo 'CI requires native Apple Silicon macOS.' >&2; exit 1;
+            }
+            [[ -d "$DEVELOPER_DIR" ]] || {
+              echo "Missing selected developer tools: $DEVELOPER_DIR" >&2; exit 1;
+            }
+            xcodebuild -version
+            xcrun --find swiftc
+            compiler="$(xcrun swiftc --version)"
+            printf '%s\n' "$compiler"
+            sdk="$(xcrun --sdk macosx --show-sdk-version)"
+            printf 'macOS SDK: %s\n' "$sdk"
+            xcrun --sdk macosx --show-sdk-path
+            # Stay on the locally validated compiler/SDK line; no silent fallback.
+            [[ "$compiler" =~ Apple\ Swift\ version\ 6\.4([.[:space:]]) && "$sdk" == 27.0 ]] || {
+              echo 'Expected Apple Swift 6.4.x / macOS SDK 27.0; review image drift.' >&2; exit 1;
+            }
+          } 2>&1 | tee "$RUNNER_TEMP/ci-logs/preflight.log"
+
+      - name: Bootstrap checksum-verified pinned tools
+        run: bash scripts/dev bootstrap 2>&1 | tee "$RUNNER_TEMP/ci-logs/bootstrap.log"
+
+      - name: Lint without mutation
+        run: bash scripts/dev lint 2>&1 | tee "$RUNNER_TEMP/ci-logs/lint.log"
+
+      - name: Check formatting without mutation
+        run: bash scripts/dev format-check 2>&1 | tee "$RUNNER_TEMP/ci-logs/format.log"
+
+      - name: Offline tooling regressions
+        run: bash scripts/dev-tools-test.sh 2>&1 | tee "$RUNNER_TEMP/ci-logs/tooling.log"
+
+      - name: Build, packaging, policy, isolated and mocked installer tests
+        run: bash test.sh 2>&1 | tee "$RUNNER_TEMP/ci-logs/tests.log"
+
+      - name: Check patch whitespace
+        run: git diff --check
+
+      - name: Retain diagnostic logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: ci-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-logs/*.log
+          if-no-files-found: warn
+          retention-days: 7
