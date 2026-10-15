@@ -1134,10 +1134,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// The single entry point for display helpers, also exercised with a fake
     /// runner in host-level tests. No helper starts before a gesture's terminal phase.
-    func runDisplayCommand(executable: String, arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+    enum DisplayCommandPermission { case recovery, supervisedMutation }
+    private struct DisplayAuthorizationError: LocalizedError {
+        var errorDescription: String? { "The recovery watchdog is unavailable. Retry the display change after supervision is ready." }
+    }
+
+    func runDisplayCommand(executable: String, arguments: [String], permission: DisplayCommandPermission = .recovery,
+                           completion: @escaping (Result<String, Error>) -> Void) {
         afterGestureDrain { [self] in
             recoveryQueue.async { [self] in
-                let result = Result { try commandRunner.run(executable, arguments) }
+                // Check at the executor boundary, not before asynchronous gesture
+                // drain/queueing. Read main-owned supervision on the main queue;
+                // the host never synchronously waits on this executor.
+                let authorized = permission == .recovery || DispatchQueue.main.sync { self.controlState.watchdogReady }
+                let result = Result {
+                    guard authorized else { throw DisplayAuthorizationError() }
+                    return try commandRunner.run(executable, arguments)
+                }
                 DispatchQueue.main.async { completion(result) }
             }
         }
@@ -1198,10 +1211,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         refreshPreferences()
         let arguments = ["--set-display", uuid, enabled ? "on" : "off"] + (modules.enabled.contains(.arrangement) ? [] : ["--basic-layout"])
         let confirmDisable = !enabled && model.confirmMonitorDisable
-        runDisplayCommand(executable: executable, arguments: arguments) { [weak self] result in
+        runDisplayCommand(executable: executable, arguments: arguments, permission: enabled ? .recovery : .supervisedMutation) { [weak self] result in
                 guard let self else { return }
                 recovering = false
                 model.monitorBusy = false
+                if case .failure(let error) = result, error is DisplayAuthorizationError {
+                    showError(error)
+                    refreshPreferences()
+                    return // No helper ran: no snapshot delay or synthetic rollback ownership.
+                }
                 displayRefresh.requestRefresh()
                 switch result {
                 case .success:
@@ -1273,10 +1291,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.monitorBusy = true
         refreshPreferences()
         showDashboard()
-        runDisplayCommand(executable: executable, arguments: ["--arrange-displays", data.base64EncodedString()]) { [weak self] result in
+        runDisplayCommand(executable: executable, arguments: ["--arrange-displays", data.base64EncodedString()], permission: .supervisedMutation) { [weak self] result in
                 guard let self else { return }
                 recovering = false
                 model.monitorBusy = false
+                if case .failure(let error) = result, error is DisplayAuthorizationError {
+                    showError(error)
+                    refreshPreferences()
+                    return
+                }
                 model.pendingArrangement = true
                 rollbackUUID = "layout"
                 let duration: TimeInterval

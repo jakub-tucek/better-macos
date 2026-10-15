@@ -107,3 +107,20 @@ No live preferences were inspected or reverted to investigate that pre-existing
 test behavior. All DisplayController constructions in the final test suite now
 use isolated defaults and injected discovery. Main and its checklist remain
 untouched; independent parent review is still required.
+
+## Boundary follow-up — delayed helper authorization
+
+Entry-time readiness was insufficient while a gesture was draining. Display
+commands now carry typed recovery/supervised-mutation permission. The serial
+helper executor rechecks main-owned watchdog readiness immediately before invoking
+the runner, after both gesture drain and executor queueing. New disables and
+arrangement changes require supervision; On/Restore remain independent. Rejected
+authorization unwinds the existing completion path without creating a rollback
+timer or a snapshot delay, so supervised retry is immediately available.
+
+An actual-host blocked-gesture regression failed before the fix at
+`off: dispatch-time watchdog loss blocks only new disables, never On/Restore recovery`.
+After the fix it verifies zero Off runner calls, busy reset, retained journal,
+immediate retry, and successful On/Restore after watchdog loss. All gestures,
+helpers, snapshots, and journals are isolated fakes. Full `bash test.sh` passed:
+**4,172 isolated checks**, build and installer fixtures.

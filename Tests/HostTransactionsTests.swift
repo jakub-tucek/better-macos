@@ -32,6 +32,7 @@ private final class UnexpectedDisplayRunner: CommandRunning {
 }
 
 private func runDisplayWatchdogAdmissionTests() {
+    runDelayedDisplayAuthorizationTests()
     for initiallyReady in [false, true] {
         let suite = "fix-mac-os.display-watchdog-admission.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -48,6 +49,53 @@ private func runDisplayWatchdogAdmissionTests() {
         model.onMonitorChanged("fixture", false)
         expect(runner.dispatched.wait(timeout: .now() + 0.1) == .timedOut && !model.monitorBusy && model.errorMessage != nil,
                "new display disable cannot dispatch with \(initiallyReady ? "lost" : "unavailable") watchdog supervision")
+        withExtendedLifetime(host) {}
+    }
+}
+
+private func runDelayedDisplayAuthorizationTests() {
+    for action in ["off", "on", "restore"] {
+        let suite = "fix-mac-os.delayed-display-authorization.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = ModuleSettings(defaults: defaults)
+        for module in AppModule.allCases { settings.set(module, enabled: module == .monitors) }
+        let original = Data("retained recovery journal".utf8)
+        defaults.set(original, forKey: "displayRecords")
+        let phases = RecordingPhases()
+        defaults.set(TransitionSpeed.smooth.rawValue, forKey: "spaces.speed")
+        let engine = GestureSwitchEngine(spaceInfo: { nil }, postPhase: phases.post)
+        let spaces = SpacesModule(defaults: defaults, engine: engine)
+        let runner = UnexpectedDisplayRunner()
+        let model = DashboardModel()
+        var ready = true
+        let host = AppDelegate(commandRunner: runner, spaces: spaces, model: model, preferences: defaults,
+            controlStateSnapshot: { SystemControlLifecycle.State(watchdogReady: ready, displaySettling: false) },
+            displayRecoveryPending: { true }, displaySnapshotRefresh: {})
+        do { try engine.switchSpace(.right) } catch { expect(false, "fake gesture starts") }
+        expect(phases.began.wait(timeout: .now() + 1) == .success, "\(action): fake gesture is blocked before display action")
+        if action == "restore" { model.onRestoreAll() }
+        else { model.onMonitorChanged("fixture", action == "on") }
+        expect(model.monitorBusy && spaces.isDraining && runner.dispatched.wait(timeout: .now()) == .timedOut,
+               "\(action): real host waits for terminal gesture phase before helper dispatch")
+        ready = false
+        phases.release.signal()
+        let deadline = Date().addingTimeInterval(2)
+        while model.monitorBusy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
+        expect(!model.monitorBusy && !spaces.isDraining, "\(action): delayed helper outcome unwinds busy and drain state")
+        expect((runner.dispatched.wait(timeout: .now()) == .success) == (action != "off"),
+               "\(action): dispatch-time watchdog loss blocks only new disables, never On/Restore recovery")
+        expect(defaults.data(forKey: "displayRecords") == original, "\(action): dispatch authorization never modifies journal ownership")
+        if action == "off" {
+            expect(model.errorMessage != nil && model.countdowns.isEmpty, "rejected disable surfaces failure without creating rollback ownership")
+            ready = true
+            model.onMonitorChanged("fixture", false)
+            let retryDeadline = Date().addingTimeInterval(1)
+            while model.monitorBusy && Date() < retryDeadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
+            expect(runner.dispatched.wait(timeout: .now()) == .success && !model.monitorBusy,
+                   "rejected disable permits immediate supervised retry without stale barrier or rollback state")
+        }
+        spaces.stop()
         withExtendedLifetime(host) {}
     }
 }
