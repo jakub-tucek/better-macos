@@ -31,7 +31,7 @@ git diff --check
 ```
 
 `test.sh` builds native SwiftUI/AppKit code with warnings as errors, runs isolated
-checks, and runs installer tests. Latest run: **3,751 isolated checks passed**, all
+checks, and runs installer tests. Latest run: **3,765 isolated checks passed**, all
 seven installer checks passed, and `git diff --check` was clean. The fixture render
 command also passed; popup light/dark, grouped Displays, wizard selection, and empty
 recovery fixtures were inspected. New coverage includes:
@@ -79,6 +79,46 @@ The window harness injects a presenter that never orders windows front or activa
 the app. It exercises native window/delegate behavior and production action seams,
 not coordinate clicks or VoiceOver traversal of SwiftUI buttons. No TCC grant is
 needed for this harness; live accessibility/button traversal remains a manual gap.
+
+### Follow-up: saved desktop intent versus runtime interception
+
+Follow-up review identified a separate setup ordering bug for an already enabled
+Animations module. Runtime interception being Off did not imply that saved desktop
+intent was Off, and animation completion could restore an obsolete saved On choice.
+The readiness guard also returned Pending before persisting a reviewed On choice.
+
+Regression tests were added before the fix, using the actual host Finish callback,
+isolated preferences, fake animation writes/restarts, a fake gesture engine, and a
+fake interceptor. All three cases failed before the fix:
+
+```sh
+bash test.sh
+build/isolated-tests --setup-space-case animation-on-desktop-off
+build/isolated-tests --setup-space-case pending-on
+```
+
+The first command failed the saved-On/runtime-Off → reviewed-Off case. The next
+two independently failed zero-intermediate-activation and retained-pending-intent
+assertions. Failure logs are under ignored `build/ui-desktop-*-red.log`.
+
+Setup now installs the reviewed desktop intent through `SpacesModule` before any
+animation application or restoration. Off always persists and suspends, even if
+runtime interception was already inactive. On is saved without requesting access
+or starting interception. Host automatic restoration waits until setup has handled
+the reviewed animation policy; runtime reconciliation then requires permission,
+readiness, availability, and a completed gesture drain. Pending On remains saved
+and can activate only when those prerequisites later hold.
+
+The full suite now passes all three regressions, including a later ready refresh
+which cannot resurrect reviewed Off and does restore reviewed pending On once.
+A separate ordinary-toggle test confirms that animation Off still suspends runtime
+interception while preserving saved desktop On, and ordinary animation On restores
+that saved choice. No live input tap, swipe, system animation write, app restart,
+clipboard access, or app launch/quit is used by these regression fixtures.
+
+The test-only dependency seams inject host readiness and the interceptor factory;
+production defaults still use the existing watchdog state and `SwipeInterceptor`.
+Follow-up independent review and live native acceptance remain pending.
 
 The new tests use fake clipboard, archive, and window backends and isolated preference
 suites. No real clipboard/history was read, no live audio route/pointer/display/window

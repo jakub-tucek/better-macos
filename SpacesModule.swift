@@ -1,15 +1,27 @@
 import AppKit
 import ApplicationServices
 
+protocol SpaceIntercepting: AnyObject {
+    var isRunning: Bool { get }
+    var overrideEnabled: Bool { get set }
+    func start()
+    func teardown()
+}
+
+extension SwipeInterceptor: SpaceIntercepting {}
+
 /// Owns the vendored gesture machinery; UI only knows enable/disable and speed.
 final class SpacesModule {
     private let defaults: UserDefaults
     private let engine: GestureSwitchEngine
-    private var interceptor: SwipeInterceptor?
+    private var interceptor: SpaceIntercepting?
+    private let makeInterceptor: (GestureSwitchEngine) -> SpaceIntercepting
+    private let permissionCheck: () -> Bool
+    private let conflictingAppRunning: () -> Bool
     private var observer: NSObjectProtocol?
     var observesSpaceChanges: Bool { observer != nil }
 
-    var hasPermission: Bool { AXIsProcessTrusted() }
+    var hasPermission: Bool { permissionCheck() }
     // Set by the host while its independent watchdog is ready.
     var isAvailable = false
     private(set) var needsStartupRestore = true
@@ -23,9 +35,15 @@ final class SpacesModule {
         set { defaults.set(newValue.rawValue, forKey: "spaces.speed"); engine.setTransitionSpeed(newValue) }
     }
 
-    init(defaults: UserDefaults = .standard, engine: GestureSwitchEngine = GestureSwitchEngine()) {
+    init(defaults: UserDefaults = .standard, engine: GestureSwitchEngine = GestureSwitchEngine(),
+         makeInterceptor: @escaping (GestureSwitchEngine) -> SpaceIntercepting = { SwipeInterceptor(engine: $0) },
+         permissionCheck: @escaping () -> Bool = { AXIsProcessTrusted() },
+         conflictingAppRunning: @escaping () -> Bool = { NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == "com.rileycx.strafe" } }) {
         self.defaults = defaults
         self.engine = engine
+        self.makeInterceptor = makeInterceptor
+        self.permissionCheck = permissionCheck
+        self.conflictingAppRunning = conflictingAppRunning
         engine.setTransitionSpeed(speed)
         observer = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
@@ -41,6 +59,14 @@ final class SpacesModule {
     func requestRestore(enabled: Bool) {
         defaults.set(enabled, forKey: "spaces.enabled")
         needsStartupRestore = true
+    }
+
+    /// Setup selects durable intent, not a snapshot of event-tap runtime state.
+    /// Off is explicit even when inactive. On is saved without requesting access
+    /// or starting interception; the host reconciles it after animation work.
+    func installSetupIntent(_ enabled: Bool) throws {
+        if !enabled { try setEnabled(false) }
+        else if !savedEnabled || !isEnabled { requestRestore(enabled: true) }
     }
 
     func suspend(completion: @escaping () -> Void = {}) {
@@ -73,10 +99,10 @@ final class SpacesModule {
             _ = AXIsProcessTrustedWithOptions(options)
             throw ToggleError(message: "Enable Fix macOS in System Settings → Privacy & Security → Accessibility, then try this switch again. Monitors and Bluetooth work without it.")
         }
-        guard !NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == "com.rileycx.strafe" }) else {
+        guard !conflictingAppRunning() else {
             throw ToggleError(message: "Quit the standalone strafe app first, so two gesture interceptors do not compete.")
         }
-        let interceptor = self.interceptor ?? SwipeInterceptor(engine: engine)
+        let interceptor = self.interceptor ?? makeInterceptor(engine)
         interceptor.overrideEnabled = true
         interceptor.start()
         guard interceptor.isRunning else { throw ToggleError(message: "Could not start gesture interception. Recheck Accessibility permission.") }

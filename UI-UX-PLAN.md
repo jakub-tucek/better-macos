@@ -268,6 +268,12 @@ in isolated worktrees after the shared navigation/state decisions settle.
   tests suppress presentation/activation while exercising actual host links, window
   reuse, draft preservation, and native close refusal during asynchronous Finish.
   These are not a substitute for live SwiftUI accessibility/button traversal.
+- Follow-up review of desktop switching distinguished saved intent from inactive
+  runtime state. Setup now installs the reviewed desktop choice before animation
+  restoration, always persists Off, and retains requested On while prerequisites
+  are pending. Fake-interceptor host regressions failed before the fix and pass
+  afterward; ordinary animation Off continues to preserve saved desktop intent.
+  Independent follow-up acceptance is still pending.
 
 ## Original preview proposal
 

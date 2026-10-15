@@ -59,8 +59,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let commandRunner: CommandRunning
     private let transactions = HostTransactions()
     private var moduleFailures: [AppModule: String] = [:]
+    private var setupDesktopReconciliationPending = false
     private let presentWindow: (NSWindow) -> Void
     private let restartAnimationClients: () -> Void
+    private let controlStateSnapshot: (() -> SystemControlLifecycle.State)?
     var setupSession: SetupDraft? { activeSetupDraft }
     private let terminationReply: (NSApplication, Bool) -> Void
 
@@ -69,6 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
           makeMenuBar: (() -> MenuBarModule)? = nil, menuBarSpacing: MenuBarSpacing? = nil, animations: AnimationPreferences? = nil,
           presentWindow: @escaping (NSWindow) -> Void = { $0.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) },
           restartAnimationClients: @escaping () -> Void = { _ = try? CommandRunner().run("/usr/bin/killall", ["Dock", "Finder"]) },
+          controlStateSnapshot: (() -> SystemControlLifecycle.State)? = nil,
          terminationReply: @escaping (NSApplication, Bool) -> Void = { $0.reply(toApplicationShouldTerminate: $1) }) {
          self.commandRunner = commandRunner
          self.preferences = preferences
@@ -82,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
          self.animations = animations ?? AnimationPreferences(defaults: preferences)
          self.presentWindow = presentWindow
          self.restartAnimationClients = restartAnimationClients
+         self.controlStateSnapshot = controlStateSnapshot
         self.model = model
         self.spaces = spaces
         self.windowPositions = windowPositions
@@ -744,6 +748,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let configuration = draft.configuration
         let selected = draft.selected
         let requestedWidgets = draft.widgets
+        // Also hold automatic restoration while a deselected existing owner is
+        // waiting for its normal disable operation. Its saved choice is retained.
+        setupDesktopReconciliationPending = selected.contains(.spaces) || spaces != nil
         // Install the reviewed choices before *any* activation can synchronously
         // poll or acquire assertions. Restore only unactivated choices on refusal;
         // never overwrite recovery metadata or choices owned by an active feature.
@@ -753,6 +760,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let values = configuration.inactivePreferences(for: module)
             staged[module] = Dictionary(uniqueKeysWithValues: values.keys.map { ($0, preferences.object(forKey: $0) ?? NSNull()) })
             for (key, value) in values { preferences.set(value, forKey: key) }
+        }
+        if selected.contains(.spaces), let spaces {
+            do { try spaces.installSetupIntent(configuration.spaces) }
+            catch { moduleFailures[.spaces] = error.localizedDescription }
         }
         func restoreUnactivated(_ module: AppModule) {
             guard !modules.enabled.contains(module), let original = staged.removeValue(forKey: module) else { return }
@@ -771,9 +782,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         func advance(_ index: Int) {
             guard transactions.acceptsActions else {
                 for module in newlyEnabled { restoreUnactivated(module) }
+                setupDesktopReconciliationPending = false
                 completion(results + ["Remaining setup changes were not applied: shutdown is in progress. Successful changes above remain applied."]); return
             }
             guard index < AppModule.allCases.count else {
+                setupDesktopReconciliationPending = false
                 _ = model.onSaveWidgets(requestedWidgets)
                 uiStore.complete(); draft.discardCheckpoint()
                 completion(results + ["Quick-action layout saved. No timed session, clipboard capture, window capture, or pointer Apply was started."])
@@ -784,6 +797,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             func configure(_ success: Bool) {
                 guard transactions.acceptsActions else {
                     for pending in newlyEnabled { restoreUnactivated(pending) }
+                    setupDesktopReconciliationPending = false
                     completion(results + ["Remaining setup changes were not applied during shutdown."]); return
                 }
                 guard success else {
@@ -890,9 +904,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 guard success, transactions.acceptsActions else { completion(.failed(moduleFailures[.spaces] ?? "Animation change interrupted or unavailable.")); return }
                 if value.speed != old.speed { model.onSpeedChanged(TransitionSpeed.from(rawValue: value.speed)) }
                 if value.spaces && spaces?.hasPermission != true { completion(.pendingAccess("Desktop switching requires Accessibility access.")); return }
-                if value.spaces && (!controlState.inputReady || !value.animations) { completion(.pendingHardware("Desktop switching awaits the animation preset, recovery monitoring and stable displays.")); return }
+                if value.spaces && (!controlState.inputReady || !value.animations || spaces?.isAvailable != true || spaces?.isDraining == true) { completion(.pendingHardware("Desktop switching awaits the animation preset, recovery monitoring, stable displays and gesture drain.")); return }
                 do {
-                    if value.spaces != spaces?.isEnabled { try spaces?.setEnabled(value.spaces) }
+                    // Intent was installed before animation work. Only reconcile
+                    // that saved policy now; runtime inactivity is not an Off choice.
+                    if value.spaces { try spaces?.restoreSavedState() }
                     refreshPreferences(); completion(.applied("Reviewed animation and desktop-switching policy installed."))
                 } catch { completion(.failed(error.localizedDescription)) }
             }
@@ -1008,7 +1024,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.confirmMonitorDisable = preferences.bool(forKey: "monitors.confirmDisable")
         model.animationsEnabled = animations.enabled
         model.animationRecoveryRequired = animations.recoveryRequired
-        if transactions.acceptsActions && animations.enabled && !model.animationsBusy && controlState.inputReady && spaces?.isAvailable == true {
+        if transactions.acceptsActions && !setupDesktopReconciliationPending && animations.enabled && !model.animationsBusy && controlState.inputReady && spaces?.isAvailable == true {
             do { try spaces?.restoreSavedState() } catch { showError(error) }
         }
         model.spacesEnabled = spaces?.isEnabled ?? false
@@ -1020,7 +1036,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var controlState: SystemControlLifecycle.State {
-        SystemControlLifecycle.State(watchdogReady: safety.isReady && transactions.acceptsActions, displaySettling: displayRefresh.isSettling,
+        if var state = controlStateSnapshot?() {
+            state.watchdogReady = state.watchdogReady && transactions.acceptsActions
+            return state
+        }
+        return SystemControlLifecycle.State(watchdogReady: safety.isReady && transactions.acceptsActions, displaySettling: displayRefresh.isSettling,
             displayOperation: recovering, pendingConfirmation: model.pendingArrangement || rollbackUUID != nil,
             layoutFresh: layoutFresh, cursorRequested: preferences.bool(forKey: "arrangement.matchEdges"),
             arrangementEnabled: modules.enabled.contains(.arrangement), layout: model.currentLayout)

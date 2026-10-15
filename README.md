@@ -55,6 +55,10 @@ Applied, Pending access, Pending hardware/readiness, or Failed using its own ope
 and readiness state, not a shared error banner. Successful changes are not rolled back
 because another feature fails. Selecting Clipboard never starts recording or enables
 disk retention; disk retention requires its own explicit draft choice and Finish.
+Desktop-switching intent is saved before animation changes: reviewed Off cannot be
+restored from an obsolete saved On, and reviewed On remains pending when access or
+runtime readiness is unavailable. The ordinary animation Off toggle still preserves
+the saved desktop-switching preference while suspending interception.
 Setup never captures/moves windows, changes display positions, starts a timed awake
 session, or applies pointer tuning. Mouse proposals transfer to Input settings for
 explicit Apply. Enabling features can activate reviewed policies: running-app awake

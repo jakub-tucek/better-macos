@@ -16,6 +16,14 @@ private final class SetupPowerBackend: PowerAssertionBackend {
     func release(_ id: IOPMAssertionID) throws {}
 }
 
+private final class SetupSpaceInterceptor: SpaceIntercepting {
+    var isRunning = false
+    var overrideEnabled = false
+    var starts = 0
+    func start() { starts += 1; isRunning = true }
+    func teardown() { isRunning = false }
+}
+
 private final class UIClipboard: ClipboardAccess {
     var changeCount = 0
     var markedPrivate = false
@@ -170,6 +178,76 @@ func runUITests() throws {
     runSetupActivationOrderingTests()
     runSetupOutcomeTests()
     runNativeUIInteractionTests()
+    runSetupDesktopIntentTests()
+}
+
+private func runSetupDesktopIntentTests() {
+    // Optional case selection makes the three pre-fix failures independently
+    // runnable; all cases run in the normal isolated suite.
+    let filterIndex = CommandLine.arguments.firstIndex(of: "--setup-space-case")
+    let filter = filterIndex.flatMap { $0 + 1 < CommandLine.arguments.count ? CommandLine.arguments[$0 + 1] : nil }
+    for scenario in ["inactive-off", "animation-on-desktop-off", "pending-on", "ordinary-animation-off"] where filter == nil || filter == scenario {
+        let suite = "fix-mac-os.setup-desktop-intent.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        for module in AppModule.allCases { ModuleSettings(defaults: defaults).set(module, enabled: module == .spaces) }
+        let animationWasOn = scenario != "animation-on-desktop-off"
+        defaults.set(animationWasOn, forKey: "animations.enabled")
+        defaults.set(scenario != "pending-on", forKey: "spaces.enabled")
+        let interceptor = SetupSpaceInterceptor()
+        let engine = GestureSwitchEngine(spaceInfo: { nil }, postPhase: { _, _, _ in true })
+        let spaces = SpacesModule(defaults: defaults, engine: engine, makeInterceptor: { _ in interceptor },
+            permissionCheck: { true }, conflictingAppRunning: { false })
+        spaces.isAvailable = true
+        var ready = scenario != "pending-on"
+        let model = DashboardModel(); model.enabledModules = [.spaces]
+        model.animationsEnabled = animationWasOn
+        let animations = AnimationPreferences(defaults: defaults, read: { _ in nil }, write: { _, _ in })
+        let host = AppDelegate(spaces: spaces, model: model, preferences: defaults, animations: animations,
+            restartAnimationClients: {}, controlStateSnapshot: {
+                SystemControlLifecycle.State(watchdogReady: ready, displaySettling: false)
+            })
+        func waitForAnimation() {
+            let deadline = Date().addingTimeInterval(3)
+            while model.animationsBusy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+            expect(!model.animationsBusy, "\(scenario): fake animation transaction finishes without live writes or client restart")
+        }
+        if scenario == "ordinary-animation-off" {
+            model.onAnimationsChanged(false); waitForAnimation()
+            expect(spaces.savedEnabled && !spaces.isEnabled && interceptor.starts == 0,
+                   "ordinary animation Off preserves saved desktop On intent while suspending runtime interception")
+            model.onAnimationsChanged(true); waitForAnimation()
+            expect(spaces.savedEnabled && spaces.isEnabled && interceptor.starts == 1,
+                   "ordinary animation On still restores the saved desktop choice through the fake interceptor")
+        } else {
+            let draft = SetupDraft(current: model, defaults: defaults)
+            draft.controls.onSpacesChanged(scenario == "pending-on")
+            if scenario == "animation-on-desktop-off" { draft.controls.onAnimationsChanged(true) }
+            var finished = false
+            model.onFinishSetup(draft) { _ in finished = true }
+            let deadline = Date().addingTimeInterval(3)
+            while !finished && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+            expect(finished, "\(scenario): actual host Finish completes with fake gesture and animation backends")
+            if scenario == "pending-on" {
+                expect(spaces.savedEnabled && !spaces.isEnabled && interceptor.starts == 0,
+                       "reviewed desktop On is saved while runtime readiness is unavailable")
+                if case .pendingHardware = draft.outcomes[.spaces] { expect(true, "unavailable desktop On reports pending readiness, not applied") }
+                else { expect(false, "unavailable desktop On must report pending readiness") }
+                ready = true
+                model.onMonitorDisableModeChanged(false) // Existing read/refresh path; no display operation.
+                expect(spaces.savedEnabled && spaces.isEnabled && interceptor.starts == 1,
+                       "later host readiness restores the reviewed pending desktop On intent once")
+            } else {
+                expect(!spaces.savedEnabled && interceptor.starts == 0,
+                       "\(scenario): reviewed desktop Off persists and never starts an intermediate interceptor")
+                model.onMonitorDisableModeChanged(false)
+                expect(!spaces.savedEnabled && !spaces.isEnabled && interceptor.starts == 0,
+                       "\(scenario): a later ready refresh cannot resurrect obsolete saved desktop On")
+            }
+        }
+        spaces.stop()
+        withExtendedLifetime(host) {}
+    }
 }
 
 private func runNativeUIInteractionTests() {
