@@ -86,3 +86,60 @@ compiles ClipboardPolicy. No source moves, package changes or vendor changes occ
 These are isolated regressions, not physical sleep/assertion acceptance or live
 app/chooser interaction. Existing [native/hardware gaps](../validation/README.md)
 remain open. Revision-bound execution evidence is recorded separately below.
+
+## Implementation verification · 2026-10-15
+
+Source: `d1ec4bb23de5382654fe826ad3639099df529850`, based directly on reviewed source
+organization `49b6398ee5a8feb7deb0a7f7434e98b344d902fa`, isolated branch
+`keep-awake-feature`. This is implementation evidence, not independent review or
+integration approval.
+
+On macOS 26.6.2 (`25G83`), arm64, with scoped Xcode 27.0 (`27A266a`), Apple Swift
+6.4 (`swiftlang-6.4.0.34.1`), SDK 27.0 and Swift 5 language mode, with `SDKROOT`
+explicitly unset and `MAC_UTILS_SIGNING_IDENTITY=-`:
+
+- Full `bash test.sh` passed: **4,366 legacy isolated checks** (31 more than the
+  reviewed base), **10 Swift Testing tests in three suites**, **13 mocked installer
+  scenarios**, production state compiler fixture, explicit source/package/link
+  ownership and build-failure/rollback fixtures, plus real/relocated signed-bundle
+  checks. These are full suite executions using existing worktree build outputs,
+  not a claim of another clean standalone-CLT suite.
+- Pinned SwiftLint and SwiftFormat passed across **47 files**, without rewrites;
+  bootstrap verified tool hashes/versions and offline tooling regressions passed.
+- Standalone CLT 27's production `StoredState` compiler fixture passed separately.
+  A warnings-as-errors CLT/SDK 27 typecheck passed for all **37 explicit production
+  Swift inputs** (33 app, four vendor), importing the existing ClipboardPolicy
+  module and never recompiling its policy source. This does not establish the
+  declared minimum Swift 6.0 toolchain or another complete CLT app/test run.
+- Strict ad-hoc signature verification, source/built plist lint and artifact
+  metadata passed: arm64, macOS 15.0 minimum, SDK 27.0, version `0.4`, build `4`,
+  embedded source revision above. Complete project/vendor/upstream notices,
+  relocated signature/metadata integrity and absence of dynamic policy/Testing
+  dependencies passed. No bundle was launched.
+- Both explicit source lists preserve all prior inputs/order and add each new
+  production file exactly once. Compiler-input fixtures check both new files in
+  app and legacy invocations. The existing owner implementation, HostTransactions,
+  Clipboard policy/native implementation, Audio/Bluetooth implementations and
+  production UI/setup and host transaction regression files are byte-identical to
+  the reviewed base. No source moves, package/vendor/resource changes occurred.
+- All **11 shell inputs** passed `bash -n`; **212 local destinations and 33
+  fragments across 27 Markdown files** and `git diff --check` passed.
+
+Logs are under
+`/private/var/folders/01/q8lbfsh16d9bjtl88bpwtr840000gn/T/opencode/`:
+`keep-awake-feature-d1ec4bb-validated-test.log`,
+`keep-awake-feature-d1ec4bb-{lint,format,tools,clt-state,clt-typecheck,metadata,static}.log`
+and `keep-awake-feature-bootstrap.log`. The known SwiftPM native-engine
+deprecation warning remains visible. Earlier logs are retained: the first
+precommit compile rejected a source edited during compilation; an initial
+post-suite diagnostic wrapper used the wrong executable filename for `lipo`.
+The full suite itself passed before that diagnostic error; corrected metadata
+checks derive `CFBundleExecutable` from the plist, and the final suite wrapper
+completes independently. Neither interruption was an implementation test failure.
+
+Independent review is required before merge. No real app launch/quit/install,
+live preferences, clipboard/device changes, TCC changes, version bump, tag/push
+or publication was performed. Existing native/hardware and final release gates
+remain open; the evidence-only commit does not claim a rebuilt final artifact at
+its own revision. Existing guides are intentionally left for the parent integration
+to update alongside its independently reviewed work.
