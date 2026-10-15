@@ -23,15 +23,20 @@ target, not evidence of a full supported-OS acceptance sweep.
 | Animation / menu-bar controls | Implemented; preference restoration/recovery tests | Isolated live AppKit divider probe | App-specific motion, spacing effect, user icon arrangements/notch limits | [Lifecycle](#lifecycle-regression-coverage), [menu bar](#menu-bar-controls) |
 | Widgets, Settings, guided setup | B–D implemented; injected production action/transaction tests | Fixtures, native owned-window/focus harnesses; signed rebuild/relaunch and Settings metadata recorded | E partial: live keyboard/VoiceOver, focus, long labels, appearance and hardware actions | [Replacement](UI-REPLACEMENT-VALIDATION.md), [compact popup](COMPACT-UI-VALIDATION.md) |
 | Quit coordination | Implemented; admission/drain/cancel/approval regressions | Injected host/native termination seams | Live recovery/quit with active hardware operations | [Host validation](HOST-TRANSACTIONS-VALIDATION.md), [terminology](GLOSSARY.md) |
-| Source install / updates | Implemented; seven mocked installer/source-update checks | Build/signature verification | Final merged packaging/re-signing and notice inspection; source install follows latest main, not an exact offered SHA | [Installer](install.sh), [updater](SourceUpdates.swift) |
+| Source install / updates | Implemented; thirteen mocked installer scenarios and four fresh-bundle fixture groups at `95e6433` | Apple Development build, strict signature and complete bundled notices verified | Final release revision/artifact verification; source install follows latest main, not an exact offered SHA | [Packaging](PACKAGING-VALIDATION.md), [installer](install.sh), [updater](SourceUpdates.swift) |
 
 ### Release integration still open
 
 At this audit baseline, the parent session tracks display-recovery stale-count and
-setup awake-assertion defects as release blockers. Separate core/packaging/UI work
-is pending integration. Do not infer a fix from this document: record final merged
-revisions, regression evidence, signing-identity rebuild behavior, and bundled-notice
-inspection before release. See [unreleased notes](RELEASE-NOTES-1.0-DRAFT.md).
+setup awake-assertion defects as release blockers. Core fixes and watchdog/corrupt-journal
+reviews remain open. Reviewed UI and packaging changes are integrated through
+`95e6433`: 4,016 isolated checks, thirteen mocked installer scenarios, four build
+fixture groups, complete bundled-notice comparisons and strict Apple Development
+signature verification passed. Signing-identity changes automatically rebuild.
+Reviewed documentation followed without code changes; the suite was not needlessly
+repeated. See [exact integrated revisions and checks](RELEASE-CHECKLIST.md#current-evidence)
+and [unreleased notes](RELEASE-NOTES-1.0-DRAFT.md). These results do not close native,
+hardware, versioning or publication gates; historical counts below are unchanged.
 
 ## How to read the historical records
 

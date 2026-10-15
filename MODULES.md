@@ -182,8 +182,10 @@ safety checks; the host must coordinate it with display transactions and quit.
 
 The code carries MIT notices for strafe/InstantSpaceSwitcher and an embedded 0BSD
 notice for joshuarli/iss payload work, not a GPL dependency. Preserve the complete
-[vendor license and acknowledgments](Vendor/strafe/LICENSE), and verify required
-notices in distributed bundles. Pending packaging work is not certified here.
+[vendor license and acknowledgments](Vendor/strafe/LICENSE). The integrated build
+includes complete project/vendor notices before signing; real-bundle comparisons
+and strict verification passed. See [packaging validation](PACKAGING-VALIDATION.md)
+and the revision-bound [integration evidence](RELEASE-CHECKLIST.md#current-evidence).
 
 ## Test seams and evidence
 

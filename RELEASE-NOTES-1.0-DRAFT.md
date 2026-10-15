@@ -33,11 +33,13 @@ At the `f359f42` audit baseline, the parent session tracks these defects:
 Separate implementation work is pending. Keep these open until the final merged
 tree includes the fixes and regression evidence; this draft does not claim them fixed.
 
-The release owner must also record final merged build/test results, signing-identity
-rebuild behavior, and inspection of bundled third-party notices. Packaging work is
-pending at this baseline. The source vendor file includes strafe and
-InstantSpaceSwitcher MIT notices plus the joshuarli/iss 0BSD notice; verify the
-distributed app contains required notices rather than assuming source presence is enough.
+Reviewed UI and packaging fixes are now integrated. At `95e6433`, the combined
+suite passed 4,016 isolated checks, thirteen mocked installer scenarios, and four
+fresh-bundle build fixture groups. Signing-identity changes automatically rebuild;
+complete project, strafe/InstantSpaceSwitcher MIT and joshuarli/iss 0BSD notices
+were compared against the signed bundle. See [integration evidence](RELEASE-CHECKLIST.md#current-evidence)
+and [packaging validation](PACKAGING-VALIDATION.md). A final release revision still
+requires its own build metadata verification; native/hardware gates remain open.
 
 The parent owns the release checklist. This draft does not replace that checklist
 or certify completion of its review gates.

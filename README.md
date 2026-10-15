@@ -103,9 +103,11 @@ curl -fsSL https://raw.githubusercontent.com/jakub-tucek/fix-mac-os/main/install
 
 The installer installs Bluetooth dependencies, keeps its checkout in
 `~/Library/Application Support/Fix macOS/source`, and installs to
-`~/Applications/Fix macOS.app`. Rerun to update. It skips unchanged revisions;
-use `| bash -s -- --force` instead of `| bash` to force a rebuild, including when
-changing signing configuration. It stops rather than overwriting local source changes.
+`~/Applications/Fix macOS.app`. Rerun to update. It skips unchanged revisions only
+when signing configuration and the installed signature also match. Changing the
+selected signing identity automatically rebuilds; use `| bash -s -- --force`
+instead of `| bash` for an unconditional rebuild. It stops rather than overwriting
+local source changes.
 
 **Settings → General → Updates** checks GitHub source history on `main`, with a daily
 automatic check and a manual check. Installer-managed copies offer **Install update…**
@@ -115,7 +117,9 @@ installer fetches/builds the latest `main`; it does not guarantee the exact offe
 
 Without a certificate, builds use ad-hoc signing; macOS may require renewed permission
 grants after updates. Set `MAC_UTILS_SIGNING_IDENTITY` when running the installer to
-save a local signing identity. No certificate or notarization service is included.
+save a local signing identity, or use `-` to persist ad-hoc signing. Unavailable or
+ambiguous certificates fail closed, even at an unchanged revision. No certificate
+or notarization service is included.
 
 For a manual build:
 
@@ -169,5 +173,7 @@ app. Our raw Swift/C build compiles that source with a local queue-cancel/drain 
 and an injectable phase poster for tests. This keeps the dependency pinned and the
 integration patch under source control; it is not a plugin. See
 [why strafe is vendored](MODULES.md#why-strafe-is-in-vendor).
-Before distributing app bundles, verify inclusion of the required notices. This
-documentation does not assert that pending packaging changes have landed.
+Builds include the complete project license, vendored license and upstream record
+under `Contents/Resources/Licenses` before signing. Byte-for-byte notice comparisons
+and strict signature verification passed for the integrated build; see
+[packaging validation](PACKAGING-VALIDATION.md). This is not notarization evidence.
