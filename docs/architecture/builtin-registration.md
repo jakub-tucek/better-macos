@@ -80,3 +80,39 @@ shared ownership, setup staging and native state/editor tests remain in place.
 
 These isolated checks are not app-driving, TCC, physical-device or hardware
 acceptance. Historical release evidence and open acceptance gates remain valid.
+
+### Implementation verification · 2026-10-15
+
+Source: `4d9d50be0667b42e30eb2a4857ab3cdaf81d89bd`, after catalog commit
+`e0fb93d`, based on `12ce15c`. On macOS 26.6.2 (`25G83`), Apple Silicon,
+Xcode 27.0 (`27A266a`), Apple Swift 6.4 and SDK 27.0:
+
+- Full `bash test.sh` passed at the committed source revision: **4,335 legacy
+  isolated checks**, **10 Swift Testing tests in three suites**, **13 mocked
+  installer scenarios**, build/link-ownership/failure fixtures and real/relocated
+  signed-bundle notice, metadata and dependency checks. No app was launched.
+- Strict configured certificate signature verification and source/built plist lint
+  passed. The arm64 bundle embeds the source revision above, version `0.4`, build
+  `4`, minimum macOS 15.0. This is not a final release artifact.
+- Pinned SwiftLint/SwiftFormat passed across 44 files without rewrites; offline
+  developer-tool regressions passed. Changed shell scripts passed `bash -n` and
+  the source diff passed `git diff --check`.
+- Production `StoredState` compiler fixtures passed with both standalone CLT 27
+  and Xcode 27. A separate standalone-CLT warnings-as-errors typecheck of all app
+  Swift sources, including both new registration files and the existing packaged
+  policy import, passed. This is not another full CLT suite or minimum-toolchain
+  acceptance claim.
+
+Local logs are under
+`/private/var/folders/01/q8lbfsh16d9bjtl88bpwtr840000gn/T/opencode/`:
+`builtin-registration-4d9d50b-test.log`,
+`builtin-registration-4d9d50b-lint.log`,
+`builtin-registration-4d9d50b-format.log`,
+`builtin-registration-clt-typecheck.log`, and
+`builtin-registration-tools.log`. The empty typecheck log accompanies a successful
+exit. An earlier precommit full run also passed the same counts; it is not the
+revision-bound artifact record.
+
+Independent review is still required before integration. No installation, real
+app launch, permission grant, live clipboard capture/device mutation or system-preference
+mutation was performed. Existing native/hardware acceptance gaps remain open.
