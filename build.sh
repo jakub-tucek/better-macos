@@ -2,10 +2,14 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 APP="$PWD/build/Fix macOS.app"
-# Local repository configuration keeps permission identity stable across builds.
+# Local repository configuration selects a repeatable signing identity across builds.
 # An unavailable configured certificate must fail signing, never fall back silently.
 SIGNING_IDENTITY="${MAC_UTILS_SIGNING_IDENTITY:-$(git config --local --get macutils.signingIdentity || true)}"
 mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/Resources/Licenses"
+cp LICENSE "$APP/Contents/Resources/Licenses/Fix-macOS-MIT.txt"
+cp Vendor/strafe/LICENSE "$APP/Contents/Resources/Licenses/strafe-LICENSE.txt"
+cp Vendor/strafe/UPSTREAM.txt "$APP/Contents/Resources/Licenses/strafe-UPSTREAM.txt"
 cp Info.plist "$APP/Contents/Info.plist"
 REVISION="$(git rev-parse HEAD)"
 plutil -insert FixMacOSRevision -string "$REVISION" "$APP/Contents/Info.plist"
