@@ -38,7 +38,7 @@ claim is introduced here.
 
 ## Checks and safety
 
-In order, the job runs the existing contributor entry points:
+In order, the job runs the existing contributor entry points and focused CI checks:
 
 ```sh
 bash scripts/dev bootstrap
@@ -46,7 +46,8 @@ bash scripts/dev lint
 bash scripts/dev format-check
 bash scripts/dev-tools-test.sh
 MAC_UTILS_SIGNING_IDENTITY=- bash test.sh
-git diff --check
+bash Scripts/ci-whitespace-test.sh
+bash Scripts/ci-whitespace.sh # event environment supplied by the workflow
 ```
 
 See [development](development.md) for tool versions and checksum verification.
@@ -57,6 +58,40 @@ relocated-bundle packaging, build-failure fixtures, named Swift Testing policy
 suites, the legacy isolated runner and mocked installer scenarios. It uses
 explicit **ad-hoc signing**, not Developer ID secrets or a release identity.
 The workflow does not edit existing build/test/tooling scripts.
+
+### Committed whitespace ranges
+
+[`Scripts/ci-whitespace.sh`](../Scripts/ci-whitespace.sh) checks committed changes,
+not unstaged changes in a clean checkout. Checkout uses `fetch-depth: 0` for full
+history. Event metadata enters through step environment variables, never shell
+source interpolation; the helper validates full commit SHAs and required objects.
+It runs in the caller's repository and logs the exact checked endpoints:
+
+- **PR:** `merge-base(event base SHA, actual PR head SHA)..actual PR head SHA`.
+  Builds still use GitHub's default synthetic merge checkout, but whitespace checks
+  use the PR's real changes, including earlier commits and fork heads reachable
+  through that merge's parents. Advancing the base branch does not change this
+  comparison to a synthetic merge patch.
+- **Push:** event `before..sha`, covering the whole pushed net patch, not just the
+  final commit. An all-zero `before` (new branch) compares the empty tree to `sha`,
+  including root-commit content.
+- **Manual dispatch:** selected commit's first parent to that commit; for a root
+  commit, empty tree to that commit. This is a single-commit check, not a PR range.
+
+Checks use `git diff --check` between these explicit endpoints. They detect bad
+whitespace remaining in the net patch, not whitespace introduced and removed
+within the range. Missing/invalid event SHAs, unavailable objects (for example an
+unreachable pre-force-push commit), or no PR merge base fail closed; the helper
+does not substitute `HEAD`, guess a range or fetch with persisted credentials.
+Full-history checkout normally supplies PR/fork parents and push history, but is
+not a promise that GitHub retains every obsolete event object.
+
+[`Scripts/ci-whitespace-test.sh`](../Scripts/ci-whitespace-test.sh) runs offline in
+a disposable Git repository, testing earlier-commit whitespace in multi-commit
+PR/push ranges, an advanced base and synthetic merge checkout, clean ranges,
+clean/bad roots, zero-before pushes, invalid/missing metadata and failure/log
+propagation through the workflow's `pipefail`/`tee` pattern. It does not alter the
+real checkout or use the network.
 
 No production app install/launch, real installer, TCC grants, live clipboard/input,
 display/audio changes, notarization or release publication are requested. Existing
@@ -119,7 +154,16 @@ Based on `76dd542`, without running the full app suite again:
   [the official release API digest](https://api.github.com/repos/rhysd/actionlint/releases/tags/v1.7.12),
   SHA-256 `aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f`.
   Download, executable and temporary probes stayed in ignored `build/ci-validation/`;
-  no Homebrew/global tool installation or new CI-helper dependency was introduced.
+  no Homebrew/global tool installation or external CI-helper dependency was introduced.
+
+### Independent-review correction
+
+Review of `d81d340` found that plain `git diff --check` checked only checkout dirt,
+not the committed PR/push patch. The correction adds the explicit ranges and
+offline fixtures above. Locally, `bash Scripts/ci-whitespace-test.sh`, helper and
+fixture `bash -n`, all workflow shell-block syntax, YAML/actionlint (with the same
+narrow preview-label exclusion), paths/links and patch whitespace passed. These
+checks did not rerun `test.sh` or execute the workflow on GitHub.
 
 These checks do not establish hosted availability, a green CI suite or minimum
 toolchain support. No push, app install/launch, device mutation, tag, organization

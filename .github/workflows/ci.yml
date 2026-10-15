@@ -31,6 +31,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Assert host and selected toolchain
         run: |
@@ -74,8 +75,16 @@ jobs:
       - name: Build, packaging, policy, isolated and mocked installer tests
         run: bash test.sh 2>&1 | tee "$RUNNER_TEMP/ci-logs/tests.log"
 
-      - name: Check patch whitespace
-        run: git diff --check
+      - name: Offline CI whitespace regressions
+        run: bash Scripts/ci-whitespace-test.sh 2>&1 | tee "$RUNNER_TEMP/ci-logs/whitespace-fixtures.log"
+
+      - name: Check committed patch whitespace
+        env:
+          CI_DIFF_EVENT: ${{ github.event_name }}
+          CI_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
+          CI_DIFF_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          CI_DIFF_BEFORE: ${{ github.event.before }}
+        run: bash Scripts/ci-whitespace.sh 2>&1 | tee "$RUNNER_TEMP/ci-logs/whitespace.log"
 
       - name: Retain diagnostic logs
         if: ${{ always() }}
