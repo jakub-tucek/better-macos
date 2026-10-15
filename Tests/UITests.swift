@@ -16,6 +16,8 @@ private final class SetupPowerBackend: PowerAssertionBackend {
     var fail = false
     var renewals = 0
     var failRenewal = false
+    var failRelease = false
+    var releases = 0
     func create(display: Bool, timeout: TimeInterval) throws -> IOPMAssertionID {
         creates += 1; requestedTimeouts.append(timeout)
         if fail { throw ToggleError(message: "Repeated assertion failure") }
@@ -25,7 +27,10 @@ private final class SetupPowerBackend: PowerAssertionBackend {
         renewals += 1
         if failRenewal { throw ToggleError(message: "Fixture renewal failure") }
     }
-    func release(_ id: IOPMAssertionID) throws {}
+    func release(_ id: IOPMAssertionID) throws {
+        releases += 1
+        if failRelease { throw ToggleError(message: "Fixture assertion release failure") }
+    }
 }
 
 private final class SetupSpaceInterceptor: SpaceIntercepting {
@@ -64,6 +69,7 @@ private final class UIWindows: WindowPositionBackend {
 
 func runUITests() throws {
     runBuiltinCatalogTests()
+    try runRegisteredOwnerChoiceTests()
     runStoredStateTests()
     runAudioPreferenceAdditionTests()
     try renderReleaseUIFixtures()
@@ -216,6 +222,77 @@ private func runBuiltinCatalogTests() {
     expect(WidgetKind.allCases.map(\.module) == [.keepAwake, .audio, .monitors, .windows, .clipboard, .bluetooth], "widgets retain distinct owning feature choices")
     expect(WidgetKind.windows.title == "Window layouts" && WidgetKind.displays.title == "Displays", "widget labels are not inferred from feature titles")
     expect(WidgetLayout.suggested(for: [.arrangement]).entries.isEmpty, "arrangement alone does not imply the monitor widget")
+}
+
+private func runRegisteredOwnerChoiceTests() throws {
+    for setup in [false, true] {
+        let suite = "fix-mac-os.registered-awake.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = ModuleSettings(defaults: defaults)
+        for module in AppModule.allCases { settings.set(module, enabled: false) }
+        let power = SetupPowerBackend()
+        var discoveries = 0
+        let awake = KeepAwakeModule(defaults: defaults, backend: power, automaticUpdates: false,
+            runningApps: { discoveries += 1; return [:] }, processInstances: { [:] })
+        let model = DashboardModel(); model.enabledModules = []
+        var constructions = 0
+        let host = AppDelegate(model: model, preferences: defaults, makeKeepAwake: { constructions += 1; return awake }, displaySnapshotRefresh: {})
+        expect(constructions == 0, "host registration and catalog lookup do not construct owners")
+        model.onModuleChanged(.keepAwake, true)
+        model.onKeepAwakeStart()
+        expect(awake.active && constructions == 1, "registered awake choice still activates one typed owner")
+        power.failRelease = true
+        let before = discoveries
+        let draft = SetupDraft(current: model, defaults: defaults); draft.selected = []; draft.syncSelection()
+        if setup { model.onFinishSetup(draft) { _ in } }
+        else { model.onModuleChanged(.keepAwake, false) }
+        expect(settings.enabled.contains(.keepAwake) && awake.active && constructions == 1, "\(setup ? "setup" : "UI") awake disable refusal retains choice, assertions and owner")
+        expect(discoveries > before && model.stoppingModules.isEmpty, "awake refusal reactivates observation without a stuck stopping marker")
+        if setup {
+            if case .failed(let detail) = draft.outcomes[.keepAwake] { expect(detail.contains("release failure"), "setup receives the registered awake preparation failure") }
+            else { expect(false, "setup must report failed awake disable") }
+        }
+        power.failRelease = false
+        if setup { model.onFinishSetup(draft) { _ in } }
+        else { model.onModuleChanged(.keepAwake, false) }
+        expect(!settings.enabled.contains(.keepAwake) && !awake.active && power.releases > 0, "registered awake retry releases owned assertions before committing disable")
+        withExtendedLifetime(host) {}
+    }
+    for setup in [false, true] {
+        let suite = "fix-mac-os.registered-clipboard.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = ModuleSettings(defaults: defaults)
+        for module in AppModule.allCases { settings.set(module, enabled: module == .clipboard) }
+        defaults.set(true, forKey: "clipboard.persistence")
+        let board = UIClipboard(); let archive = UIArchive()
+        let history = ClipboardHistory(board: board, archive: archive, source: { "fixture" })
+        try history.configurePersistence(true, ageDays: 7)
+        history.setRecording(true)
+        archive.fail = true; board.changeCount += 1; history.poll()
+        expect(history.storagePending, "registered Clipboard fixture owns pending archive work")
+        let clipboard = ClipboardModule(defaults: defaults, history: history)
+        let model = DashboardModel(); model.enabledModules = [.clipboard]
+        let host = AppDelegate(clipboard: clipboard, model: model, preferences: defaults, displaySnapshotRefresh: {})
+        let draft = SetupDraft(current: model, defaults: defaults); draft.selected = []; draft.syncSelection()
+        if setup { model.onFinishSetup(draft) { _ in } }
+        else { model.onModuleChanged(.clipboard, false) }
+        expect(settings.enabled.contains(.clipboard) && history.storagePending && history.recording, "\(setup ? "setup" : "UI") unload refusal retains pending work and does not perform quit preparation")
+        if setup {
+            if case .failed(let detail) = draft.outcomes[.clipboard] { expect(detail.contains("cleanup is pending"), "setup receives the registered Clipboard veto") }
+            else { expect(false, "setup must report failed Clipboard unload") }
+        }
+        archive.fail = false
+        if setup { model.onFinishSetup(draft) { _ in } }
+        else { model.onModuleChanged(.clipboard, false) }
+        expect(!settings.enabled.contains(.clipboard) && !history.storagePending && !history.recording, "Clipboard retry flushes before unload stops runtime work")
+        expect(defaults.bool(forKey: "clipboard.persistence") && history.persistent, "module unload preserves independent retention intent")
+        let reloaded = ClipboardHistory(board: board, archive: archive, source: { "fixture" })
+        try reloaded.configurePersistence(true, ageDays: 7, load: true)
+        expect(!reloaded.recording, "retained Clipboard history reload never resumes capture")
+        withExtendedLifetime(host) {}
+    }
 }
 
 private func runAudioPreferenceAdditionTests() {

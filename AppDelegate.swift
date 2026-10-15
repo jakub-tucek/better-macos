@@ -59,6 +59,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let commandRunner: CommandRunning
     private let transactions: HostTransactions
     private var moduleFailures: [AppModule: String] = [:]
+    private lazy var choicePreparations = BuiltinChoicePreparations(
+        keepAwake: KeepAwakeChoicePreparation(owner: { [weak self] in self?.keepAwake }),
+        clipboard: ClipboardChoicePreparation(owner: { [weak self] in self?.clipboard }),
+        displays: DisplayChoicePreparation(
+            isRecovering: { [weak self] in self?.recovering == true },
+            needsRecovery: { [weak self] in self?.needsDisplayRecovery == true },
+            setStopping: { [weak self] module, stopping in
+                if stopping { self?.model.stoppingModules.insert(module) }
+                else { self?.model.stoppingModules.remove(module) }
+            },
+            restore: { [weak self] completion in
+                guard let self else { completion(false); return }
+                restoreAll(completion: completion)
+            }))
     private var setupDesktopReconciliationPending = false
     private let presentWindow: (NSWindow) -> Void
     private let restartAnimationClients: () -> Void
@@ -370,20 +384,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard transactions.acceptsActions, !model.stoppingModules.contains(module) else {
             moduleFailures[module] = "Shutdown or feature recovery is in progress."; completion(false); return
         }
-        if module == .clipboard && !enabled && clipboard?.history.flushPendingStorage() == false {
-            model.errorMessage = "Clipboard disk cleanup is pending. Retry after storage becomes available."
-            moduleFailures[module] = "Clipboard disk cleanup is pending."
-            completion(false)
-            return
-        }
         if module == .mouse {
             guard mouseLifecycle.setEnabled(enabled) else { moduleFailures[module] = mouseLifecycle.errorMessage ?? "Mouse restoration failed."; completion(false); return }
             updateModules()
             completion(true)
             return
-        }
-        if module == .keepAwake && !enabled {
-            do { try keepAwake?.deactivate() } catch { moduleFailures[module] = error.localizedDescription; keepAwake?.activate(); showError(error); completion(false); return }
         }
         if module == .menuBar && !enabled {
             do { try menuBarSpacing.restore(preserveChoice: true) }
@@ -401,23 +406,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             } resultCompletion: { completion($0) }
             return
         }
-        if module == .monitors || module == .arrangement {
-            guard !recovering else { moduleFailures[module] = "Display operation is busy."; showError(ToggleError(message: "Wait for the current display operation to finish.")); completion(false); return }
-            if !enabled && needsDisplayRecovery {
-                model.stoppingModules.insert(module)
-                restoreAll { [weak self] restored in
-                    guard let self else { return }
-                    model.stoppingModules.remove(module)
-                    if restored { modules.set(module, enabled: false); updateModules() }
-                    else { moduleFailures[module] = "Display restoration failed; recovery remains available." }
-                    completion(restored)
-                }
-                return
+        choicePreparations.prepare(module, enabled: enabled) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success:
+                // Accepted asynchronous cleanup may finish with admission closed.
+                // Do not re-enter the public guard and lose its pending commit.
+                modules.set(module, enabled: enabled)
+                updateModules()
+                completion(true)
+            case .failure(let failure):
+                moduleFailures[module] = failure.detail
+                if let message = failure.message { model.errorMessage = message }
+                completion(false)
             }
         }
-        modules.set(module, enabled: enabled)
-        updateModules()
-        completion(true)
     }
 
     private func performKeepAwake(_ action: (KeepAwakeModule) throws -> Void) {

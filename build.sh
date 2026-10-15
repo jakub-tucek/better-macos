@@ -45,7 +45,7 @@ xcrun clang -O2 -arch arm64 -mmacosx-version-min=15.0 -c MouseHID/MouseHID.c -o 
 xcrun swiftc -swift-version 5 -warnings-as-errors -O -target arm64-apple-macos15.0 \
     -I "$CLIPBOARD_PACKAGE_MODULES" "$CLIPBOARD_PACKAGE_ARCHIVE" \
     -I Vendor/strafe/CStrafe/include -I MouseHID ClipboardModule.swift WindowPositions.swift WindowPositionsView.swift \
-    AppModules.swift BuiltinFeatures.swift HostTransactions.swift DisplayController.swift DisplayTopology.swift DisplayArrangementEditor.swift DisplayRefreshGate.swift SafetyWatchdog.swift Dashboard.swift AppDelegate.swift CommandRunner.swift BluetoothModule.swift \
+    AppModules.swift BuiltinFeatures.swift BuiltinChoicePreparations.swift HostTransactions.swift DisplayController.swift DisplayTopology.swift DisplayArrangementEditor.swift DisplayRefreshGate.swift SafetyWatchdog.swift Dashboard.swift AppDelegate.swift CommandRunner.swift BluetoothModule.swift \
     MouseSystemBackend.swift MouseModule.swift KeepAwakeModule.swift QuitGuard.swift MenuBarModule.swift SourceUpdates.swift SystemControlLifecycle.swift ScreenEdges.swift AnimationPreferences.swift SpacesModule.swift Vendor/strafe/Swift/*.swift main.swift \
     StoredState.swift UISurfaces.swift SetupWizard.swift AudioModule.swift build/objects/CStrafe.o build/objects/IOHIDPayload.o build/objects/MouseHID.o -framework Carbon -framework CoreAudio -framework AppKit -framework ServiceManagement \
     -framework SwiftUI -framework CoreBluetooth -framework ApplicationServices -framework CoreGraphics -framework CoreFoundation -framework IOKit \

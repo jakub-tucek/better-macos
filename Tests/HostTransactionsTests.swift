@@ -422,6 +422,8 @@ private final class QuitFixture {
 }
 
 func runHostTransactionsTests() {
+    runRegisteredDisplayChoiceTests()
+    runDisplayPreparationCompletionTests()
     runDisplayWatchdogAdmissionTests()
     runUnreadableDisplayJournalTests()
     runDisplayOwnershipTests()
@@ -524,4 +526,76 @@ func runHostTransactionsTests() {
     expect(clipboard.replies == [false, true] && !clipboard.host.acceptsActions,
            "Spaces retry shares the same final checks and approved admission as display recovery")
     clipboard.drains = []
+}
+
+private func runRegisteredDisplayChoiceTests() {
+    for module in [AppModule.monitors, .arrangement] {
+        for setup in [false, true] {
+            for fails in [false, true] {
+                let suite = "fix-mac-os.registered-displays.\(UUID().uuidString)"
+                let defaults = UserDefaults(suiteName: suite)!
+                defer { defaults.removePersistentDomain(forName: suite) }
+                let settings = ModuleSettings(defaults: defaults)
+                for candidate in AppModule.allCases { settings.set(candidate, enabled: candidate == module) }
+                let bytes = Data("unreadable journal still owns recovery".utf8)
+                defaults.set(bytes, forKey: "displayRecords")
+                let runner = JournalDisplayRunner(defaults); runner.failRestore = fails
+                let model = DashboardModel(); model.enabledModules = [module]
+                let transactions = HostTransactions()
+                let host = AppDelegate(commandRunner: runner, model: model, preferences: defaults,
+                    controlStateSnapshot: { SystemControlLifecycle.State(watchdogReady: false, displaySettling: false) },
+                    displayRecoveryPending: { DisplayController.hasPendingRecovery(defaults: defaults) },
+                    displaySnapshotRefresh: {}, transactions: transactions)
+                let draft = SetupDraft(current: model, defaults: defaults); draft.selected = []; draft.syncSelection()
+                var finishes = 0
+                if setup { model.onFinishSetup(draft) { _ in finishes += 1 } }
+                else { model.onModuleChanged(module, false) }
+                expect(settings.enabled.contains(module) && model.stoppingModules == [module], "registered \(module) \(setup ? "setup" : "UI") disable retains choice while shared recovery drains")
+                expect(runner.restoreStarted.wait(timeout: .now() + 1) == .success, "registered display recovery dispatches without watchdog readiness")
+                model.onModuleChanged(module, false)
+                expect(runner.restoreStarted.wait(timeout: .now() + 0.01) == .timedOut, "repeated retained UI disable cannot dispatch duplicate recovery")
+                if !fails {
+                    // Close admission after acceptance through the real transaction
+                    // interface, without running any additional host/OS cleanup.
+                    let actions = HostTransactions.QuitActions(isBusy: { false }, prepareMouse: { true }, quiesce: {}, prepareClipboard: { true }, needsDisplayRecovery: { false }, restoreDisplays: { $0(true) }, suspendSpaces: nil, resumeClipboard: {}, restoreSpacesChoice: {}, didReopen: {}, didVeto: { _ in })
+                    expect(transactions.requestQuit(actions, reply: { _ in }) == .now && !transactions.acceptsActions, "fixture closes host admission after accepted display cleanup")
+                }
+                runner.finishRestore.signal()
+                let deadline = Date().addingTimeInterval(2)
+                while model.monitorBusy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
+                expect(!model.monitorBusy && model.stoppingModules.isEmpty, "registered display completion releases busy/stopping state")
+                expect(settings.enabled.contains(module) == fails, "accepted display cleanup commits despite subsequently closed admission, but failure retains choice")
+                expect(DisplayController.hasPendingRecovery(defaults: defaults) == fails, "registered display preparation uses durable recovery authority, not UI counts")
+                if setup { expect(finishes == 1, "setup continuation completes once after registered preparation, including closed admission") }
+                if fails {
+                    expect(defaults.data(forKey: "displayRecords") == bytes, "failed registered recovery preserves unreadable journal for retry")
+                    runner.failRestore = false
+                    model.onModuleChanged(module, false)
+                    expect(runner.restoreStarted.wait(timeout: .now() + 1) == .success, "registered display failure leaves retry reachable")
+                    runner.finishRestore.signal()
+                    let retryDeadline = Date().addingTimeInterval(2)
+                    while model.monitorBusy && Date() < retryDeadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
+                    expect(!settings.enabled.contains(module) && model.stoppingModules.isEmpty, "registered display retry commits and clears stopping state")
+                }
+                withExtendedLifetime(host) {}
+            }
+        }
+    }
+}
+
+private func runDisplayPreparationCompletionTests() {
+    var callbacks: [(Bool) -> Void] = []
+    var markers: [Bool] = []
+    var completions = 0
+    let preparation = DisplayChoicePreparation(isRecovering: { false }, needsRecovery: { true },
+        setStopping: { _, value in markers.append(value) }, restore: { callbacks.append($0) })
+    preparation.prepare(.monitors, enabled: false) { _ in completions += 1 }
+    expect(markers == [true] && completions == 0, "display preparation owns its pending marker until restoration responds")
+    callbacks[0](false)
+    preparation.prepare(.arrangement, enabled: false) { _ in completions += 1 }
+    callbacks[0](true)
+    expect(markers == [true, false, true] && completions == 1, "duplicate old recovery completion cannot clear a newer marker or complete twice")
+    callbacks[1](true)
+    callbacks[1](false)
+    expect(markers == [true, false, true, false] && completions == 2, "each registered display preparation completes and clears its marker exactly once")
 }
