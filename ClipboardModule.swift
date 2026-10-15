@@ -27,35 +27,131 @@ enum ClipboardPresentation {
     }
 }
 
-/// Only visible rows request a decode. ImageIO downsamples before allocating pixels.
+/// Main-thread-owned state; ImageIO work is restricted to two bounded workers.
+/// A canceled running decode may finish, but never publishes into a newer request.
 final class ClipboardThumbnails {
-    private let cache = NSCache<NSUUID, NSImage>()
-    private var failed = Set<UUID>()
-    private var known = Set<UUID>()
+    static let cacheLimit = 48
+    static let requestLimit = 8
+    static let pixelLimit = 16 * 1024 * 1024
+    private struct Cached { let data: Data; let image: NSImage? }
+    private struct Flight { let token: UUID; let data: Data; let operation: Operation }
+    private var cache: [UUID: Cached] = [:]
+    private var order: [UUID] = []
+    private var flights: [UUID: Flight] = [:]
+    private var deferred: [ClipboardEntry] = []
+    private var valid: [UUID: Data] = [:]
+    private let queue: OperationQueue
+    private let decode: (Data) -> CGImage?
     private(set) var decodes = 0
-    init() { cache.countLimit = 48; cache.totalCostLimit = 48 * 96 * 96 * 4 }
+    var cachedCount: Int { cache.count }
+    var inFlightCount: Int { flights.count }
+    var deferredCount: Int { deferred.count }
+    var onReady: (UUID) -> Void = { _ in }
+
+    init(decode: @escaping (Data) -> CGImage? = ClipboardThumbnails.decodePNG) {
+        self.decode = decode
+        queue = OperationQueue(); queue.name = "Clipboard thumbnails"
+        queue.maxConcurrentOperationCount = 2; queue.qualityOfService = .utility
+    }
+    /// Read the fixed-size PNG IHDR before passing any bytes to ImageIO. The
+    /// decoded-input budget is separate from the 96-pixel thumbnail/cache budget.
+    static func admits(_ data: Data) -> Bool {
+        guard data.count >= 33, data.count <= ClipboardHistory.imageLimit else { return false }
+        let header = Array(data.prefix(33))
+        guard Array(header[0..<8]) == [137, 80, 78, 71, 13, 10, 26, 10],
+              Array(header[8..<16]) == [0, 0, 0, 13, 73, 72, 68, 82] else { return false }
+        func number(_ offset: Int) -> UInt64 {
+            header[offset..<offset + 4].reduce(0) { ($0 << 8) | UInt64($1) }
+        }
+        let width = number(16), height = number(20)
+        return width > 0 && height > 0 && width <= 8192 && height <= 8192 && width * height <= UInt64(pixelLimit)
+    }
+    static func decodePNG(_ data: Data) -> CGImage? {
+        guard admits(data),
+              let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+              let height = properties[kCGImagePropertyPixelHeight] as? NSNumber,
+              width.intValue > 0, height.intValue > 0, width.intValue <= 8192, height.intValue <= 8192,
+              width.intValue * height.intValue <= pixelLimit else { return nil }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 96,
+            kCGImageSourceShouldCacheImmediately: true
+        ] as CFDictionary)
+    }
     func image(for entry: ClipboardEntry) -> NSImage? {
+        precondition(Thread.isMainThread)
         guard let data = entry.image else { return nil }
-        known.insert(entry.id)
-        if let image = cache.object(forKey: entry.id as NSUUID) { return image }
-        guard !failed.contains(entry.id) else { return nil }
+        // A UUID can be reused by a newer source payload: bytes are part of identity.
+        if valid[entry.id] != data { invalidate(entry.id); valid[entry.id] = data }
+        if let result = cache[entry.id] {
+            order.removeAll { $0 == entry.id }; order.append(entry.id)
+            return result.image
+        }
+        guard flights[entry.id] == nil else { return nil }
+        guard Self.admits(data) else { store(entry.id, data: data, image: nil); return nil }
+        guard flights.count < Self.requestLimit, queue.operationCount < Self.requestLimit else {
+            deferred.removeAll { $0.id == entry.id }; deferred.append(entry)
+            if deferred.count > Self.requestLimit { deferred.removeFirst() }
+            return nil
+        }
+        let token = UUID(), id = entry.id, decode = self.decode
+        let operation = BlockOperation()
+        operation.addExecutionBlock { [weak self, weak operation] in
+            guard operation?.isCancelled == false else { return }
+            let image = autoreleasepool { decode(data) }
+            DispatchQueue.main.async { [weak self, weak operation] in
+                guard let self, operation?.isCancelled == false,
+                      self.flights[id]?.token == token, self.valid[id] == data else { return }
+                self.flights.removeValue(forKey: id)
+                // Defend the injectable worker boundary too: never cache oversized output.
+                let bounded = image.flatMap { $0.width <= 96 && $0.height <= 96 ? $0 : nil }
+                self.store(id, data: data, image: bounded.map { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) })
+                self.onReady(id)
+                self.drainDeferred()
+            }
+        }
+        // Canceled queued operations also release capacity, even though their
+        // image results must never be published or trigger onReady.
+        operation.completionBlock = { [weak self] in
+            DispatchQueue.main.async { [weak self] in self?.drainDeferred() }
+        }
+        flights[id] = Flight(token: token, data: data, operation: operation)
         decodes += 1
-        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
-              let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: 96,
-                kCGImageSourceShouldCacheImmediately: true
-              ] as CFDictionary) else { failed.insert(entry.id); return nil }
-        let image = NSImage(cgImage: thumbnail, size: NSSize(width: thumbnail.width, height: thumbnail.height))
-        cache.setObject(image, forKey: entry.id as NSUUID, cost: thumbnail.bytesPerRow * thumbnail.height)
-        return image
+        queue.addOperation(operation)
+        return nil
     }
-    func retain(_ ids: Set<UUID>) {
-        for id in known.subtracting(ids) { cache.removeObject(forKey: id as NSUUID); failed.remove(id) }
-        known.formIntersection(ids)
+    private func store(_ id: UUID, data: Data, image: NSImage?) {
+        cache[id] = Cached(data: data, image: image)
+        order.removeAll { $0 == id }; order.append(id)
+        while order.count > Self.cacheLimit { cache.removeValue(forKey: order.removeFirst()) }
     }
-    func clear() { cache.removeAllObjects(); failed.removeAll(); known.removeAll() }
+    private func invalidate(_ id: UUID) {
+        deferred.removeAll { $0.id == id }
+        flights.removeValue(forKey: id)?.operation.cancel()
+        cache.removeValue(forKey: id); order.removeAll { $0 == id }; valid.removeValue(forKey: id)
+    }
+    func retain(_ entries: [ClipboardEntry]) {
+        precondition(Thread.isMainThread)
+        let current = Dictionary(uniqueKeysWithValues: entries.compactMap { entry in entry.image.map { (entry.id, $0) } })
+        for (id, data) in valid where current[id] != data { invalidate(id) }
+        valid = current
+    }
+    func cancelRequests(except ids: Set<UUID> = []) {
+        deferred.removeAll { !ids.contains($0.id) }
+        for id in Array(flights.keys) where !ids.contains(id) { flights.removeValue(forKey: id)?.operation.cancel() }
+    }
+    private func drainDeferred() {
+        while !deferred.isEmpty, flights.count < Self.requestLimit, queue.operationCount < Self.requestLimit {
+            let entry = deferred.removeFirst()
+            guard let data = entry.image, valid[entry.id] == data else { continue }
+            _ = image(for: entry)
+        }
+    }
+    func clear() { cancelRequests(); cache.removeAll(); order.removeAll(); valid.removeAll() }
+    deinit { queue.cancelAllOperations() }
 }
 
 private final class ClipboardRowView: NSTableCellView {
@@ -111,9 +207,11 @@ final class SystemClipboard: ClipboardAccess {
 }
 
 private final class ClipboardPanel: NSPanel {
+    var onHide: () -> Void = {}
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
     override func cancelOperation(_ sender: Any?) { orderOut(sender) }
+    override func orderOut(_ sender: Any?) { onHide(); super.orderOut(sender) }
 }
 
 private final class ClipboardPanelContent: NSView {
@@ -170,6 +268,10 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
         self.history = history ?? ClipboardHistory(board: SystemClipboard(), archive: ClipboardArchive(directory: directory),
                                    source: { NSWorkspace.shared.frontmostApplication?.bundleIdentifier })
         super.init()
+        thumbnails.onReady = { [weak self] _ in
+            guard let self, self.panel?.isVisible == true else { return }
+            self.reload()
+        }
         self.history.onChange = { [weak self] in self?.reload(); self?.onChange() }
         self.history.onError = { [weak self] in self?.onError("Clipboard history could not be saved.") }
     }
@@ -259,6 +361,7 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
         let window = ClipboardPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 450),
             styleMask: [.titled, .closable, .nonactivatingPanel], backing: .buffered, defer: false)
         window.title = "Clipboard history"
+        window.onHide = { [weak self] in self?.thumbnails.cancelRequests() }
         window.isReleasedWhenClosed = false; window.level = .floating
         let content = ClipboardPanelContent(frame: NSRect(x: 0, y: 0, width: 560, height: 450))
         search.frame = NSRect(x: 16, y: 402, width: 528, height: 28)
@@ -303,9 +406,9 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
     private func reload(resetSelection: Bool = false) {
         let previous = selected
         let query = search.stringValue
-        let currentIDs = Set(history.entries.map(\.id))
-        thumbnails.retain(currentIDs)
+        thumbnails.retain(history.entries)
         rows = ClipboardPresentation.rows(history.entries, query: query)
+        thumbnails.cancelRequests(except: Set(rows.map(\.id)))
         table.reloadData()
         if let index = ClipboardSelection.index(previous: previous, entries: rows, reset: resetSelection) {
             table.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)

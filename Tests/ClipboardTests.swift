@@ -64,9 +64,13 @@ private func runClipboardPanelTests() throws {
         module.search.stringValue = query
         module.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: module.search))
     }
-    func command(_ selector: Selector) {
-        _ = module.control(module.search, textView: NSTextView(), doCommandBy: selector)
+    func key(_ code: UInt16, _ characters: String) {
+        let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                    windowNumber: panel.windowNumber, context: nil, characters: characters,
+                                    charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code)!
+        panel.sendEvent(event)
     }
+    func settle() { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
     func render(_ name: String) throws {
         guard ProcessInfo.processInfo.environment["CLIPBOARD_FIXTURE_RENDER"] == "1" else { return }
         // Let AppKit finish native control drawing before caching this view only.
@@ -103,6 +107,9 @@ private func runClipboardPanelTests() throws {
     expect(ClipboardPresentation.age(date.addingTimeInterval(-125), now: date) == "2m ago", "relative ages use compact readable units")
     let imageEntry = module.rows[1]
     let cache = ClipboardThumbnails()
+    _ = cache.image(for: imageEntry)
+    let deadline = Date().addingTimeInterval(3)
+    while cache.inFlightCount > 0 && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
     let image = cache.image(for: imageEntry)
     _ = cache.image(for: imageEntry)
     expect(image != nil && max(image!.size.width, image!.size.height) <= 96 && cache.decodes == 1, "PNG thumbnails downsample to 96 pixels and cache repeat renders")
@@ -113,16 +120,21 @@ private func runClipboardPanelTests() throws {
     }
     let broken = ClipboardEntry(id: UUID(), created: date, source: "fixture", text: nil, image: Data([1, 2, 3]), pinned: false)
     _ = cache.image(for: broken); _ = cache.image(for: broken)
-    expect(cache.decodes == 2, "invalid images use a cached icon fallback instead of repeated decoding")
+    expect(cache.decodes == 1, "invalid images use a cached icon fallback without decoding")
     cache.retain([]); _ = cache.image(for: imageEntry)
-    expect(cache.decodes == 3, "removed entry releases its thumbnail cache")
+    expect(cache.decodes == 2, "removed entry releases its thumbnail cache")
     module.show() // Synthetic panel only, no system clipboard/archive dependencies.
     expect(!history.persistent && module.search.currentEditor() != nil, "opening synthetic history autofocuses search without persistence changes")
     try render("history")
-    command(#selector(NSResponder.moveDown(_:)))
+    key(125, String(UnicodeScalar(NSDownArrowFunctionKey)!))
     expect(module.rows[module.table.selectedRow].id == imageID, "Down from search changes visible selection without surrendering search focus")
-    command(#selector(NSResponder.moveUp(_:)))
+    key(126, String(UnicodeScalar(NSUpArrowFunctionKey)!))
     expect(module.rows[module.table.selectedRow].id == pinned, "Up from search moves to the pinned entry")
+    panel.makeFirstResponder(module.table)
+    key(125, String(UnicodeScalar(NSDownArrowFunctionKey)!))
+    expect(module.rows[module.table.selectedRow].id == imageID, "window-dispatched Down traverses the actual table responder")
+    key(126, String(UnicodeScalar(NSUpArrowFunctionKey)!))
+    panel.makeFirstResponder(module.search)
     search("design")
     expect(module.rows.map(\.id) == [textID] && module.table.selectedRow == 0, "search selects its first matching entry")
     try render("search")
@@ -145,22 +157,39 @@ private func runClipboardPanelTests() throws {
     var admitted = false
     module.acceptsActions = { admitted }
     let count = board.changeCount
-    command(#selector(NSResponder.insertNewline(_:)))
+    key(36, "\r")
     _ = module.perform(pinItem.action); _ = module.perform(deleteItem.action); module.clear()
     expect(board.changeCount == count && history.entries.count == 1 && history.entries[0].pinned && !module.validateMenuItem(pinItem), "copy, pin, delete, Clear and context menu respect closed host admission")
     admitted = true
-    command(#selector(NSResponder.insertNewline(_:)))
+    module.show()
+    key(36, "\r")
     expect(board.changeCount == count + 1 && board.value?.hasPrefix("A pinned") == true && !panel.isVisible, "Return copies only to fake clipboard and dismisses history")
-    module.show(); command(#selector(NSResponder.cancelOperation(_:)))
+    module.show(); key(53, "\u{1b}")
     expect(!panel.isVisible && board.changeCount == count + 1, "Escape closes without copying")
     module.show()
     let escape = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
                                  windowNumber: panel.windowNumber, context: nil, characters: "\u{1b}",
                                  charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53)!
-    module.table.keyDown(with: escape)
+    panel.makeFirstResponder(module.table)
+    panel.sendEvent(escape)
     expect(!panel.isVisible && board.changeCount == count + 1, "native table Escape event dismisses without writing")
-    module.clear()
-    expect(history.entries.isEmpty && board.changeCount == count + 1 && !history.recording && !history.persistent, "Clear removes pins without touching clipboard, recording or persistence policy")
+    module.show(); panel.makeFirstResponder(module.table); key(36, "\r")
+    expect(!panel.isVisible && board.changeCount == count + 2, "window-dispatched table Return copies only to fake clipboard and dismisses")
+
+    module.show(); findButton("Clear history…").performClick(nil)
+    expect(panel.attachedSheet != nil, "native Clear button opens confirmation before deleting history")
+    panel.endSheet(panel.attachedSheet!, returnCode: .alertSecondButtonReturn); settle()
+    expect(history.entries.count == 1, "Canceling native Clear confirmation preserves pinned history")
+    findButton("Clear history…").performClick(nil)
+    expect(panel.attachedSheet != nil, "Clear confirmation can be reopened after Cancel")
+    admitted = false
+    panel.endSheet(panel.attachedSheet!, returnCode: .alertFirstButtonReturn); settle()
+    expect(history.entries.count == 1, "Clear completion rechecks admission after confirmation was opened")
+    admitted = true; module.show()
+    findButton("Clear history…").performClick(nil)
+    expect(panel.attachedSheet != nil, "admitted Clear displays its native confirmation")
+    panel.endSheet(panel.attachedSheet!, returnCode: .alertFirstButtonReturn); settle()
+    expect(history.entries.isEmpty && board.changeCount == count + 2 && !history.recording && !history.persistent, "confirmed Clear removes pins without touching clipboard, recording or persistence policy")
 }
 
 // Exhaustive short sequences plus a recovery/enable suffix expose latent
@@ -241,6 +270,7 @@ private func runClipboardStorageTransitionTests(date: Date) throws {
 
 func runClipboardTests() throws {
     runClipboardPresentationTests()
+    runClipboardThumbnailTests()
     try runClipboardPanelTests()
     let table = ClipboardTable()
     var copies = 0
