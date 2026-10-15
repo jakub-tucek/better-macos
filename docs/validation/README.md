@@ -92,6 +92,19 @@ fixture also passed; this run does not add another full CLT or minimum-toolchain
 See [revision/log details and remaining scope](../architecture/builtin-registration.md#main-integration--2026-10-15).
 Host composition/quit authority, native/hardware acceptance and publication gates remain unchanged.
 
+### Source organization integration · `480e957` · 2026-10-15
+
+The independently reviewed CLEAN source-organization series is integrated at
+`480e957b66df14f870ce43a96fde1a0ba78ec9ba`. All **31 moved app Swift files are
+byte-identical** to prior main; build/test input order, flags, package ownership and
+four lint exceptions are unchanged except paths. One combined full run passed
+**4,335 legacy checks**, **10 policy tests in three suites**, **13 mocked installer
+scenarios**, compiler/build fixtures and real/relocated packaging checks. Lint/format
+across 44 files, expanded tooling fixtures and offline CI whitespace fixtures passed.
+See [revision/log details](source-organization.md#main-integration--2026-10-15).
+CI remains configured but hosted execution unverified; folders do not create new
+packages or a complete lifecycle framework. Native/hardware gates remain open.
+
 ## How to read the historical records
 
 The sections below retain evidence from earlier increments. Counts, “latest/final”

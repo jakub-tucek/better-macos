@@ -41,6 +41,8 @@ maps ownership. `build.sh` and `test.sh` retain explicit Swift inputs (different
 entry points), and `Tests/swiftui-compatibility.sh` compiles the production
 `Sources/SharedUI/StoredState.swift`. Folder moves do not add SwiftPM targets:
 only Clipboard policy and its named tests belong to the existing package.
+The [integrated move evidence](validation/source-organization.md#main-integration--2026-10-15)
+records byte preservation, compiler-input parity and current checks.
 
 From the repository root (the wrapper also works from another directory):
 

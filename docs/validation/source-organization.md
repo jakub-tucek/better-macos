@@ -120,7 +120,52 @@ Local logs are under
 `source-organization-tools.log`, `source-organization-clt-typecheck.log`, and
 `source-organization-incremental.log`.
 
-Independent review is still required before integration. No real app launch/quit,
+At this implementation record, independent review was still required before integration. No real app launch/quit,
 install, TCC change, live clipboard/device/preference mutation, version bump,
 push/tag or publication was performed. Default fixtures remain isolated. The
 evidence-only commit does not claim a final artifact at its own revision.
+
+## Main integration · 2026-10-15
+
+Independently reviewed CLEAN commits `9c8a94a` and `49b6398` integrated as `28e152b`
+and **`480e957b66df14f870ce43a96fde1a0ba78ec9ba`** on main `c4e0af0`. AGENTS/roadmap
+conflicts were resolved by retaining configured CI, unverified hosted execution and
+unconfigured branch protection while recording completed mechanical source moves.
+Broader lifecycle/factory work remains partial; directories are not new package
+boundaries. The separate KeepAwake adapter work was not integrated.
+
+Actual checks at this integrated revision:
+
+- Direct byte comparisons against prior main `c4e0af0` passed for **all 31 moves**;
+  each old path is absent. Whole `build.sh`/`test.sh` files compare exactly after
+  substituting moved paths, preserving compiler flags/order, distinct app/runner
+  entry points, one policy module/archive and three explicit C objects.
+- The four SwiftLint exceptions compare exactly after only their file-path
+  substitutions. Policy, Swift test bodies, vendor/C sources, licenses, plist,
+  workflow calls and CI helpers are unchanged. `Package.swift` adds only an ownership
+  comment; it does not add a target or compile the app via SwiftPM.
+- One full `bash test.sh` passed: **4,335 legacy checks**, **10 Swift Testing tests
+  in three suites**, **13 mocked installer scenarios**, production state compiler,
+  expanded source-absence/package/link/rollback fixtures and real/relocated bundle
+  notice/signature/dependency checks. Log: `build/source-organization-integration.log`.
+  It records HEAD, selected Xcode 27 / Swift 6.4 / SDK 27.0 paths/version, arm64 and
+  bundle metadata, with command-scoped tools and explicitly unset `SDKROOT`.
+- Strict configured-certificate signature, plist lint and metadata passed: the
+  arm64/macOS 15+ bundle embeds the tested revision, version `0.4`, build `4`, SDK 27.0.
+- Lint and format-check passed across **44 files**; expanded offline tooling fixtures
+  checked organized app/core/UI/native feature/policy roots. Offline CI whitespace
+  fixtures and actionlint 1.7.12 passed, retaining only the documented `xcode-27`
+  preview-label exception with ShellCheck disabled. Logs:
+  `build/source-organization-integration-{lint,format,tools,ci}.log`.
+- Source blob/input/baseline assertions are recorded with matching digests in
+  `build/source-organization-integration-paths.log`. README remains unchanged.
+- The actual SwiftPM package description confirms only policy and named test targets,
+  with one policy source. All explicit compiler paths and unchanged workflow commands
+  exist; YAML/run-block syntax, all **13 shell files**, **215 local links and 36
+  fragments across 27 Markdown documents**, and `git diff --check` passed.
+
+Historical failures and earlier counts remain revision-bound. No new full CLT,
+minimum-toolchain, hosted CI, physical hardware or final release acceptance is
+claimed. No real app launch/quit/install, live preferences/devices/permissions,
+version bump, push/tag or publication was performed; default fixtures are isolated.
+This evidence-only commit does not embed its own revision in the tested bundle.

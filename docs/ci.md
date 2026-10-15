@@ -203,4 +203,6 @@ Actual local checks at that integrated revision:
 **Hosted execution remains unverified; branch protection is not configured.** No
 remote green status, hosted runner execution, tested minimum toolchain, real app/OS
 install, device/preference/permission mutation, push, tag or release is claimed.
-Source organization remains pending its separate review/integration.
+At this CI-only revision, source organization remained pending separate review/integration.
+Its subsequent [reviewed integration evidence](validation/source-organization.md#main-integration--2026-10-15)
+does not change the hosted-execution or branch-protection limits above.

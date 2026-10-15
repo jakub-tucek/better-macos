@@ -1,7 +1,7 @@
 # Built-in modules and source map
 
 Source map started at `f359f42`, with registration ownership updated through
-`66056f0` and mechanical source organization at `9c8a94a`. This describes existing
+`66056f0` and reviewed mechanical source organization integrated at `480e957`. This describes existing
 code, not a completed architecture refactor. See [move evidence](validation/source-organization.md). Use
 [validation](validation/README.md) for acceptance and pending release blockers.
 

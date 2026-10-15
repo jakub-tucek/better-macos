@@ -27,7 +27,7 @@ git diff --check
 ```
 
 The scripts target arm64/macOS 15+ in Swift 5 language mode. First-party app Swift
-lives in `Sources/App`, `Core`, `Features/<owner>` and `SharedUI`; see the module
+lives under `Sources/`: `App/`, `Core/`, `Features/<owner>/` and `SharedUI/`; see the module
 guide for ownership. `Sources/App/main.swift` is the app/helper entry point;
 `Tests/main.swift` is the isolated runner. `MouseHID/` is the C boundary.
 SwiftPM alone compiles `Sources/Features/Clipboard/Policy`; app/legacy tests import
