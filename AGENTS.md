@@ -3,8 +3,9 @@
 
 - For feature ownership, shared dependencies, UI entry points or cleanup, read
   [MODULES.md](MODULES.md). Built-in features are compiled into one app, not runtime plugins.
-- For architecture/tooling changes, read [ROADMAP.md](ROADMAP.md); proposed packages,
-  directories, lint/format tools and CI are not the current developer workflow.
+- For developer commands and pinned lint/format tools, read [docs/development.md](docs/development.md),
+  including the open standalone-CLT `StateMacro` build gap. For proposed packages,
+  source moves and CI, read [ROADMAP.md](ROADMAP.md); those changes remain pending.
 - For testing or release claims, read [VALIDATION.md](VALIDATION.md) and its linked
   revision-bound evidence. Preserve historical failures and hardware acceptance gaps.
 - For host coordination terminology, use [GLOSSARY.md](GLOSSARY.md).
@@ -14,6 +15,9 @@
 Run from the repository root on Apple Silicon macOS with Command Line Tools:
 
 ```sh
+bash scripts/dev bootstrap    # verified, repository-local pinned developer tools
+bash scripts/dev lint         # non-mutating SwiftLint checks
+bash scripts/dev format-check # non-mutating SwiftFormat checks
 bash build.sh       # compile, bundle and verify signing; does not launch the app
 bash test.sh        # build, packaging/build fixtures, isolated tests, installer fixtures
 git diff --check

@@ -1,7 +1,7 @@
 # Development roadmap
 
-Proposed work, based on `2620a32` (2026-10-15). None of the architecture or tooling
-changes below are implemented by this document. Current behavior lives in
+Plan based on `2620a32` (2026-10-15), with implementation status updated below.
+Pinned developer tooling is available; architecture/source moves and CI remain proposed. Current behavior lives in
 [MODULES.md](MODULES.md); acceptance and failures live in [VALIDATION.md](VALIDATION.md).
 Keep the concise README and its install command. This plan promises no release date or tag.
 
@@ -10,7 +10,7 @@ Keep the concise README and its install command. This plan promises no release d
 | Priority | Work | Done when |
 | --- | --- | --- |
 | 0 | Finish release safety | Core fixes and watchdog/corrupt-journal regressions are reviewed and integrated through `dc96e9c`; complete native acceptance and record remaining hardware gaps at the tested revision. |
-| 1 | Documentation and developer baseline | Agree on compiler/tool versions, contributor commands, lint/format checks and the documentation map below. Verify links and script references. |
+| 1 | Documentation and developer baseline (partial) | Pinned SwiftLint/SwiftFormat, bootstrap, checks and developer guide are integrated; resolve compiler compatibility and finish the documentation map/moves below. |
 | 2 | One SwiftPM slice and source organization | Extract one existing policy/backend boundary with tests; preserve app/helper behavior, CLT source installation and signed-bundle packaging. Move files in reviewable batches. |
 | 3 | Built-in feature registration | Register multiple different features through a small host interface without changing persisted IDs, shared ownership or drain/veto behavior. |
 | 4 | Test migration and CI | Run named isolated suites and shell/process regressions as PR gates; prove clean and incremental builds agree. |
@@ -68,13 +68,18 @@ mode for release reproducibility; do not claim byte-identical output across SDKs
 
 ## Tooling, tests and CI
 
+- Implemented: [developer commands](docs/development.md), repository-local verified
+  SwiftLint **0.65.1** and SwiftFormat **0.63.1**, non-mutating checks, narrow lint
+  baseline, `.editorconfig` and offline tooling regressions. Standalone CLT 27.0's
+  `SwiftUIMacros.StateMacro` app-build failure remains under diagnosis, not a pass.
+  SwiftPM, source/document moves, suite migration and CI below remain pending.
 - Document a tested compiler/SDK baseline. Today's scripts use Swift **5 language
   mode**; that differs from a Swift **6 toolchain**. Swift Testing ships with Swift 6 /
   Xcode 16: adopt it only after verifying the chosen CLT toolchain supports it.
-- Pin development-only SwiftLint and SwiftFormat CLI versions with a version-checked
-  bootstrap and `.editorconfig`. Start with a small high-signal ruleset; exclude
-  vendor, build and generated files. Review any legacy baseline. CI checks must not
-  mutate files; keep formatter rewrites separate from architecture changes.
+- Preserve pinned development-only tool versions, version-checked bootstrap and
+  `.editorconfig`. Expand the narrow ruleset only in reviewed increments; exclude
+  vendor, build and generated files and review baseline exceptions. Future CI checks
+  must not mutate files; keep formatter rewrites separate from architecture changes.
 - Replace the monolithic test runner incrementally with named independent suites
   using Swift Testing where supported. Keep XCTest for UI/performance tests.
   Use `@MainActor` for AppKit tests, isolated preferences/temp directories and fake
@@ -94,7 +99,7 @@ mode for release reproducibility; do not claim byte-identical output across SDKs
 
 ## Documentation cleanup, after active validation settles
 
-Keep root `README.md`, `LICENSE` and a future concise `AGENTS.md` for commands and
+Keep root `README.md`, `LICENSE` and the concise `AGENTS.md` for commands and
 safety rules. Move guides in a docs-only change, linking the module guide from README.
 These are candidate destinations, not moves made here:
 

@@ -98,3 +98,13 @@ Hashes authenticate pinned upstream bytes, not a separate publisher signature.
 Keep style expansion and formatter rewrites separate from architecture changes.
 Project context: [modules](../MODULES.md), [glossary](../GLOSSARY.md),
 [roadmap](../ROADMAP.md).
+
+## Main integration verification · 2026-10-15
+
+At `228f367`, bootstrap verified both pinned archive hashes and tool versions;
+lint passed with zero violations across 36 files, format-check required no changes
+across 36 files, and offline tooling regressions passed. `Tests/packaging.sh` passed
+against the existing signed `dc96e9c` bundle, not a fresh tooling-revision build.
+Production sources/build scripts are unchanged. No full feature suite, app build,
+install/launch or live OS mutation was performed for this tooling integration;
+the standalone-CLT build gap above remains open.
