@@ -1,6 +1,8 @@
 # Fix macOS
 
-A source-built macOS menu-bar app with opt-in desktop tools.
+We love MacBooks. The hardware is hard to beat. But macOS gets in the way far too often.
+
+Fix macOS adds the controls, tweaks, and tools we wish were built in. One modular app: choose what you need and leave the rest off. Disabled modules stop their background work, so you’re not running ten features you don’t use.
 
 | Module | What you get |
 | --- | --- |
