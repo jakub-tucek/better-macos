@@ -62,6 +62,8 @@ private final class UIWindows: WindowPositionBackend {
 }
 
 func runUITests() throws {
+    runAudioPreferenceAdditionTests()
+    try renderReleaseUIFixtures()
     runAwakeCountdownTests()
     runAwakeQuickActionTests()
     runAwakeNativeEditorTests()
@@ -196,6 +198,112 @@ func runUITests() throws {
     runNativeUIInteractionTests()
     runSetupDesktopIntentTests()
     runSetupDesktopPermissionTests()
+}
+
+private func runAudioPreferenceAdditionTests() {
+    let input = AudioDevice(uid: "in", name: "Microphone", directions: [.input], bluetooth: false)
+    let output = AudioDevice(uid: "out", name: "Speaker", directions: [.output], bluetooth: false)
+    for direction in AudioDirection.allCases {
+        let own = direction == .input ? input : output
+        let other = direction == .input ? output : input
+        let empty = AudioPreferenceAdditions(devices: [], preferred: [], direction: direction)
+        expect(empty.devices.isEmpty && empty.emptyMessage == "No available devices.", "\(direction) empty inventory disables Add and explains no devices")
+        let wrong = AudioPreferenceAdditions(devices: [other], preferred: [], direction: direction)
+        expect(wrong.devices.isEmpty && wrong.emptyMessage == "No available devices.", "\(direction) excludes devices supporting only the opposite direction")
+        let full = AudioPreferenceAdditions(devices: [input, output], preferred: [own.uid, "offline"], direction: direction)
+        expect(full.devices.isEmpty && full.emptyMessage == "All available devices already added.", "\(direction) distinguishes exhausted candidates from empty discovery")
+        let available = AudioPreferenceAdditions(devices: [input, output], preferred: [other.uid, "offline"], direction: direction)
+        expect(available.devices == [own] && available.emptyMessage == nil, "\(direction) enables Add only for unsaved devices in that direction")
+    }
+}
+
+/// Early-exit synthetic route. Own windows, isolated defaults, no runtime host.
+func renderReleaseUIFixtures(directory: String? = nil) throws {
+    _ = NSApplication.shared
+    let root = directory.map { URL(fileURLWithPath: $0, isDirectory: true) }
+    if let root { try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true) }
+    let suite = "fix-mac-os.release-ui-fixtures.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    func settle(_ window: NSWindow) {
+        for _ in 0..<4 { window.contentView?.layoutSubtreeIfNeeded(); RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    }
+    func mount(_ view: AnyView, dark: Bool) -> NSWindow {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 680), styleMask: [.titled], backing: .buffered, defer: false)
+        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        window.contentView = NSHostingView(rootView: view)
+        settle(window); return window
+    }
+    func scroll(_ view: NSView) -> NSScrollView? {
+        if let value = view as? NSScrollView, value.hasVerticalScroller, value.frame.width > 300 { return value }
+        for child in view.subviews { if let found = scroll(child) { return found } }
+        return nil
+    }
+    func snapshot(_ window: NSWindow, _ name: String) throws {
+        guard let root else { return }
+        settle(window)
+        let view = window.contentView!
+        guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { throw CocoaError(.fileWriteUnknown) }
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        try bitmap.representation(using: .png, properties: [:])!.write(to: root.appendingPathComponent(name + ".png"))
+    }
+    var evidence: [String] = []
+    for dark in [false, true] {
+        let suffix = dark ? "dark" : "light"
+        let model = DashboardModel(); model.enabledModules = [.audio, .clipboard]; model.watchdogReady = true
+        model.settingsGroup = .sound
+        for scenario in ["empty", "added", "available"] {
+            model.audioDevices = scenario == "empty" ? [] : [AudioDevice(uid: "in", name: "Fixture microphone", directions: [.input], bluetooth: false), AudioDevice(uid: "out", name: "Fixture speakers", directions: [.output], bluetooth: false)]
+            model.audioPreferences = scenario == "added" ? [.input: ["in"], .output: ["out"]] : [:]
+            let window = mount(AnyView(SettingsView(model: model)), dark: dark)
+            try snapshot(window, "settings-audio-\(scenario)-\(suffix)")
+            if let scroller = scroll(window.contentView!), let document = scroller.documentView {
+                document.scroll(NSPoint(x: 0, y: max(0, document.bounds.height - scroller.contentSize.height)))
+                try snapshot(window, "settings-audio-\(scenario)-bottom-\(suffix)")
+            }
+            window.orderOut(nil)
+        }
+        model.settingsGroup = .clipboard
+        let clipboard = mount(AnyView(SettingsView(model: model)), dark: dark)
+        try snapshot(clipboard, "settings-clipboard-\(suffix)"); clipboard.orderOut(nil)
+        model.audioDevices = []
+        let draft = SetupDraft(current: model, defaults: defaults)
+        draft.selected = [.audio]; draft.syncSelection(); draft.step = .configure(.sound)
+        let wizard = mount(AnyView(SetupWizard(model: model, draft: draft, close: {})), dark: dark)
+        try snapshot(wizard, "wizard-audio-empty-\(suffix)"); wizard.orderOut(nil)
+
+        // Force long content on both sides of navigation so clamping cannot hide retention.
+        model.settingsGroup = .sound
+        model.audioPreferences = [.input: (0..<24).map { "fixture-input-\($0)" }, .output: (0..<24).map { "fixture-output-\($0)" }]
+        let settings = mount(AnyView(SettingsView(model: model)), dark: dark)
+        if let scroller = scroll(settings.contentView!) {
+            scroller.documentView?.scroll(NSPoint(x: 0, y: 450)); settle(settings)
+            let before = scroller.contentView.bounds.origin.y
+            model.settingsGroup = .quickActions
+            model.widgetLayout.entries = WidgetKind.allCases.map { WidgetEntry($0, expanded: true) }
+            model.settingsWidgetEditor.begin(model.widgetLayout)
+            settle(settings)
+            let after = scroll(settings.contentView!)?.contentView.bounds.origin.y ?? -1
+            evidence.append("Settings \(suffix): before=\(before), after=\(after)")
+            expect(before == 450 && after == 0, "native Settings \(suffix) category navigation resets a proven nonzero content offset")
+            try snapshot(settings, "settings-navigation-\(suffix)")
+        } else { expect(false, "native Settings content scroller exists") }
+        settings.orderOut(nil)
+        draft.selected = Set(AppModule.allCases); draft.syncSelection(); draft.step = .selection
+        draft.controls.audioPreferences = model.audioPreferences
+        let navigation = mount(AnyView(SetupWizard(model: model, draft: draft, close: {})), dark: dark)
+        if let scroller = scroll(navigation.contentView!) {
+            scroller.documentView?.scroll(NSPoint(x: 0, y: 450)); settle(navigation)
+            let before = scroller.contentView.bounds.origin.y
+            draft.step = .configure(.sound); settle(navigation)
+            let after = scroll(navigation.contentView!)?.contentView.bounds.origin.y ?? -1
+            evidence.append("Wizard \(suffix): before=\(before), after=\(after)")
+            expect(before == 450 && after == 0, "native wizard \(suffix) step navigation resets a proven nonzero content offset")
+            try snapshot(navigation, "wizard-navigation-\(suffix)")
+        } else { expect(false, "native wizard content scroller exists") }
+        navigation.orderOut(nil)
+    }
+    if let root { try evidence.joined(separator: "\n").write(to: root.appendingPathComponent("scroll-evidence.txt"), atomically: true, encoding: .utf8) }
 }
 
 private func runAwakeCountdownTests() {

@@ -11,6 +11,17 @@ struct AudioDevice: Equatable, Identifiable {
     var id: String { uid }
 }
 
+/// Presentation policy shared by Settings and the setup draft; never changes routes.
+struct AudioPreferenceAdditions {
+    let devices: [AudioDevice]
+    let emptyMessage: String?
+    init(devices inventory: [AudioDevice], preferred: [String], direction: AudioDirection) {
+        let available = inventory.filter { $0.directions.contains(direction) }
+        devices = available.filter { !preferred.contains($0.uid) }
+        emptyMessage = available.isEmpty ? "No available devices." : devices.isEmpty ? "All available devices already added." : nil
+    }
+}
+
 protocol AudioRoutingBackend {
     func devices() throws -> [AudioDevice]
     func current(_ direction: AudioDirection) throws -> String?

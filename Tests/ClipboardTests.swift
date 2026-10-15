@@ -22,6 +22,7 @@ private final class FailingClipboardArchive: ClipboardPersistence {
     var clearThenThrow = false
     var loads = 0
     var saves = 0
+    var clears = 0
     func load() throws -> [ClipboardEntry] {
         loads += 1
         if failLoad { throw CocoaError(.fileReadNoPermission) }
@@ -34,6 +35,7 @@ private final class FailingClipboardArchive: ClipboardPersistence {
         if commitThenThrow { throw CocoaError(.fileWriteNoPermission) }
     }
     func clear() throws {
+        clears += 1
         if failing || failClear { throw CocoaError(.fileWriteNoPermission) }
         entries = []
         if clearThenThrow { throw CocoaError(.fileWriteNoPermission) }
@@ -269,6 +271,7 @@ private func runClipboardStorageTransitionTests(date: Date) throws {
 }
 
 func runClipboardTests() throws {
+    try runClipboardClearConfirmationTests()
     runClipboardPresentationTests()
     runClipboardThumbnailTests()
     try runClipboardPanelTests()
@@ -744,4 +747,52 @@ func runClipboardTests() throws {
     try expandedRestart.configurePersistence(true, ageDays: 1, load: true)
     expect(expandedRestart.entries.count == 100, "worst-case valid text and image archive survives restart")
     try expandedRestart.clear()
+}
+
+private func runClipboardClearConfirmationTests() throws {
+    let suite = "fix-mac-os.clear-confirmation.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let board = FakeClipboard(), archive = FailingClipboardArchive()
+    let history = ClipboardHistory(board: board, archive: archive, source: { "fixture" })
+    let module = ClipboardModule(defaults: defaults, history: history)
+    let model = DashboardModel(), admission = HostTransactions()
+    let host = AppDelegate(clipboard: module, model: model, preferences: defaults, transactions: admission)
+    history.setRecording(true)
+    board.put("Pinned fixture"); history.poll(); history.pin(history.entries[0].id)
+    board.put("Unpinned fixture"); history.poll()
+    try history.configurePersistence(true, ageDays: 7)
+    let entries = history.entries, saved = archive.entries, clipboard = board.value, reads = board.reads
+    let saves = archive.saves, clears = archive.clears
+    var response: ((Bool) -> Void)?
+    var prompts = 0, changes = 0, errors = 0
+    module.confirmHistoryClear = { _, completion in prompts += 1; response = completion }
+    module.onChange = { changes += 1 }; module.onError = { _ in errors += 1 }
+    model.onClipboardClear()
+    expect(prompts == 1 && history.entries == entries && archive.entries == saved, "Settings Clear asks before changing memory, pins or fake disk")
+    response?(false)
+    expect(history.entries == entries && archive.entries == saved && archive.saves == saves && archive.clears == clears && changes == 0 && errors == 0 && board.value == clipboard && board.reads == reads,
+           "Settings Clear Cancel has zero history, pin, disk, clipboard or publication effects")
+    let panel = module.makePanel()
+    defer { panel.orderOut(nil) }
+    let clearButton = panel.contentView!.subviews.compactMap { $0 as? NSButton }.first { $0.title == "Clear history…" }!
+    clearButton.performClick(nil)
+    expect(prompts == 2, "native history Clear uses the same confirmation policy as Settings")
+    response?(false)
+    expect(history.entries == entries && archive.entries == saved && archive.clears == clears && changes == 0, "native history Clear Cancel also preserves pins and fake disk")
+    model.onClipboardClear(); response?(true)
+    expect(history.entries.isEmpty && archive.entries.isEmpty && changes > 0 && board.value == clipboard && board.reads == reads,
+           "Settings Clear confirmation removes history including pins and fake disk without touching clipboard")
+    board.put("Retained pin"); history.poll(); history.pin(history.entries[0].id)
+    let retained = history.entries, retainedDisk = archive.entries
+    model.onClipboardClear()
+    _ = admission.requestQuit(.init(isBusy: { false }, prepareMouse: { true }, quiesce: {}, prepareClipboard: { true }, needsDisplayRecovery: { false }, restoreDisplays: { _ in }, suspendSpaces: nil, resumeClipboard: {}, restoreSpacesChoice: {}, didReopen: {}, didVeto: { _ in }), reply: { _ in })
+    let before = changes
+    response?(true)
+    expect(!admission.acceptsActions && history.entries == retained && archive.entries == retainedDisk && changes == before,
+           "Settings Clear rechecks HostTransactions admission after confirmation and preserves memory, pins and fake disk")
+    let beforePrompts = prompts
+    model.onClipboardClear(); module.clear()
+    expect(prompts == beforePrompts && history.entries == retained && archive.entries == retainedDisk, "closed admission blocks Settings and native Clear before prompting")
+    withExtendedLifetime(host) {}
 }

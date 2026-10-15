@@ -485,6 +485,7 @@ struct DashboardView: View {
     private func audioDirectionControls(_ direction: AudioDirection) -> some View {
         let devices = model.audioDevices.filter { $0.directions.contains(direction) }
         let preferred = model.audioPreferences[direction] ?? []
+        let additions = AudioPreferenceAdditions(devices: model.audioDevices, preferred: preferred, direction: direction)
         return VStack(alignment: .leading, spacing: 8) {
             Text(direction == .input ? "Microphone" : "Output").font(.headline)
             if !isSetup { Picker("Current", selection: Binding(get: { model.audioRoutes[direction] ?? "" }, set: { model.onAudioSelect($0, direction) })) {
@@ -510,9 +511,13 @@ struct DashboardView: View {
                 }.font(.caption)
             }
             Menu("Add preferred device") {
-                ForEach(devices.filter { !preferred.contains($0.uid) }) { device in
+                ForEach(additions.devices) { device in
                     Button("\(device.name) · \(device.uid)") { model.onAudioPreferences(preferred + [device.uid], direction) }
                 }
+            }.disabled(additions.devices.isEmpty)
+            if let message = additions.emptyMessage {
+                Text(message).font(.caption).foregroundStyle(.secondary)
+                if draftMode { Text("Use Refresh available devices to check again.").font(.caption).foregroundStyle(.secondary) }
             }
             Picker("Fallback", selection: Binding(get: { model.audioFallbacks[direction] ?? "" }, set: { model.onAudioFallback($0, direction) })) {
                 Text("Keep current route").tag("")
@@ -534,9 +539,9 @@ struct DashboardView: View {
             Text("\(model.clipboardCount) entries · ⌘⇧V to search").font(.caption)
             HStack {
                 Button("Open history", action: model.onClipboardOpen)
-                Button("Clear history", role: .destructive, action: model.onClipboardClear)
+                Button("Clear history…", role: .destructive, action: model.onClipboardClear)
             }
-            Text("Starts paused each launch. Selecting an entry copies it; paste normally in your app.").font(.caption).foregroundStyle(.secondary)
+            Text("Starts paused each launch. Select an entry, then press Return or click Copy. Copying never pastes.").font(.caption).foregroundStyle(.secondary)
             } else { Text("Selecting Clipboard does not start recording or enable disk history. Start recording explicitly from the widget or Clipboard settings after Finish.").font(.caption) }
             if model.clipboardStoragePending {
                 Text("Disk cleanup/save pending — retrying. Old disk entries may remain until storage recovers; keep the module enabled.").font(.caption).foregroundStyle(.orange)

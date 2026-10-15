@@ -698,7 +698,7 @@ struct WindowRestoreWidget: View {
                 Text("Chosen layout unavailable. Your target is preserved; choose another in Edit.").font(.caption)
             } else if expanded {
                 ForEach(module.layouts) { layout in
-                    HStack { Text(layout.name); Spacer(); Button("Restore") { module.restore(layout.id) }.disabled(!module.canRestore(layout.id)) }
+                    HStack { Text(layout.name); Spacer(); Button("Restore") { module.restore(layout.id) }.disabled(!module.canRestore(layout.id)).accessibilityLabel("Restore \(layout.name)") }
                     if !module.canRestore(layout.id) { Text("Requires access and the saved display set, settled and confirmed.").font(.caption).foregroundStyle(.secondary) }
                 }
             } else {
@@ -744,7 +744,7 @@ struct SettingsView: View {
                         ForEach(features, id: \.self) { feature in DashboardView(model: model, feature: feature).id(feature) }
                     }
                 }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
-            }.frame(minWidth: 440, idealWidth: 620)
+            }.id(model.settingsGroup).frame(minWidth: 440, idealWidth: 620)
         }.frame(minWidth: 680, minHeight: 480)
             .background(Color(nsColor: .windowBackgroundColor))
     }

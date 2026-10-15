@@ -141,7 +141,7 @@ struct SetupCheckpoint: Codable {
 }
 
 final class SetupDraft: ObservableObject {
-    enum Step: Equatable { case welcome, selection, configure(SettingsGroup), permissions, widgets, review, results }
+    enum Step: Hashable { case welcome, selection, configure(SettingsGroup), permissions, widgets, review, results }
     @Published var selected: Set<AppModule>
     @Published var step: Step = .welcome
     @Published var widgets: WidgetLayout
@@ -321,9 +321,7 @@ struct SetupWizard: View {
         VStack(spacing: 0) {
             HStack { Text(title).font(.title2); Spacer(); if draft.applying { ProgressView().controlSize(.small) } }.padding(20)
             Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) { content }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
-            }.disabled(draft.applying)
+            stepContent
             Divider()
             HStack {
                 if draft.step != .results {
@@ -355,6 +353,11 @@ struct SetupWizard: View {
                 }
                 Button("Back to review", role: .cancel) {}
             } message: { Text("Only Finish applies feature and configuration changes. Results are reported independently; failures do not roll back successful features. See the review for side effects.") }
+    }
+    private var stepContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) { content }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
+        }.id(draft.step).disabled(draft.applying)
     }
     private var title: String {
         switch draft.step {

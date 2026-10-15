@@ -254,6 +254,15 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
     private let copyButton = NSButton(title: "Copy", target: nil, action: nil)
     private let clearButton = NSButton(title: "Clear history…", target: nil, action: nil)
     var acceptsActions: () -> Bool = { true }
+    var confirmHistoryClear: (NSWindow?, @escaping (Bool) -> Void) -> Void = { window, completion in
+        let alert = NSAlert()
+        alert.messageText = "Clear all clipboard history?"
+        alert.informativeText = "This removes all entries, including pins, from memory and saved history. Your current clipboard is not changed."
+        alert.addButton(withTitle: "Clear history"); alert.addButton(withTitle: "Cancel")
+        if let window {
+            alert.beginSheetModal(for: window) { completion($0 == .alertFirstButtonReturn) }
+        } else { completion(alert.runModal() == .alertFirstButtonReturn) }
+    }
     var onChange: () -> Void = {}
     var onError: (String) -> Void = { _ in }
     // The switch reflects user intent even while startup recovery is pending.
@@ -339,7 +348,11 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
     }
     func clear() {
         guard acceptsActions() else { return }
-        do { try history.clear() } catch { onError("Clipboard disk history could not be removed. Retry Clear.") }
+        confirmHistoryClear(NSApp.keyWindow ?? panel) { [weak self] confirmed in
+            // Admission can change while the confirmation is open (for example, Quit).
+            guard confirmed, let self, self.acceptsActions() else { return }
+            do { try self.history.clear() } catch { self.onError("Clipboard disk history could not be removed. Retry Clear.") }
+        }
     }
     func show() {
         guard acceptsActions() else { return }
@@ -468,13 +481,6 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
         return acceptsActions() && selected != nil
     }
     @objc private func confirmClear() {
-        guard acceptsActions(), let panel else { return }
-        let alert = NSAlert()
-        alert.messageText = "Clear all clipboard history?"
-        alert.informativeText = "This removes all entries, including pins, from memory and saved history. Your current clipboard is not changed."
-        alert.addButton(withTitle: "Clear history"); alert.addButton(withTitle: "Cancel")
-        alert.beginSheetModal(for: panel) { [weak self] response in
-            if response == .alertFirstButtonReturn { self?.clear() }
-        }
+        clear()
     }
 }
