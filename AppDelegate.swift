@@ -1,9 +1,10 @@
 import AppKit
 import SwiftUI
 import ServiceManagement
+import CoreBluetooth
 import os
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var controller: DisplayController?
     private var bluetooth: BluetoothModule?
     private var audio: AudioModule?
@@ -26,9 +27,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var mouseLifecycle = injectedMouseLifecycle ?? MouseLifecycle(settings: modules)
     private let sourceUpdater = SourceUpdater()
     private let animationQueue = DispatchQueue(label: "fix-mac-os.animation-preferences")
-    private let modules = ModuleSettings()
+    private let modules: ModuleSettings
+    private let preferences: UserDefaults
     private let model: DashboardModel
     private let popover = NSPopover()
+    private var settingsWindow: NSWindow?
+    private var setupWindow: NSWindow?
+    private var activeSetupDraft: SetupDraft?
+    private let uiStore: UISettingsStore
+    private var setupPermissionManager: CBCentralManager?
     private let safety = SafetySupervisor()
     private let logger = Logger(subsystem: "io.github.jakub-tucek.mac-utils", category: "Safety")
     private lazy var displayRefresh = DisplayRefreshGate { [weak self] in self?.refreshDisplaySnapshot() }
@@ -49,9 +56,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let transactions = HostTransactions()
     private let terminationReply: (NSApplication, Bool) -> Void
 
-     init(commandRunner: CommandRunning = CommandRunner(), spaces: SpacesModule? = nil, windowPositions: WindowPositions? = nil, clipboard: ClipboardModule? = nil, mouseLifecycle: MouseLifecycle? = nil, model: DashboardModel = DashboardModel(),
+     init(commandRunner: CommandRunning = CommandRunner(), spaces: SpacesModule? = nil, windowPositions: WindowPositions? = nil, clipboard: ClipboardModule? = nil, mouseLifecycle: MouseLifecycle? = nil, model: DashboardModel = DashboardModel(), preferences: UserDefaults = .standard,
          terminationReply: @escaping (NSApplication, Bool) -> Void = { $0.reply(toApplicationShouldTerminate: $1) }) {
-        self.commandRunner = commandRunner
+         self.commandRunner = commandRunner
+         self.preferences = preferences
+         self.modules = ModuleSettings(defaults: preferences)
+         self.uiStore = UISettingsStore(defaults: preferences)
         self.model = model
         self.spaces = spaces
         self.windowPositions = windowPositions
@@ -59,10 +69,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.injectedMouseLifecycle = mouseLifecycle
         self.terminationReply = terminationReply
         super.init()
-        configureActions()
+         configureActions()
+         windowPositions?.acceptsActions = { [weak self] in self?.transactions.acceptsActions == true }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let legacyInstall = !(preferences.persistentDomain(forName: "local.jakub.monitor-toggle") ?? [:]).isEmpty
+        let existingInstall = uiStore.isExistingInstall || legacyInstall
+        model.widgetLayout = uiStore.loadLayout(modules: modules.enabled, existing: existingInstall)
+        if !existingInstall {
+            // A fresh install is inert until explicit Finish. Legacy installs keep every choice.
+            for module in AppModule.allCases { modules.set(module, enabled: false) }
+        }
         if let index = CommandLine.arguments.firstIndex(of: "--test-connect-in-gui"), index + 1 < CommandLine.arguments.count {
             guiTestTarget = CommandLine.arguments[index + 1]
         }
@@ -92,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             if model.watchdogStatus != status { logger.notice("Watchdog status: \(status, privacy: .public)") }
             model.watchdogStatus = status
+            model.watchdogReady = safety.isReady
             spaces?.isAvailable = safety.isReady
             if !safety.isReady { spaces?.suspend() }
             refreshPreferences()
@@ -113,7 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.behavior = .transient
         popover.animates = false
         popover.contentSize = NSSize(width: 430, height: 580)
-        popover.contentViewController = NSHostingController(rootView: DashboardView(model: model))
+        popover.contentViewController = NSHostingController(rootView: QuickActionsView(model: model))
         updateModules()
         if animations.recoveryRequired {
             setAnimations(false, recoverOnly: true)
@@ -127,8 +146,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async { [weak self] in self?.bluetooth?.requestBluetoothAccess() }
         }
         // Saved gesture activation waits for the watchdog and settled displays.
-        model.navigation = DashboardNavigation.launch(arguments: CommandLine.arguments)
-        if CommandLine.arguments.contains("--show-dashboard") {
+        switch UILaunchRoute.launch(arguments: CommandLine.arguments) {
+        case .settings(let group):
+            DispatchQueue.main.async { [weak self] in self?.showSettings(group) }
+        case .widget(let kind):
+            model.launchWidget = kind
+            DispatchQueue.main.async { [weak self] in self?.showDashboard() }
+        case .home:
+            if !existingInstall { DispatchQueue.main.async { [weak self] in self?.showSetup() } }
+        }
+        if CommandLine.arguments.contains("--show-dashboard"), !DashboardNavigation.launch(arguments: CommandLine.arguments).isSetup {
             DispatchQueue.main.async { [weak self] in self?.showDashboard() }
         }
     }
@@ -138,6 +165,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var actionHost: AppDelegate? { transactions.acceptsActions ? self : nil }
 
     private func configureActions() {
+        model.onOpenSettings = { [weak self] group in self?.actionHost?.showSettings(group) }
+        model.onRunSetup = { [weak self] in self?.actionHost?.showSetup() }
+        model.onSaveWidgets = { [weak self] layout in
+            guard let self, transactions.acceptsActions else { return }
+            var value = layout; value.normalize(); uiStore.save(value); model.widgetLayout = value
+        }
+        model.onSkipSetup = { [weak self] in
+            guard let self, transactions.acceptsActions else { return }
+            uiStore.complete(); activeSetupDraft?.discardCheckpoint(); SetupDraft.clearCheckpoint(defaults: preferences); setupWindow?.close(); showDashboard()
+        }
+        model.onFinishSetup = { [weak self] draft, completion in
+            guard let self, transactions.acceptsActions else { completion(["Setup was not applied: the app is shutting down."]); return }
+            applySetup(draft, completion: completion)
+        }
+        model.onAccessibilitySettings = { [weak self] in
+            guard self?.actionHost != nil,
+                  let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else { return }
+            NSWorkspace.shared.open(url)
+        }
         model.onAudioSelect = { [weak self] uid, direction in self?.actionHost?.audio?.select(uid, direction: direction) }
         model.onAudioAutomatic = { [weak self] in self?.actionHost?.audio?.automatic = $0 }
         model.onAudioResume = { [weak self] in self?.actionHost?.audio?.resume() }
@@ -272,47 +318,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onQuit = { NSApp.terminate(nil) }
     }
 
-    private func setModule(_ module: AppModule, enabled: Bool) {
-        guard transactions.acceptsActions, !model.stoppingModules.contains(module) else { return }
+    private func setModule(_ module: AppModule, enabled: Bool, completion: @escaping (Bool) -> Void = { _ in }) {
+        guard transactions.acceptsActions, !model.stoppingModules.contains(module) else { completion(false); return }
         if module == .clipboard && !enabled && clipboard?.history.flushPendingStorage() == false {
             model.errorMessage = "Clipboard disk cleanup is pending. Retry after storage becomes available."
+            completion(false)
             return
         }
         if module == .mouse {
-            guard mouseLifecycle.setEnabled(enabled) else { return }
+            guard mouseLifecycle.setEnabled(enabled) else { completion(false); return }
             updateModules()
+            completion(true)
             return
         }
         if module == .keepAwake && !enabled {
-            do { try keepAwake?.deactivate() } catch { keepAwake?.activate(); showError(error); return }
+            do { try keepAwake?.deactivate() } catch { keepAwake?.activate(); showError(error); completion(false); return }
         }
         if module == .menuBar && !enabled {
             do { try menuBarSpacing.restore(preserveChoice: true) }
-            catch { refreshMenuBar(); showError(error); return }
+            catch { refreshMenuBar(); showError(error); completion(false); return }
         }
         if module == .spaces {
-            guard !model.animationsBusy else { return }
+            guard !model.animationsBusy else { completion(false); return }
+            if !animations.enabled && !animations.recoveryRequired {
+                modules.set(module, enabled: enabled); updateModules(); completion(true); return
+            }
             setAnimations(enabled && animations.enabled, preserveChoice: true) { [weak self] in
                 guard let self else { return }
                 modules.set(module, enabled: enabled)
                 updateModules()
-            }
+            } resultCompletion: { completion($0) }
             return
         }
         if module == .monitors || module == .arrangement {
-            guard !recovering else { showError(ToggleError(message: "Wait for the current display operation to finish.")); return }
+            guard !recovering else { showError(ToggleError(message: "Wait for the current display operation to finish.")); completion(false); return }
             if !enabled && (model.disabledMonitorCount > 0 || model.pendingArrangement || rollbackUUID != nil) {
                 model.stoppingModules.insert(module)
                 restoreAll { [weak self] restored in
                     guard let self else { return }
                     model.stoppingModules.remove(module)
                     if restored { modules.set(module, enabled: false); updateModules() }
+                    completion(restored)
                 }
                 return
             }
         }
         modules.set(module, enabled: enabled)
         updateModules()
+        completion(true)
     }
 
     private func performKeepAwake(_ action: (KeepAwakeModule) throws -> Void) {
@@ -356,6 +409,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if modules.enabled.contains(.windows) {
             if windowPositions == nil {
                 let module = WindowPositions()
+                module.acceptsActions = { [weak self] in self?.transactions.acceptsActions == true }
                 module.onWake = { [weak self] in self?.displayRefresh.requestRefresh() }
                 module.start()
                 windowPositions = module
@@ -544,7 +598,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleDashboard() {
         if popover.isShown { popover.performClose(nil) }
-        else { refreshPreferences(); showDashboard(); displayRefresh.requestRefresh() }
+        else { model.launchWidget = nil; refreshPreferences(); showDashboard(); displayRefresh.requestRefresh() }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -555,9 +609,238 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showDashboard() {
+        if model.navigation.isSetup {
+            let group = model.navigation.feature.map(SettingsGroup.forFeature)
+            model.navigation = DashboardNavigation()
+            showSettings(group); return
+        }
         guard let button = item.button, !popover.isShown else { return }
+        model.popupHeight = min(650, max(260, (button.window?.screen?.visibleFrame.height ?? 700) - 80))
+        popover.contentSize = NSSize(width: 430, height: model.popupHeight)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
+    }
+
+    private func showSettings(_ group: SettingsGroup? = nil) {
+        guard transactions.acceptsActions else { return }
+        if let group { model.settingsGroup = group }
+        popover.performClose(nil)
+        if settingsWindow == nil {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 680), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+            window.title = "Fix macOS Settings"
+            window.isReleasedWhenClosed = false
+            window.contentViewController = NSHostingController(rootView: SettingsView(model: model))
+            window.minSize = NSSize(width: 680, height: 480)
+            window.center(); settingsWindow = window
+        }
+        settingsWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func showSetup() {
+        guard transactions.acceptsActions else { return }
+        popover.performClose(nil)
+        if let setupWindow, setupWindow.isVisible { setupWindow.makeKeyAndOrderFront(nil); return }
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 700), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        window.title = "Set up Fix macOS"
+        window.isReleasedWhenClosed = false
+        let draft = SetupDraft(current: model, defaults: preferences)
+        activeSetupDraft = draft; window.delegate = self
+        configureSetup(draft)
+        window.contentViewController = NSHostingController(rootView: SetupWizard(model: model, draft: draft, close: { [weak window] in window?.close() }))
+        window.minSize = NSSize(width: 640, height: 480)
+        window.center(); setupWindow = window
+        window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard sender === setupWindow else { return true }
+        guard activeSetupDraft?.applying != true else { return false }
+        activeSetupDraft?.discardCheckpoint()
+        return true
+    }
+
+    private func configureSetup(_ draft: SetupDraft) {
+        draft.onRetryPermissions = { [weak self, weak draft] in
+            guard self?.actionHost != nil, let draft else { return }
+            draft.accessibilityGranted = AXIsProcessTrusted()
+            draft.bluetoothGranted = CBManager.authorization == .allowedAlways
+        }
+        draft.onBluetoothPermission = { [weak self] in
+            guard let self, transactions.acceptsActions else { return }
+            if CBManager.authorization == .notDetermined {
+                setupPermissionManager = CBCentralManager(delegate: nil, queue: .main, options: [CBCentralManagerOptionShowPowerAlertKey: false])
+            } else if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Bluetooth") { NSWorkspace.shared.open(url) }
+        }
+        draft.controls.onKeepAwakeAddApp = { [weak self, weak draft] in
+            guard self?.actionHost != nil else { return }
+            let panel = NSOpenPanel(); panel.allowedContentTypes = [.applicationBundle]
+            panel.allowsMultipleSelection = true; panel.canChooseDirectories = false
+            guard panel.runModal() == .OK, self?.actionHost != nil else { return }
+            for url in panel.urls {
+                if let id = Bundle(url: url)?.bundleIdentifier { draft?.controls.keepAwakeApps[id] = url.deletingPathExtension().lastPathComponent }
+            }
+        }
+        draft.onDiscover = { [weak self] draft in
+            guard let self, transactions.acceptsActions else { return }
+            draft.discoveryStatus = "Reading available devices…"
+            let readAudio = draft.selected.contains(.audio)
+            let readBluetooth = draft.selected.contains(.bluetooth) && CBManager.authorization == .allowedAlways
+            recoveryQueue.async { [weak self, weak draft] in
+                guard let self else { return }
+                var messages: [String] = []
+                var audioDevices: [AudioDevice]?
+                var devices: [BluetoothDevice]?
+                if readAudio {
+                    do { audioDevices = try CoreAudioBackend().devices() } catch { messages.append(error.localizedDescription) }
+                }
+                if readBluetooth, let path = CommandRunner.find("blueutil") {
+                    do { devices = try BluetoothBackend(runner: commandRunner, blueutil: path, audioTool: nil).devices() }
+                    catch { messages.append(error.localizedDescription) }
+                } else if !readBluetooth { messages.append("Bluetooth discovery needs access; request it in the permissions step, then return here.") }
+                DispatchQueue.main.async { [weak self, weak draft] in
+                    guard self?.actionHost != nil, let draft else { return }
+                    if let audioDevices { draft.controls.audioDevices = audioDevices }
+                    if let devices { draft.controls.devices = devices }
+                    draft.discoveryStatus = messages.isEmpty ? "Available devices refreshed; no routes or connections changed." : messages.joined(separator: "\n")
+                }
+            }
+        }
+        draft.onRetryPermissions()
+    }
+
+    /// Sequential, per-feature application keeps asynchronous recovery inside the
+    /// existing host operations. Every continuation rechecks quit admission.
+    private func applySetup(_ draft: SetupDraft, completion: @escaping ([String]) -> Void) {
+        let configuration = draft.configuration
+        let selected = draft.selected
+        let requestedWidgets = draft.widgets
+        var results: [String] = []
+        func advance(_ index: Int) {
+            guard transactions.acceptsActions else {
+                completion(results + ["Remaining setup changes were not applied: shutdown is in progress. Successful changes above remain applied."]); return
+            }
+            guard index < AppModule.allCases.count else {
+                model.onSaveWidgets(requestedWidgets)
+                uiStore.complete(); draft.discardCheckpoint()
+                completion(results + draft.unresolvedPermissions + ["Quick-action layout saved. No timed session, clipboard capture, window capture, or pointer Apply was started."])
+                return
+            }
+            let module = AppModule.allCases[index]
+            let enabled = selected.contains(module)
+            func configure(_ success: Bool) {
+                guard transactions.acceptsActions else { completion(results + ["Remaining setup changes were not applied during shutdown."]); return }
+                guard success else {
+                    results.append("\(module.title): not applied. \(model.errorMessage ?? "Busy or recovery is still pending; retry in Settings.")")
+                    advance(index + 1); return
+                }
+                guard enabled else { results.append("\(module.title): disabled."); advance(index + 1); return }
+                applySetupConfiguration(configuration, module: module) { success, detail in
+                    results.append("\(module.title): \(success ? "applied" : "needs attention"). \(detail)")
+                    advance(index + 1)
+                }
+            }
+            if modules.enabled.contains(module) == enabled { configure(true) }
+            else { setModule(module, enabled: enabled, completion: configure) }
+        }
+        advance(0)
+    }
+
+    private func applySetupConfiguration(_ value: SetupConfiguration, module: AppModule, completion: @escaping (Bool, String) -> Void) {
+        guard transactions.acceptsActions else { completion(false, "Shutdown in progress."); return }
+        let missing: Bool
+        switch module {
+        case .audio: missing = audio == nil
+        case .bluetooth: missing = bluetooth == nil
+        case .quitGuard: missing = quitGuard == nil
+        case .keepAwake: missing = keepAwake == nil
+        case .clipboard: missing = clipboard == nil
+        case .windows: missing = windowPositions == nil
+        default: missing = false
+        }
+        guard !missing else { completion(false, "Feature owner is unavailable. Retry from its Settings group."); return }
+        let old = SetupConfiguration(model)
+        let errorBefore = model.errorMessage
+        var note = ""
+        switch module {
+        case .monitors:
+            if value.confirmDisplays != old.confirmDisplays { model.onMonitorDisableModeChanged(value.confirmDisplays) }
+        case .arrangement:
+            if value.matchEdges != old.matchEdges { model.onMatchScreenEdgesChanged(value.matchEdges) }
+            if value.matchEdges && !AXIsProcessTrusted() { note = "Screen edges await Accessibility access and stable displays." }
+        case .audio:
+            if value.outputPreferences != old.outputPreferences { model.onAudioPreferences(value.outputPreferences, .output) }
+            if value.inputPreferences != old.inputPreferences { model.onAudioPreferences(value.inputPreferences, .input) }
+            if value.outputFallback != old.outputFallback { model.onAudioFallback(value.outputFallback, .output) }
+            if value.inputFallback != old.inputFallback { model.onAudioFallback(value.inputFallback, .input) }
+            if value.audioAutomatic != old.audioAutomatic { model.onAudioAutomatic(value.audioAutomatic) }
+            note = model.audioStatus
+        case .bluetooth:
+            // Pause automatic reconciliation while replacing its inputs.
+            let changed = value.bluetoothTargets != old.bluetoothTargets || value.protectedTargets != old.protectedTargets || value.protectAudio != old.protectAudio || value.switchAudio != old.switchAudio
+            if changed && old.bluetoothAutomatic { model.onAutomaticReconnectChanged(false) }
+            for address in old.bluetoothTargets.union(value.bluetoothTargets) where old.bluetoothTargets.contains(address) != value.bluetoothTargets.contains(address) {
+                model.onAutoDeviceChanged(address, value.bluetoothTargets.contains(address))
+            }
+            for address in old.protectedTargets.union(value.protectedTargets) where old.protectedTargets.contains(address) != value.protectedTargets.contains(address) {
+                model.onProtectedDeviceChanged(address, value.protectedTargets.contains(address))
+            }
+            if value.protectAudio != old.protectAudio { model.onProtectAudioChanged(value.protectAudio) }
+            if value.switchAudio != old.switchAudio { model.onSwitchAudioChanged(value.switchAudio) }
+            if changed || value.bluetoothAutomatic != old.bluetoothAutomatic { model.onAutomaticReconnectChanged(value.bluetoothAutomatic) }
+            if CBManager.authorization != .allowedAlways { note = "Bluetooth access unresolved. Open Sound & connections to grant access and retry." }
+        case .quitGuard:
+            if value.quitDuration != old.quitDuration { model.onQuitGuardDurationChanged(value.quitDuration) }
+            if value.quitGuard != old.quitGuard { model.onQuitGuardChanged(value.quitGuard) }
+            if value.quitGuard && !model.quitGuardActive { note = "Hold to quit is inactive; check Accessibility and Retry in Input settings." }
+        case .keepAwake:
+            if value.awakeMinutes != old.awakeMinutes { model.onKeepAwakeMinutesChanged(value.awakeMinutes) }
+            if value.displayAwake != old.displayAwake { model.onKeepDisplayAwakeChanged(value.displayAwake) }
+            if let keepAwake {
+                for id in Set(old.awakeApps.keys).union(value.awakeApps.keys) where old.awakeApps[id] != value.awakeApps[id] {
+                    do { try keepAwake.setApp(id, name: value.awakeApps[id] ?? id, selected: value.awakeApps[id] != nil) }
+                    catch { showError(error) }
+                }
+                refreshKeepAwake()
+            }
+            note = "Saved app rules may be active. No timed session started."
+        case .clipboard:
+            if value.clipboardDays != old.clipboardDays { model.onClipboardDays(value.clipboardDays) }
+            if value.clipboardExclusions != old.clipboardExclusions { model.onClipboardExclusions(value.clipboardExclusions) }
+            if value.clipboardPersistence != old.clipboardPersistence { model.onClipboardPersistence(value.clipboardPersistence) }
+            if model.clipboardStoragePending { completion(false, "Disk cleanup/save is pending; keep Clipboard enabled and retry in Settings."); return }
+            note = "Recording was not started or changed by setup."
+        case .mouse:
+            model.mouseAcceleration = value.mouseAcceleration; model.mouseTracking = value.mouseTracking
+            note = "No pointer settings applied. Use explicit Apply in Input settings."
+        case .windows:
+            if let windowPositions {
+                if value.windowsPaused != old.windowsPaused { windowPositions.paused = value.windowsPaused }
+                if value.windowsSelected != old.windowsSelected { windowPositions.selected = value.windowsSelected }
+                if value.windowsExclusions != old.windowsExclusions { windowPositions.exclusions = value.windowsExclusions }
+                if value.windowsAutomatic != old.windowsAutomatic { windowPositions.automatic = value.windowsAutomatic }
+                note = windowPositions.permitted ? "No windows captured or moved." : "Accessibility is required before saving or restoring windows."
+            }
+        case .menuBar:
+            if value.compactMenu != old.compactMenu { model.onCompactMenuBarChanged(value.compactMenu) }
+            if value.hideMenu != old.hideMenu { model.onMenuBarHidingChanged(value.hideMenu) }
+        case .spaces:
+            func finishAnimation(_ success: Bool) {
+                guard success, transactions.acceptsActions else { completion(false, model.errorMessage ?? "Animation change interrupted or unavailable."); return }
+                if value.speed != old.speed { model.onSpeedChanged(TransitionSpeed.from(rawValue: value.speed)) }
+                if value.spaces != model.spacesEnabled { model.onSpacesChanged(value.spaces) }
+                completion(model.animationsEnabled == value.animations && (!value.spaces || model.spacesEnabled), model.errorMessage ?? "Desktop switching may await Accessibility or stable displays.")
+            }
+            if value.animations != old.animations { setAnimations(value.animations, resultCompletion: finishAnimation) }
+            else { finishAnimation(true) }
+            return
+        }
+        let newError = model.errorMessage != errorBefore ? model.errorMessage : nil
+        let permissionPending = (module == .bluetooth && CBManager.authorization != .allowedAlways) ||
+            (module == .quitGuard && value.quitGuard && !model.quitGuardActive) ||
+            (module == .arrangement && value.matchEdges && !AXIsProcessTrusted()) ||
+            (module == .windows && windowPositions?.permitted != true)
+        completion(newError == nil && !permissionPending, newError ?? note)
     }
 
     private func refreshDisplaySnapshot() {
@@ -698,8 +981,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                    settled: !state.displaySettling && state.layoutFresh && !state.displayOperation)
     }
 
-    private func setAnimations(_ enabled: Bool, preserveChoice: Bool = false, recoverOnly: Bool = false, completion: (() -> Void)? = nil) {
-        guard transactions.acceptsActions, !model.animationsBusy else { return }
+    private func setAnimations(_ enabled: Bool, preserveChoice: Bool = false, recoverOnly: Bool = false, completion: (() -> Void)? = nil, resultCompletion: ((Bool) -> Void)? = nil) {
+        guard transactions.acceptsActions, !model.animationsBusy else { resultCompletion?(false); return }
         model.animationsBusy = true
         afterGestureDrain { [weak self] in
             guard let self else { return }
@@ -719,12 +1002,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             spaces?.requestRestore(enabled: UserDefaults.standard.object(forKey: "spaces.enabled") == nil || spaces?.savedEnabled == true)
                         }
                         refreshPreferences()
+                        resultCompletion?(true)
                     }
                 } catch {
                     DispatchQueue.main.async { [weak self] in
                         self?.model.animationsBusy = false
                         self?.showError(error)
                         self?.refreshPreferences()
+                        resultCompletion?(false)
                     }
                 }
             }

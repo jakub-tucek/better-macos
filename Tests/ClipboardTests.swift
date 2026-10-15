@@ -513,7 +513,7 @@ func runClipboardTests() throws {
     quitSpaces.onChange = { spaceNotifications += 1 }
     var quitReply: Bool?
     let quitModel = DashboardModel()
-    let quitHost = AppDelegate(spaces: quitSpaces, clipboard: quitModule, mouseLifecycle: mouseLifecycle, model: quitModel, terminationReply: { _, approved in quitReply = approved })
+    let quitHost = AppDelegate(spaces: quitSpaces, clipboard: quitModule, mouseLifecycle: mouseLifecycle, model: quitModel, preferences: defaults, terminationReply: { _, approved in quitReply = approved })
     mouseLifecycle.apply(acceleration: false, speed: 2)
     mouseBackend.failRestore = true
     quitHistory.setRecording(true)
@@ -531,6 +531,13 @@ func runClipboardTests() throws {
     quitModel.onModuleChanged(.clipboard, false)
     quitModel.onApplyMouse()
     quitModel.onClipboardRecording(true)
+    let widgetBeforeQuit = quitModel.widgetLayout
+    let lateWidgets = WidgetLayout(entries: [WidgetEntry(.clipboard)])
+    quitModel.onSaveWidgets(lateWidgets)
+    var blockedSetup: [String] = []
+    quitModel.onFinishSetup(SetupDraft(current: quitModel, defaults: defaults)) { blockedSetup = $0 }
+    expect(quitModel.widgetLayout == widgetBeforeQuit && blockedSetup.contains { $0.contains("shutting down") },
+           "actual widget Done and wizard Finish callbacks reject mutation during asynchronous quit")
     expect(!quitModel.animationsBusy && quitModel.enabledModules == enabledBeforeQuit && !quitHistory.recording && !mouseLifecycle.recoveryRequired,
            "real host actions reject new animation, module, Mouse and recording work during blocked quit drain")
     failing.failing = true; quitHistory.delete(savedEntry.id)
@@ -544,6 +551,9 @@ func runClipboardTests() throws {
             "late Clipboard veto keeps restored Mouse idle and recording safely paused")
     quitModel.onClipboardRecording(true)
     expect(quitHistory.recording, "canceled quit reopens the host mutation barrier")
+    quitModel.onSaveWidgets(lateWidgets)
+    expect(quitModel.widgetLayout == lateWidgets && quitHistory.recording,
+           "canceled quit reopens widget persistence without stopping a recording session")
     failing.failing = false; quitHistory.poll()
     quitReply = nil
     expect(quitHost.applicationShouldTerminate(NSApplication.shared) == .terminateLater,

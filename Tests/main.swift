@@ -388,6 +388,7 @@ displaySetModule.reconcile(ready: true, settled: true)
 expect(displaySetBackend.moves.count == 1, "repeated A B C snapshot does not repeat restoration")
 displaySetDefaults.removePersistentDomain(forName: displaySetDomain)
 runHostTransactionsTests()
+try runUITests()
 try runClipboardTests()
 
 final class FakeRunner: CommandRunning {
@@ -793,7 +794,7 @@ if let index = CommandLine.arguments.firstIndex(of: "--preview"), index + 1 < Co
     let directory = URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     dashboardModel.monitors = [
-        Monitor(uuid: "fixture-main", name: "Main display", id: 101, enabled: true, isMain: true, disabledByApp: false),
+        Monitor(uuid: "fixture-main", name: "A very long external display name for wrapping and narrow-width checks", id: 101, enabled: true, isMain: true, disabledByApp: false),
         Monitor(uuid: "fixture-second", name: "Secondary display", id: 102, enabled: true, isMain: false, disabledByApp: false)
     ]
     dashboardModel.activeMonitorCount = 2
@@ -802,18 +803,43 @@ if let index = CommandLine.arguments.firstIndex(of: "--preview"), index + 1 < Co
     dashboardModel.bluetoothAvailable = true
     dashboardModel.automaticReconnectEnabled = true
     dashboardModel.bluetoothSummary = BluetoothPresentation.summary(enabled: true, selected: [], devices: dashboardModel.devices)
-    for tab in DashboardTab.allCases {
-        dashboardModel.tab = tab
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 430, height: 580), styleMask: [.borderless], backing: .buffered, defer: false)
-        window.appearance = NSAppearance(named: .aqua)
-        let view = NSHostingView(rootView: DashboardView(model: dashboardModel))
+    dashboardModel.watchdogReady = true
+    dashboardModel.displaySettling = false
+    dashboardModel.widgetLayout = .suggested(for: dashboardModel.enabledModules)
+    func render(_ name: String, _ content: AnyView, width: CGFloat, height: CGFloat, dark: Bool = false) throws {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        let view = NSHostingView(rootView: content.frame(width: width, height: height).environment(\.colorScheme, dark ? .dark : .light))
         window.contentView = view
         RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         view.layoutSubtreeIfNeeded()
         guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { fatalError("Cannot render preview") }
         view.cacheDisplay(in: view.bounds, to: bitmap)
-        try bitmap.representation(using: .png, properties: [:])!.write(to: directory.appendingPathComponent("\(tab.rawValue.lowercased()).png"))
+        try bitmap.representation(using: .png, properties: [:])!.write(to: directory.appendingPathComponent("\(name).png"))
+        window.close()
     }
+    try render("widgets-light", AnyView(QuickActionsView(model: dashboardModel)), width: 430, height: dashboardModel.popupHeight)
+    try render("widgets-dark", AnyView(QuickActionsView(model: dashboardModel)), width: 430, height: dashboardModel.popupHeight, dark: true)
+    for group in SettingsGroup.allCases {
+        dashboardModel.settingsGroup = group
+        try render("settings-\(group.id)", AnyView(SettingsView(model: dashboardModel)), width: 860, height: 680)
+    }
+    let fixtureSuite = "fix-mac-os.preview.\(UUID().uuidString)"
+    let fixtureDefaults = UserDefaults(suiteName: fixtureSuite)!
+    let setup = SetupDraft(current: dashboardModel, defaults: fixtureDefaults)
+    for (name, step) in [("selection", SetupDraft.Step.selection), ("configure-audio", .configure(.sound)), ("permissions", .permissions), ("widgets", .widgets), ("review", .review)] {
+        setup.step = step
+        try render("wizard-\(name)", AnyView(SetupWizard(model: dashboardModel, draft: setup, close: {})), width: 760, height: 700)
+    }
+    fixtureDefaults.removePersistentDomain(forName: fixtureSuite)
+    dashboardModel.widgetLayout.entries.removeAll()
+    try render("empty-home", AnyView(QuickActionsView(model: dashboardModel)), width: 430, height: 580)
+    dashboardModel.countdowns = ["fixture-second": 12]
+    dashboardModel.disabledMonitorCount = 1
+    dashboardModel.clipboardStoragePending = true
+    dashboardModel.keepAwakeCanStop = true
+    try render("recovery-empty-home", AnyView(QuickActionsView(model: dashboardModel)), width: 430, height: 580)
     print("Fixture previews saved to \(directory.path)")
 }
 

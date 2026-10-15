@@ -6,6 +6,7 @@ struct WindowPositionsView: View {
     @State private var name = ""
     @State private var renamingID: String?
     @State private var renameDraft = ""
+    @State private var deletingID: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -44,7 +45,7 @@ struct WindowPositionsView: View {
                             .accessibilityLabel("Restore \(layout.name)")
                         if setup { Menu {
                             Button("Rename…") { renameDraft = layout.name; renamingID = layout.id }
-                            Button("Delete", role: .destructive) { module.delete(layout.id) }
+                            Button("Delete…", role: .destructive) { deletingID = layout.id }
                         } label: { Image(systemName: "ellipsis.circle") }
                         .menuStyle(.borderlessButton).fixedSize()
                         .accessibilityLabel("Options for \(layout.name)")
@@ -65,22 +66,14 @@ struct WindowPositionsView: View {
           }
            if setup { DashboardCard {
                 DisclosureGroup("Advanced") {
-                VStack(alignment: .leading, spacing: 12) {
-                    DashboardSwitchRow(title: "Restore after reconnect or wake", isOn: $module.automatic)
-                    DashboardSwitchRow(title: "Pause automatic restoration", isOn: $module.paused)
-                    Picker("Automatic layout", selection: $module.selected) {
-                        Text("Use unique matching layout").tag("")
-                        ForEach(module.layouts) { Text($0.name).tag($0.id) }
-                    }
-                    Text("With several layouts for the same displays, choose one for automatic restore. Pause does not block manual Restore.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    TextField("Excluded bundle IDs, comma separated", text: $module.exclusions)
-                    Text("Exact app and window-title matches only. Ambiguous, untitled, and unsupported windows are skipped.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }.padding(.top, 8)
+                WindowPolicyControls(automatic: $module.automatic, paused: $module.paused, selected: $module.selected, exclusions: $module.exclusions, layouts: module.layouts).padding(.top, 8)
            } }
         }
         }
+        .alert("Delete saved layout?", isPresented: Binding(get: { deletingID != nil }, set: { if !$0 { deletingID = nil } })) {
+            Button("Delete", role: .destructive) { if let deletingID { module.delete(deletingID) }; deletingID = nil }
+            Button("Cancel", role: .cancel) { deletingID = nil }
+        } message: { Text("This removes the named layout, not any windows. It cannot be undone.") }
     }
 
     private func save() {

@@ -75,10 +75,27 @@ protocol WindowPositionBackend: AnyObject {
 final class WindowPositions: ObservableObject {
     @Published private(set) var layouts: [WindowLayout] = []
     @Published var summary = "Save a named layout to begin."
-    @Published var automatic: Bool { didSet { defaults.set(automatic, forKey: "windows.auto"); pending = false; generation += 1 } }
-    @Published var paused: Bool { didSet { defaults.set(paused, forKey: "windows.paused"); pending = false; generation += 1 } }
-    @Published var exclusions: String { didSet { defaults.set(exclusions, forKey: "windows.exclusions"); generation += 1 } }
-    @Published var selected: String { didSet { defaults.set(selected, forKey: "windows.selected"); generation += 1 } }
+    @Published private var automaticValue: Bool
+    @Published private var pausedValue: Bool
+    @Published private var exclusionsValue: String
+    @Published private var selectedValue: String
+    var automatic: Bool {
+        get { automaticValue }
+        set { guard acceptsActions() else { return }; automaticValue = newValue; defaults.set(newValue, forKey: "windows.auto"); pending = false; generation += 1 }
+    }
+    var paused: Bool {
+        get { pausedValue }
+        set { guard acceptsActions() else { return }; pausedValue = newValue; defaults.set(newValue, forKey: "windows.paused"); pending = false; generation += 1 }
+    }
+    var exclusions: String {
+        get { exclusionsValue }
+        set { guard acceptsActions() else { return }; exclusionsValue = newValue; defaults.set(newValue, forKey: "windows.exclusions"); generation += 1 }
+    }
+    var selected: String {
+        get { selectedValue }
+        set { guard acceptsActions() else { return }; selectedValue = newValue; defaults.set(newValue, forKey: "windows.selected"); generation += 1 }
+    }
+    var acceptsActions: () -> Bool = { true }
     @Published private(set) var ready = false
     private let backend: WindowPositionBackend
     private let defaults: UserDefaults
@@ -95,10 +112,10 @@ final class WindowPositions: ObservableObject {
          schedule: @escaping (@escaping () -> Void) -> Void = { DispatchQueue.main.asyncAfter(deadline: .now() + 0.01, execute: $0) }) {
         self.backend = backend; self.defaults = defaults
         self.schedule = schedule
-        automatic = defaults.bool(forKey: "windows.auto")
-        paused = defaults.bool(forKey: "windows.paused")
-        exclusions = defaults.string(forKey: "windows.exclusions") ?? ""
-        selected = defaults.string(forKey: "windows.selected") ?? ""
+        automaticValue = defaults.bool(forKey: "windows.auto")
+        pausedValue = defaults.bool(forKey: "windows.paused")
+        exclusionsValue = defaults.string(forKey: "windows.exclusions") ?? ""
+        selectedValue = defaults.string(forKey: "windows.selected") ?? ""
         if let data = defaults.data(forKey: "windows.layouts") {
             layouts = (try? JSONDecoder().decode([WindowLayout].self, from: data)) ?? []
         }
@@ -142,13 +159,18 @@ final class WindowPositions: ObservableObject {
             restore(layout.id)
         } else { summary = "No unique saved layout for this display set; select one." }
     }
-    func requestPermission() { backend.requestPermission() }
+    func requestPermission() { guard acceptsActions() else { return }; backend.requestPermission() }
     var permitted: Bool { backend.permitted }
-    var canCapture: Bool { ready && !stopped && permitted }
+    var canCapture: Bool { acceptsActions() && ready && !stopped && permitted }
+    func canRestore(_ id: String) -> Bool {
+        guard canCapture, let layout = layouts.first(where: { $0.id == id }) else { return false }
+        return layout.displays.map(\.id).sorted() == backend.displays().map(\.id).sorted()
+    }
     private var excluded: Set<String> { Set(exclusions.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }) }
     private func persist() { if let data = try? JSONEncoder().encode(layouts) { defaults.set(data, forKey: "windows.layouts") } }
-    func delete(_ id: String) { generation += 1; layouts.removeAll { $0.id == id }; persist(); if selected == id { selected = "" } }
+    func delete(_ id: String) { guard acceptsActions() else { return }; generation += 1; layouts.removeAll { $0.id == id }; persist(); if selected == id { selected = "" } }
     @discardableResult func rename(_ id: String, to name: String) -> Bool {
+        guard acceptsActions() else { return false }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let index = layouts.firstIndex(where: { $0.id == id }) else { return false }
         layouts[index].name = trimmed
@@ -156,6 +178,7 @@ final class WindowPositions: ObservableObject {
         return true
     }
     func save(_ name: String) {
+        guard acceptsActions() else { return }
         guard ready, backend.permitted else { summary = "Wait for stable displays and grant Accessibility access."; return }
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { summary = "Enter a layout name."; return }
@@ -175,6 +198,7 @@ final class WindowPositions: ObservableObject {
         summary = "Saved \(windows.count) windows in \(name)."
     }
     func restore(_ id: String) {
+        guard acceptsActions() else { return }
         generation += 1
         let ticket = generation
         pending = false
@@ -210,7 +234,7 @@ final class WindowPositions: ObservableObject {
             summary = "Restored \(moved); missing \(missing); ambiguous \(ambiguous); unsupported \(unsupported); excluded \(skipped); failed \(failed)."
         }
         func step(_ index: Int) {
-            guard ticket == generation else { return }
+            guard ticket == generation, acceptsActions() else { return }
             guard ready, !stopped, backend.permitted, backend.displays() == displays else {
                 summary = "Restore canceled after \(moved) windows; display state, permission, or settings changed."
                 return

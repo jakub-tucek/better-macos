@@ -112,6 +112,16 @@ final class DashboardModel: ObservableObject {
     @Published var enabledModules = Set(AppModule.allCases)
     @Published var stoppingModules = Set<AppModule>()
     @Published var navigation = DashboardNavigation()
+    @Published var widgetLayout = WidgetLayout()
+    @Published var settingsGroup: SettingsGroup = .general
+    @Published var popupHeight: CGFloat = 580
+    @Published var launchWidget: WidgetKind?
+    var onOpenSettings: (SettingsGroup?) -> Void = { _ in }
+    var onRunSetup: () -> Void = {}
+    var onSaveWidgets: (WidgetLayout) -> Void = { _ in }
+    var onFinishSetup: (SetupDraft, @escaping ([String]) -> Void) -> Void = { _, _ in }
+    var onSkipSetup: () -> Void = {}
+    var onAccessibilitySettings: () -> Void = {}
     // Compatibility for permission callbacks and explicit feature entry points.
     var tab: DashboardTab {
         get { navigation.feature ?? .modules }
@@ -126,6 +136,7 @@ final class DashboardModel: ObservableObject {
     @Published var displaySupported = false
     @Published var displaySettling = true
     @Published var watchdogStatus = "Starting recovery watchdog…"
+    @Published var watchdogReady = false
     @Published var countdowns: [String: Int] = [:]
     @Published var disabledMonitorCount = 0
     @Published var currentLayout: [DisplayPosition] = []
@@ -301,6 +312,7 @@ struct DashboardCard<Content: View>: View {
         VStack(alignment: .leading, spacing: 12) { content }
             .padding(12).frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+            .accessibilityElement(children: .contain)
     }
 }
 
@@ -373,13 +385,16 @@ struct MonitorLayoutMap: View {
 
 struct DashboardView: View {
     @ObservedObject var model: DashboardModel
+    var feature: DashboardTab
+    var setup = true
+    var draftMode = false
     @State private var disconnectWarning: BluetoothDevice?
     @State private var showDisconnectWarning = false
     @State private var showLegacyWarning = false
     @State private var previewMonitor: String?
     @State private var customAwakeDuration = false
     @State private var clipboardExclusionsDraft = ClipboardExclusionsDraft()
-    private var isSetup: Bool { model.navigation.isSetup }
+    private var isSetup: Bool { setup }
 
     private var disconnectDisablesRule: Bool {
         guard let device = disconnectWarning else { return false }
@@ -387,59 +402,16 @@ struct DashboardView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Image(systemName: "slider.horizontal.3").foregroundStyle(.blue)
-                Text("Fix macOS").font(.headline)
-                Spacer()
-                Button { model.navigation.openSettings() } label: {
-                    Image(systemName: isSetup ? "gearshape.fill" : "gearshape")
-                }
-                .buttonStyle(.plain).help("Settings and modules")
-                .accessibilityLabel("Settings and modules")
-                Button(action: model.onClose) { Image(systemName: "xmark") }
-                    .buttonStyle(.plain).help("Close dashboard")
-            }.padding(16)
-            HStack {
-                if isSetup || model.navigation.feature != nil {
-                    Button { model.navigation.back() } label: { Label("Back", systemImage: "chevron.left") }
-                }
-                Text(model.navigation.feature.map { isSetup ? "\($0.rawValue) setup" : $0.rawValue } ?? (isSetup ? "Settings" : "Quick controls")).font(.headline)
-                Spacer()
-                if !isSetup, let feature = model.navigation.feature {
-                    Button("Setup") { model.navigation.openSetup(feature) }
-                }
-            }.padding(.horizontal, 16).padding(.bottom, 12)
-            Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    if let error = model.errorMessage {
-                        HStack(alignment: .top) {
-                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                            Text(error).font(.caption).fixedSize(horizontal: false, vertical: true)
-                            Spacer(minLength: 0)
-                            Button { model.errorMessage = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain)
-                        }.padding(10).background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
-                    }
-                    if model.animationRecoveryRequired {
-                        Button("Restore original animation settings", action: model.onRestoreAnimations)
-                            .disabled(model.animationsBusy)
-                    }
-                    if model.menuBarRecoveryRequired {
-                        Button("Restore original menu-bar spacing", action: model.onRestoreMenuBarSpacing)
-                    }
-                    if model.mouseRecoveryRequired {
-                        Button("Retry restoring original mouse settings", action: model.onRestoreMouse)
-                    }
-                    if model.navigation.feature == nil {
-                        if isSetup { modules } else { quickHome }
-                    } else { switch model.tab {
+        VStack(alignment: .leading, spacing: 14) {
+                    switch feature {
                     case .windows:
-                        if let positions = model.windowPositions { WindowPositionsView(module: positions, setup: isSetup) }
+                        if draftMode { Text("Save, name, and manage layouts in Displays settings after setup. Saving reads the current desktop; setup never captures or moves windows.") }
+                        else if let positions = model.windowPositions { WindowPositionsView(module: positions, setup: isSetup) }
                         else { disabledModule("Window positions") }
-                    case .modules: modules
+                    case .modules: EmptyView()
                     case .monitors:
-                        if model.displayControlsReachable { monitors }
+                        if draftMode { displayConfiguration; Text("Setup never switches or rearranges screens. Use Displays settings after Finish for an explicit, recoverable display change.").font(.caption) }
+                        else if model.displayControlsReachable { monitors }
                         else { disabledModule("Display modules") }
                     case .audio:
                         if model.enabledModules.contains(.audio) { audioControls }
@@ -465,18 +437,8 @@ struct DashboardView: View {
                     case .mouse:
                         if model.enabledModules.contains(.mouse) { mouse }
                         else { disabledModule("Mouse") }
-                    } }
-                }.padding(16)
-            }.id("\(isSetup)-\(model.navigation.feature?.rawValue ?? "home")")
-            Divider()
-            HStack {
-                Spacer()
-                Button("Quit", action: model.onQuit).disabled(model.monitorBusy)
-            }.padding(14)
+                    }
         }
-        .frame(width: 430, height: 580)
-        .background(Color(nsColor: .windowBackgroundColor))
-        .onExitCommand(perform: model.onClose)
         .alert(disconnectDisablesRule ? "Disconnect and turn off auto-reconnect?" : "Disconnect this device?", isPresented: $showDisconnectWarning) {
             Button(disconnectDisablesRule ? "Turn off & disconnect" : "Disconnect", role: .destructive) {
                 if let device = disconnectWarning {
@@ -498,24 +460,6 @@ struct DashboardView: View {
         DashboardCard(content: content)
     }
 
-    private var quickHome: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Everyday actions. Use Settings for setup and module switches.")
-                .font(.caption).foregroundStyle(.secondary)
-            ForEach(DashboardTab.quickFeatures, id: \.self) { feature in
-                card {
-                    Button { model.navigation.openQuick(feature) } label: {
-                        HStack {
-                            Label(feature.rawValue, systemImage: feature.symbol)
-                            Spacer()
-                            Image(systemName: "chevron.right").foregroundStyle(.secondary)
-                        }.contentShape(Rectangle())
-                    }.buttonStyle(.plain).accessibilityLabel("Open \(feature.rawValue) quick controls")
-                }
-            }
-        }
-    }
-
     private var audioControls: some View {
         VStack(alignment: .leading, spacing: 14) {
             card {
@@ -524,7 +468,7 @@ struct DashboardView: View {
                     DashboardSwitchRow(title: "Automatic routing", isOn: Binding(get: { model.audioAutomatic }, set: model.onAudioAutomatic))
                 }
                 Text(model.audioStatus).font(.caption).foregroundStyle(.secondary)
-                Button("Resume preferred routes", action: model.onAudioResume)
+                 if !draftMode { Button("Resume preferred routes", action: model.onAudioResume) }
                 if isSetup { Text("Automatic routing follows saved preferences when devices change. Connected Bluetooth audio stays protected.")
                     .font(.caption).foregroundStyle(.secondary)
                 }
@@ -582,6 +526,7 @@ struct DashboardView: View {
     private var clipboard: some View {
         card {
             Label("Clipboard", systemImage: DashboardTab.clipboard.symbol).font(.headline)
+            if !draftMode {
             DashboardSwitchRow(title: "Record clipboard history", isOn: Binding(get: { model.clipboardRecording }, set: model.onClipboardRecording))
             Text("\(model.clipboardCount) entries · ⌘⇧V to search").font(.caption)
             HStack {
@@ -589,6 +534,7 @@ struct DashboardView: View {
                 Button("Clear history", role: .destructive, action: model.onClipboardClear)
             }
             Text("Starts paused each launch. Selecting an entry copies it; paste normally in your app.").font(.caption).foregroundStyle(.secondary)
+            } else { Text("Selecting Clipboard does not start recording or enable disk history. Start recording explicitly from the widget or Clipboard settings after Finish.").font(.caption) }
             if model.clipboardStoragePending {
                 Text("Disk cleanup/save pending — retrying. Old disk entries may remain until storage recovers; keep the module enabled.").font(.caption).foregroundStyle(.orange)
             }
@@ -625,11 +571,11 @@ struct DashboardView: View {
                     .disabled(model.mouseCapabilityError != nil || model.mouseRecoveryRequired)
                 Text(String(format: "Tracking: %.2f", model.mouseTracking)).font(.caption)
                 Text("Proposed settings — applied together only when you click Apply.").font(.caption)
-                HStack {
+                if !draftMode { HStack {
                     Button("Apply mouse settings", action: model.onApplyMouse).disabled(model.mouseCapabilityError != nil || model.mouseRecoveryRequired)
                     Button("Read current", action: model.onRefreshMouse)
-                }
-                if model.mouseOverrideActive && !model.mouseRecoveryRequired { Button("Restore original mouse settings", action: model.onRestoreMouse) }
+                } }
+                if !draftMode && model.mouseOverrideActive && !model.mouseRecoveryRequired { Button("Restore original mouse settings", action: model.onRestoreMouse) }
                 Text("Nothing changes until Apply. These runtime settings are restored on disable or quit, not saved as system preferences.").font(.caption)
             }
             card {
@@ -725,6 +671,7 @@ struct DashboardView: View {
                 }
             }
             if isSetup { card {
+                Stepper("Default duration: \(model.keepAwakeMinutes) minutes", value: Binding(get: { model.keepAwakeMinutes }, set: model.onKeepAwakeMinutesChanged), in: 5...1440, step: 5)
                 DashboardSwitchRow(title: "Keep display awake", isOn: Binding(get: { model.keepDisplayAwake }, set: model.onKeepDisplayAwakeChanged))
                 Text(model.keepDisplayAwake ? "Keep the computer and display awake until the session ends." : "Keep the computer awake while letting the display sleep.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -751,14 +698,12 @@ struct DashboardView: View {
             }
             Text("A popup names the app while you hold. Release early to cancel. Switching apps or clicking also cancels. Normal save prompts still appear.")
                 .font(.caption).foregroundStyle(.secondary)
-            if !model.quitGuardActive {
+            if !model.quitGuardActive && !draftMode {
                 Text(model.quitGuardEnabled ? "Inactive — check Accessibility access, then retry." : "Requires Accessibility access.")
                     .font(.caption).foregroundStyle(.secondary)
                 HStack {
                     Button("Accessibility settings…") {
-                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                            NSWorkspace.shared.open(url)
-                        }
+                        model.onAccessibilitySettings()
                     }
                     if model.quitGuardEnabled { Button("Retry", action: model.onRetryQuitGuard) }
                 }
@@ -780,7 +725,7 @@ struct DashboardView: View {
                 DashboardSwitchRow(title: "Hide extra icons", accessibilityTitle: "Hide extra menu-bar icons", isOn: Binding(get: { model.menuBarHiding }, set: model.onMenuBarHidingChanged))
                 Text("Hold ⌘ and drag the divider left of the chevron. Move less-used icons left of the divider; keep Fix macOS and essential icons to its right.")
                     .font(.caption).foregroundStyle(.secondary)
-                if model.menuBarHiding {
+                if model.menuBarHiding && !draftMode {
                     Button(model.menuBarHidden ? "Show extra icons" : "Hide extra icons", action: model.onToggleMenuBar)
                 }
                 Text("Click the chevron to reveal icons. Quitting reveals them too. Icons beyond the notch may still need more space to appear.")
@@ -792,13 +737,7 @@ struct DashboardView: View {
     private var monitors: some View {
         VStack(alignment: .leading, spacing: 14) {
             Label("Monitors", systemImage: DashboardTab.monitors.symbol).font(.headline)
-            if isSetup && model.enabledModules.contains(.monitors) {
-                Picker("Disable mode", selection: Binding(
-                    get: { model.confirmMonitorDisable }, set: model.onMonitorDisableModeChanged)) {
-                    Text("Dangerously").tag(false)
-                    Text("Safely (20s undo)").tag(true)
-                }.disabled(model.monitorBusy || !model.countdowns.isEmpty)
-            }
+            if isSetup { displayConfiguration }
             if !model.countdowns.isEmpty {
                 card {
                     ForEach(model.countdowns.keys.sorted(), id: \.self) { uuid in
@@ -842,6 +781,21 @@ struct DashboardView: View {
             if !model.displaySupported { Text("Display controls are unavailable until recovery monitoring is ready.").font(.caption).foregroundStyle(.secondary) }
             Button(model.pendingArrangement ? "Restore previous layout" : "Enable all disabled displays", action: model.onRestoreAll)
                 .disabled(model.displaySettling || model.monitorBusy || (model.disabledMonitorCount == 0 && !model.pendingArrangement))
+        }
+    }
+
+    private var displayConfiguration: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if model.enabledModules.contains(.monitors) {
+                Picker("Disable mode", selection: Binding(get: { model.confirmMonitorDisable }, set: model.onMonitorDisableModeChanged)) {
+                    Text("Dangerously (immediate)").tag(false)
+                    Text("Safely (20s undo)").tag(true)
+                }.disabled(model.monitorBusy || !model.countdowns.isEmpty)
+            }
+            if draftMode && model.enabledModules.contains(.arrangement) {
+                DashboardSwitchRow(title: "Match screen edges", isOn: Binding(get: { model.matchScreenEdges }, set: model.onMatchScreenEdgesChanged))
+                Text("Requires Accessibility access and stable displays. No display positions change during setup.").font(.caption)
+            }
         }
     }
 
@@ -900,48 +854,7 @@ struct DashboardView: View {
     private func disabledModule(_ title: String) -> some View {
         card {
             Text("\(title) is off").font(.headline)
-            Button("Enable in settings") { model.navigation.openSettings() }
-        }
-    }
-
-    private var modules: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Open a module to configure it. Switches enable or disable background work.")
-                .font(.caption).foregroundStyle(.secondary)
-            card {
-                DashboardSwitchRow(title: "Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: model.onLoginChanged))
-            }
-            ForEach(AppModule.allCases) { module in
-                card {
-                    HStack {
-                        Button { model.navigation.openSetup(module.dashboardFeature) } label: {
-                            Label(module.title, systemImage: module.dashboardFeature.symbol)
-                        }.buttonStyle(.plain).accessibilityLabel("Set up \(module.title)")
-                        Spacer()
-                        Image(systemName: "chevron.right").foregroundStyle(.secondary)
-                        BlueSwitch(label: "\(module.title) module", isOn: Binding(
-                            get: { model.enabledModules.contains(module) },
-                            set: { model.onModuleChanged(module, $0) }))
-                            .disabled(model.stoppingModules.contains(module) ||
-                                      ((module == .monitors || module == .arrangement) && model.monitorBusy))
-                    }
-                    if model.stoppingModules.contains(module) {
-                        Text(module == .bluetooth ? "Stopping — finishing the current Bluetooth command…" : "Restoring displays before unloading…")
-                            .font(.caption).foregroundStyle(.orange)
-                    }
-                }.help(module.detail)
-            }
-            DisclosureGroup("Diagnostics") {
-                Text(model.watchdogStatus).font(.caption).foregroundStyle(.secondary)
-            }.font(.caption)
-            card {
-                Text("Updates").font(.headline)
-                Text(model.updateStatus).font(.caption).foregroundStyle(.secondary)
-                HStack {
-                    Button("Check for updates", action: model.onCheckUpdates).disabled(model.updateChecking)
-                    if model.updateAvailable { Button("Install update…", action: model.onInstallUpdate) }
-                }
-            }
+            Button("Set up") { model.onOpenSettings(SettingsGroup.forFeature(feature)) }
         }
     }
 
@@ -960,12 +873,12 @@ struct DashboardView: View {
                         get: { model.automaticReconnectEnabled }, set: model.onAutomaticReconnectChanged))
                         .disabled(!model.bluetoothAvailable || model.legacyServicePresent || model.bluetoothPermissionRequired)
                 }
-                if model.bluetoothPermissionRequired {
+                if model.bluetoothPermissionRequired && !draftMode {
                     Button("Allow Bluetooth access…", action: model.onBluetoothAccessRequested)
-                } else if model.bluetoothRadioOn == false {
+                } else if model.bluetoothRadioOn == false && !draftMode {
                     Button("Turn Bluetooth on", action: model.onBluetoothPowerOn).disabled(model.bluetoothManualBusy)
                 }
-                if model.legacyServicePresent {
+                if model.legacyServicePresent && !draftMode {
                     Button("Take over existing service…") { showLegacyWarning = true }.disabled(model.bluetoothBusy)
                 }
             }
@@ -983,6 +896,13 @@ struct DashboardView: View {
                     }
                 }
                 if model.devices.isEmpty { Text(model.bluetoothPermissionRequired ? "Grant Bluetooth access to show your paired devices." : "No paired devices found yet.").font(.caption).foregroundStyle(.secondary) }
+                ForEach(model.selectedAddresses.subtracting(Set(model.devices.map(\.address))).sorted(), id: \.self) { address in
+                    HStack {
+                        Text("Unavailable target · \(address)").font(.caption)
+                        Spacer()
+                        Button("Remove target") { model.onAutoDeviceChanged(address, false) }
+                    }
+                }
             }
             card {
               DisclosureGroup("Audio protection and output") {
@@ -1033,12 +953,12 @@ struct DashboardView: View {
                     }
                 }
                 Spacer(minLength: 4)
-                Button(device.connected ? "Disconnect" : "Connect") {
+                if !draftMode { Button(device.connected ? "Disconnect" : "Connect") {
                     if device.connected {
                         disconnectWarning = device
                         showDisconnectWarning = true
                     } else { model.onManualConnection(device.address) }
-                }.controlSize(.small).frame(width: 78).disabled(model.bluetoothPermissionRequired || model.bluetoothManualBusy || model.bluetoothRadioOn == false)
+                }.controlSize(.small).frame(width: 78).disabled(model.bluetoothPermissionRequired || model.bluetoothManualBusy || model.bluetoothRadioOn == false) }
                 BlueSwitch(label: "Automatically reconnect \(device.name)", isOn: model.autoReconnectBinding(for: device.address))
                     .disabled(!model.bluetoothAvailable || model.bluetoothPermissionRequired)
             }
@@ -1084,20 +1004,18 @@ struct DashboardView: View {
                 Picker("Transition speed", selection: Binding(get: { model.spacesSpeed }, set: model.onSpeedChanged)) {
                     ForEach(TransitionSpeed.allCases, id: \.self) { Text($0.title).tag($0) }
                 }.disabled(!model.spacesAvailable)
-                if model.spacesAvailable && !model.spacesPermission {
+                if model.spacesAvailable && !model.spacesPermission && !draftMode {
                     Button("Open Accessibility settings") {
-                        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                            NSWorkspace.shared.open(url)
-                        }
+                        model.onAccessibilitySettings()
                     }
                 }
                 Text("Mission Control and Control Center may still animate.")
                     .font(.caption).foregroundStyle(.secondary)
-                Button("Open macOS motion settings") {
+                if !draftMode { Button("Open macOS motion settings") {
                     if let url = URL(string: "x-apple.systempreferences:com.apple.preference.universalaccess?Seeing_Display") {
                         NSWorkspace.shared.open(url)
                     }
-                }
+                } }
               }
             }
         }

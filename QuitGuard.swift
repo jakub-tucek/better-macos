@@ -126,7 +126,7 @@ final class QuitGuard {
         }
         set { cancel(); defaults.set(Self.normalizedDuration(newValue), forKey: "quitGuard.duration"); onChange?() }
     }
-    private static func normalizedDuration(_ seconds: Double) -> Double {
+    static func normalizedDuration(_ seconds: Double) -> Double {
         seconds.isFinite ? min(99, max(1, seconds.rounded())) : 3
     }
     private var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
