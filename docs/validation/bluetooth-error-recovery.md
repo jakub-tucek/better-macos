@@ -169,3 +169,41 @@ Merely clearing every error on a successful poll is unsafe:
 discovery can succeed while the radio is still off and the requested action remains
 unsatisfied. Do not suppress genuine helper failures or introduce automatic power
 toggles/retries without explicit intent; preserve reconnect/audio opt-ins.
+
+## Main integration · 2026-10-15
+
+Independently reviewed CLEAN source `f60041a9c739ec958b9a26edf30547b2debafc3e`
+integrated without conflicts as **`3cda8e9946971af8cb63b16f91351019c184a7db`** on
+clean main `e58dfe9`. Existing user history, KeepAwake ownership, organized paths,
+SwiftPM policy inputs and CI were preserved. Pending login and diagnostic-logging
+work was not integrated.
+
+This fixes **stale manual-action error presentation only**. The host records an
+operation and the UUID of its published failure; only verified success of that
+same operation can clear that same publication. Newer errors, including identical
+text, survive. Observation alone does not dismiss an unsatisfied action. This does
+not diagnose/fix the live exit-75 cause, change power timeouts/reconnect policy,
+prove radio recovery, identify the loaded app revision or close hardware acceptance.
+
+At the integrated revision, one complete `bash test.sh` passed **4,395 legacy
+checks**, **10 Swift Testing tests in three suites**, **13 mocked installer
+scenarios**, production compiler/package/build fixtures and real/relocated signed
+bundle checks. Log: `build/bluetooth-error-recovery-integration.log`. It records
+HEAD, scoped Xcode 27 / Swift 6.4 / SDK 27.0 compiler/SDK paths and versions, arm64
+and bundle metadata with `SDKROOT` explicitly unset. No additional suite repeat
+was needed; the source worktree's repeat evidence above remains historical.
+
+Strict configured-certificate signature, complete notices, source/built plist lint
+and metadata passed: the arm64/macOS 15+ bundle embeds the tested revision, version
+`0.4`, build `4`, SDK 27.0. Pinned lint/format passed directly in main across **48
+files**; offline tooling and CI whitespace fixtures passed. Logs:
+`build/bluetooth-error-recovery-integration-{lint,format,tools,ci}.log`.
+
+No real app launch/quit/install, live Bluetooth/device command, permission request,
+live preference mutation, version bump, push/tag or publication was performed.
+Fixtures use injected backends and isolated preferences; no hardware fix, hosted CI
+result, new minimum-toolchain acceptance or final artifact at the evidence commit
+is claimed. Historical diagnostic failures and native/hardware gates remain open.
+
+All **13 shell inputs**, **234 local links and 38 fragments across 29 tracked
+Markdown documents**, scope/input assertions and `git diff --check` passed.
