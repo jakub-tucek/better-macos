@@ -47,16 +47,19 @@ func runDiagnosticsTests() throws {
                              now: { Date(timeIntervalSince1970: 0) }, uptime: { tick })
     let start = logger.start(); tick = 10.125
     logger.emit("test", "finished", outcome: "success", operation: "fixed-operation", since: start)
+    expect(logger.flushForTesting(), "test-only diagnostic flush completes")
     let first = memory.records[0]
     expect(first["session"] as? String == "fixed-session" && first["pid"] as? Int == 123, "diagnostics preserve injected correlation")
     expect(first["timestamp"] as? String == "1970-01-01T00:00:00.000Z" && first["durationMS"] as? Double == 125, "diagnostics use injected wall and monotonic clocks")
     memory.fail = true
     logger.emit("test", "failed_io")
+    expect(logger.flushForTesting(), "test-only failed IO flush completes")
     expect(memory.lines.count == 1, "failed diagnostic IO is swallowed without recursion")
     memory.fail = false
     DispatchQueue.concurrentPerform(iterations: 100) { index in
         logger.emit("test", "concurrent_write", fields: ["index": String(index)])
     }
+    expect(logger.flushForTesting(), "test-only concurrent delivery flush completes")
     expect(memory.records.count == 101, "concurrent emitters serialize complete JSON records")
 
     let filesystem = MemoryDiagnosticFiles(), session = UUID().uuidString
@@ -112,6 +115,7 @@ func runDiagnosticsTests() throws {
     try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: command.path)
     do { _ = try CommandRunner(diagnostics: logger).run(command.path, ["--connect", sensitive]); expect(false, "fixture must fail") }
     catch {}
+    expect(logger.flushForTesting(), "test-only command logging flush completes")
     let failure = memory.records.last!
     let fields = failure["fields"] as? [String: String]
     expect(fields?["exit_code"] == "75" && fields?["failure_class"] == "exit" && fields?["timed_out"] == "false", "Bluetooth exit 75 is classified with code, not raw output")
@@ -123,6 +127,7 @@ func runDiagnosticsTests() throws {
         })
         expect(false, "login fixture must throw")
     } catch {}
+    expect(logger.flushForTesting(), "test-only login logging flush completes")
     let login = memory.records.last!, loginFields = memory.records.last?["fields"] as? [String: String]
     expect(login["outcome"] as? String == "failure" && loginFields?["status"] == "requires_approval" && loginFields?["error_code"] == "91", "login failure preserves approval and numeric error")
     let encoded = memory.lines.map { String(decoding: $0, as: UTF8.self) }.joined()

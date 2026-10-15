@@ -3,6 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 # Build also checks the vendored C/Swift integration and the app's UI.
 bash Tests/swiftui-compatibility.sh
+bash Tests/diagnostics-regressions.sh
 bash build.sh
 bash Tests/packaging.sh
 bash Tests/build.sh
