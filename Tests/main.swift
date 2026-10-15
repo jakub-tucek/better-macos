@@ -406,6 +406,7 @@ runHostTransactionsTests()
 runLoginServiceTests()
 runKeepAwakeFeatureTests()
 try runDiagnosticsTests()
+try runActivityTests()
 try runUITests()
 try runClipboardTests()
 

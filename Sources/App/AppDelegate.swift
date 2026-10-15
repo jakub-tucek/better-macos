@@ -36,6 +36,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let model: DashboardModel
     private let popover = NSPopover()
     private var settingsWindow: NSWindow?
+    private var activityWindow: NSWindow?
+    private let activity: ActivityJournal
+    private let activityPresentation: ActivityPresentation
+    private var activityRecoveryFailures: Set<ActivityRecoveryReason> = []
     private var setupWindow: NSWindow?
     private var activeSetupDraft: SetupDraft?
     private let uiStore: UISettingsStore
@@ -74,7 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             },
             restore: { [weak self] completion in
                 guard let self else { completion(false); return }
-                restoreAll(completion: completion)
+                restoreAll(reason: .featureDisable, completion: completion)
             }))
     private var setupDesktopReconciliationPending = false
     private let presentWindow: (NSWindow) -> Void
@@ -100,10 +104,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
           transactions: HostTransactions = HostTransactions(),
           loginService: LoginServicing = SystemLoginService(),
           diagnostics: Diagnostics = .shared,
+          activity: ActivityJournal = ActivityJournal(),
           terminationReply: @escaping (NSApplication, Bool) -> Void = { $0.reply(toApplicationShouldTerminate: $1) }) {
          self.transactions = transactions
          self.loginService = loginService
-         self.diagnostics = diagnostics
+          self.diagnostics = diagnostics
+          self.activity = activity
+          self.activityPresentation = ActivityPresentation(journal: activity)
          self.commandRunner = commandRunner
          self.preferences = preferences
          self.modules = ModuleSettings(defaults: preferences)
@@ -132,9 +139,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         self.injectedMouseLifecycle = mouseLifecycle
         self.terminationReply = terminationReply
         super.init()
+          awakeFeature.activity = activity
          awakePresentation.didPublish = { [weak self] in self?.refreshKeepAwakeStatus($0) }
          configureActions()
-         windowPositions?.acceptsActions = { [weak self] in self?.transactions.acceptsActions == true }
+          windowPositions?.acceptsActions = { [weak self] in self?.transactions.acceptsActions == true }
+          windowPositions?.activity = activity
          clipboard?.acceptsActions = { [weak self] in self?.transactions.acceptsActions == true }
     }
 
@@ -240,6 +249,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func configureActions() {
         model.onOpenSettings = { [weak self] group in self?.actionHost?.showSettings(group) }
+        model.onOpenActivity = { [weak self] in self?.actionHost?.showActivity() }
         model.onRunSetup = { [weak self] in self?.actionHost?.showSetup() }
         model.onSaveWidgets = { [weak self] layout in
             guard let self, transactions.acceptsActions else { return false }
@@ -322,6 +332,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         model.onKeepDisabled = { [weak self] uuid in
             guard let self, transactions.acceptsActions, rollbackUUID == uuid else { return }
+            activity.record(.displayKept, trigger: .user, result: .completed)
             clearRollback()
         }
         model.onRestoreAll = { [weak self] in self?.actionHost?.restoreAll() }
@@ -329,6 +340,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.onKeepArrangement = { [weak self] in
             guard let self, transactions.acceptsActions, !recovering, rollbackUUID == "layout" else { return }
             preferences.removeObject(forKey: "pendingArrangement")
+            activity.record(.arrangementKept, trigger: .user, result: .completed)
             preferences.synchronize()
             model.pendingArrangement = false
             clearRollback()
@@ -450,6 +462,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if modules.enabled.contains(.windows) {
             if windowPositions == nil {
                 let module = WindowPositions(defaults: preferences)
+                module.activity = activity
                 module.acceptsActions = { [weak self] in self?.transactions.acceptsActions == true }
                 module.onWake = { [weak self] in self?.displayRefresh.requestRefresh() }
                 module.start()
@@ -535,6 +548,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if modules.enabled.contains(.bluetooth) {
             if bluetooth == nil {
                 let module = makeBluetooth()
+                module.activityJournal = activity
                 bluetooth = module
                 module.onAudioOutputRequested = { [weak self] name in self?.audio?.bluetoothConnected(name: name) }
                 module.suspendAutomaticReconnection = guiTestTarget != nil
@@ -691,6 +705,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 "left_margin": String(Double(frame.minX - visible.minX)), "right_margin": String(Double(visible.maxX - frame.maxX)),
                 "bottom_margin": String(Double(frame.minY - visible.minY)), "top_margin": String(Double(visible.maxY - frame.maxY))])
         }
+    }
+
+    private func showActivity() {
+        guard transactions.acceptsActions else { return }
+        if activityWindow == nil {
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 560), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+            window.title = "Fix macOS — Activity"
+            window.isReleasedWhenClosed = false
+            window.contentViewController = NSHostingController(rootView: ActivityView(presentation: activityPresentation))
+            window.minSize = NSSize(width: 540, height: 360)
+            window.center(); activityWindow = window
+        }
+        if let activityWindow { presentWindow(activityWindow) }
     }
 
     private func showSettings(_ group: SettingsGroup? = nil) {
@@ -1232,6 +1259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard modules.enabled.contains(.monitors), controlState.recoveryReady, (enabled || controlState.watchdogReady), !recovering, !displayRefresh.isSettling, !model.pendingArrangement,
               rollbackUUID == nil || (enabled && rollbackUUID == uuid),
               let executable = Bundle.main.executableURL?.path else {
+            activity.record(.displayPower(enabled), trigger: .user, result: .blocked)
             showError(ToggleError(message: "Wait for the watchdog, display changes, and current confirmation to finish."))
             return
         }
@@ -1242,11 +1270,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         refreshPreferences()
         let arguments = ["--set-display", uuid, enabled ? "on" : "off"] + (modules.enabled.contains(.arrangement) ? [] : ["--basic-layout"])
         let confirmDisable = !enabled && model.confirmMonitorDisable
+        let operation = activity.begin(.displayPower(enabled), trigger: .user)
+        activityRecoveryFailures.removeAll()
         runDisplayCommand(executable: executable, arguments: arguments, permission: enabled ? .recovery : .supervisedMutation) { [weak self] result in
                 guard let self else { return }
                 recovering = false
                 model.monitorBusy = false
                 if case .failure(let error) = result, error is DisplayAuthorizationError {
+                    activity.finish(operation, result: .blocked)
                     showError(error)
                     refreshPreferences()
                     return // No helper ran: no snapshot delay or synthetic rollback ownership.
@@ -1254,6 +1285,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 displayRefresh.requestRefresh()
                 switch result {
                 case .success:
+                    activity.finish(operation, result: confirmDisable ? .awaitingConfirmation : .completed)
                     // The helper rejects disabling the last usable display.
                     clearRollback()
                     if confirmDisable {
@@ -1265,7 +1297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                             let remaining = max(0, Int(ceil(deadline.timeIntervalSinceNow)))
                             model.countdowns[uuid] = remaining
                             if remaining == 0, !recovering {
-                                restoreAll { restored in if restored { self.clearRollback() } }
+                                restoreAll(reason: .timeout) { restored in if restored { self.clearRollback() } }
                             }
                         }
                         rollbackTimer = timer
@@ -1273,12 +1305,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                         refreshPreferences()
                     }
                 case .failure(let error):
+                    activity.finish(operation, result: .uncertainDisplay)
                     showError(error)
                     // A timed-out helper may have committed before reporting failure.
                     rollbackUUID = uuid
                     rollbackDeadline = Date()
                     let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
-                        self?.restoreAll { restored in if restored { self?.clearRollback() } }
+                        self?.restoreAll(reason: .failedChange) { restored in if restored { self?.clearRollback() } }
                     }
                     rollbackTimer = timer
                     RunLoop.main.add(timer, forMode: .common)
@@ -1310,7 +1343,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard transactions.acceptsActions else { return }
         guard modules.enabled.contains(.arrangement), controlState.inputReady,
               model.disabledMonitorCount == 0,
-              let executable = Bundle.main.executableURL?.path else {
+               let executable = Bundle.main.executableURL?.path else {
+            activity.record(.displayArrangement, trigger: .user, result: .blocked)
             showError(ToggleError(message: "Wait for display changes or restore the pending layout first."))
             showDashboard()
             return
@@ -1322,11 +1356,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.monitorBusy = true
         refreshPreferences()
         showDashboard()
+        let operation = activity.begin(.displayArrangement, trigger: .user)
+        activityRecoveryFailures.removeAll()
         runDisplayCommand(executable: executable, arguments: ["--arrange-displays", data.base64EncodedString()], permission: .supervisedMutation) { [weak self] result in
                 guard let self else { return }
                 recovering = false
                 model.monitorBusy = false
                 if case .failure(let error) = result, error is DisplayAuthorizationError {
+                    activity.finish(operation, result: .blocked)
                     showError(error)
                     refreshPreferences()
                     return
@@ -1335,8 +1372,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 rollbackUUID = "layout"
                 let duration: TimeInterval
                 switch result {
-                case .success: duration = 20
-                case .failure(let error): duration = 0; showError(error)
+                case .success: duration = 20; activity.finish(operation, result: .awaitingConfirmation)
+                case .failure(let error): duration = 0; activity.finish(operation, result: .uncertainDisplay); showError(error)
                 }
                 rollbackDeadline = Date().addingTimeInterval(duration)
                 model.countdowns["layout"] = Int(duration)
@@ -1344,7 +1381,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     guard let self, let deadline = rollbackDeadline else { return }
                     let remaining = max(0, Int(ceil(deadline.timeIntervalSinceNow)))
                     model.countdowns["layout"] = remaining
-                    if remaining == 0, !recovering { restoreAll() }
+                    if remaining == 0, !recovering { restoreAll(reason: duration == 0 ? .failedChange : .timeout) }
                 }
                 rollbackTimer = timer
                 RunLoop.main.add(timer, forMode: .common)
@@ -1353,13 +1390,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    private func restoreAll(completion: ((Bool) -> Void)? = nil) {
+    private func restoreAll(reason: ActivityRecoveryReason = .user, completion: ((Bool) -> Void)? = nil) {
         guard controlState.recoveryReady else {
+            if reason == .user || !activityRecoveryFailures.contains(reason) {
+                activity.record(.displayRecovery(reason), trigger: reason.trigger, result: .blocked)
+                activityRecoveryFailures.insert(reason)
+            }
             showError(ToggleError(message: "Wait for display connections to settle before recovery."))
             completion?(false)
             return
         }
         guard let executable = Bundle.main.executableURL?.path else { completion?(false); return }
+        let operation = (reason != .user && activityRecoveryFailures.contains(reason)) ? nil : activity.begin(.displayRecovery(reason), trigger: reason.trigger)
         screenEdges?.stop()
         recovering = true
         model.monitorBusy = true
@@ -1371,8 +1413,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self.model.monitorBusy = false
                 self.displayRefresh.requestRefresh()
                 switch result {
-                case .success: self.model.pendingArrangement = false; self.clearRollback(); completion?(true)
-                case .failure(let error): self.showError(error); completion?(false)
+                case .success:
+                    if let operation { self.activity.finish(operation, result: .completed) }
+                    else { self.activity.record(.displayRecovery(reason), trigger: reason.trigger, result: .completed) }
+                    self.activityRecoveryFailures.remove(reason)
+                    self.model.pendingArrangement = false; self.clearRollback(); completion?(true)
+                case .failure(let error):
+                    if let operation { self.activity.finish(operation, result: .failed) }
+                    self.activityRecoveryFailures.insert(reason)
+                    self.showError(error); completion?(false)
                 }
         }
     }
@@ -1384,7 +1433,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             quiesce: { self.windowPositions?.invalidate(); self.screenEdges?.stop() },
             prepareClipboard: { self.clipboard?.prepareTermination() != false },
             needsDisplayRecovery: { self.needsDisplayRecovery },
-            restoreDisplays: { self.restoreAll(completion: $0) },
+            restoreDisplays: { self.restoreAll(reason: .quit, completion: $0) },
             suspendSpaces: spaces.map { module in { module.suspend(completion: $0) } },
             resumeClipboard: { self.clipboard?.resumeMonitoring() },
             restoreSpacesChoice: { if let spaces = self.spaces { spaces.requestRestore(enabled: spaces.savedEnabled) } },

@@ -29,6 +29,7 @@ final class KeepAwakeFeature {
     private let reportError: (Error) -> Void
     private var owner: KeepAwakeModule?
     private var generation = 0
+    var activity: ActivityJournal?
 
     init(makeOwner: @escaping () -> KeepAwakeModule, acceptsActions: @escaping () -> Bool,
          publish: @escaping (State) -> Void, reportError: @escaping (Error) -> Void) {
@@ -58,6 +59,10 @@ final class KeepAwakeFeature {
                 owner = module
                 generation += 1
                 let current = generation
+                module.onActivity = { [weak self, weak module] event, trigger, result in
+                    guard let self, let module, self.owner === module, self.generation == current else { return }
+                    self.activity?.record(event, trigger: trigger, result: result)
+                }
                 module.onChange = { [weak self, weak module] in
                     guard let self, let module, self.owner === module, self.generation == current else { return }
                     self.publish(self.state)
@@ -72,6 +77,7 @@ final class KeepAwakeFeature {
             generation += 1
             owner?.onChange = nil
             owner?.onError = nil
+            owner?.onActivity = nil
             owner = nil
         }
         publish(state)

@@ -184,6 +184,19 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     // Delivered after onError for failures; only successful manual operations
     // resolve action errors. A healthy observation alone does not resolve intent.
     var onManualOperationCompleted: ((ManualOperation, Result<Void, Error>) -> Void)?
+    var activityJournal: ActivityJournal?
+    private var activityManual: ActivityOperationID?
+    private var activityPendingManual: ActivityOperationID?
+    private var activityAutomatic: [String: ActivityOperationID] = [:]
+    // Only suppress repeated waiting/failure observations, never feature retries.
+    // These identity caches stay inside the owner and are bounded independently.
+    private var activityRetryNoted: Set<String> = []
+    private var activityWaitingNoted: Set<String> = []
+
+    private func cancelActivityConnections() {
+        for operation in activityAutomatic.values { activityJournal?.finish(operation, result: .canceled) }
+        activityAutomatic.removeAll()
+    }
     var onAudioOutputRequested: ((String) -> Void)?
 
     init(defaults: UserDefaults = .standard, backend: BluetoothBackend? = nil, importLegacyConfiguration: Bool = true,
@@ -340,6 +353,12 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     func stop(completion: (() -> Void)? = nil) {
+        cancelActivityConnections()
+        if let activityManual { activityJournal?.finish(activityManual, result: .canceled) }
+        activityManual = nil
+        if let activityPendingManual { activityJournal?.finish(activityPendingManual, result: .canceled) }
+        activityPendingManual = nil
+        activityRetryNoted.removeAll(); activityWaitingNoted.removeAll()
         stopped = true
         timer?.invalidate()
         timer = nil
@@ -353,6 +372,9 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
 
     func poll() {
         guard !stopped, !busy else { return }
+        activityRetryNoted.formIntersection(autoAddresses)
+        activityWaitingNoted.formIntersection(autoAddresses)
+        if !autoEnabled { activityRetryNoted.removeAll(); activityWaitingNoted.removeAll() }
         guard !permissionRequired else {
             radioPoweredOn = nil
             status = reconnectSummary
@@ -403,7 +425,12 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
 
     func requestConnection(_ connected: Bool, address: String) {
         guard !stopped else { return }
-        guard !permissionRequired else { onError?(ToggleError(message: reconnectSummary)); onChange?(); return }
+        guard !permissionRequired else {
+            activityJournal?.record(.bluetoothConnect(connected), trigger: .user, result: .blocked)
+            onError?(ToggleError(message: reconnectSummary)); onChange?(); return
+        }
+        if let activityPendingManual { activityJournal?.finish(activityPendingManual, result: .canceled) }
+        activityPendingManual = activityJournal?.begin(.bluetoothConnect(connected), trigger: .user, queued: true)
         pendingManual = .connection(address, connected)
         clearAudioIntent()
         cycleCancellation?.cancel() // Manual intent takes precedence over later auto targets.
@@ -413,7 +440,12 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
 
     func turnBluetoothOn() {
         guard !stopped else { return }
-        guard !permissionRequired else { onError?(ToggleError(message: reconnectSummary)); onChange?(); return }
+        guard !permissionRequired else {
+            activityJournal?.record(.bluetoothPower, trigger: .user, result: .blocked)
+            onError?(ToggleError(message: reconnectSummary)); onChange?(); return
+        }
+        if let activityPendingManual { activityJournal?.finish(activityPendingManual, result: .canceled) }
+        activityPendingManual = activityJournal?.begin(.bluetoothPower, trigger: .user, queued: true)
         pendingManual = .powerOn
         clearAudioIntent()
         cycleCancellation?.cancel()
@@ -424,6 +456,10 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     private func startPendingManual() {
         guard !stopped, !busy, let backend, let request = pendingManual else { return }
         pendingManual = nil
+        cancelActivityConnections()
+        activityManual = activityPendingManual
+        activityPendingManual = nil
+        if let activityManual { activityJournal?.start(activityManual) }
         // Manual actions and persistent reconnect policy are separate. The UI
         // explicitly asks before turning off a selected device's reconnect rule.
         busy = true
@@ -435,7 +471,8 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
             let name = devices.first(where: { $0.address == address })?.name ?? "device"
             activity = "\(connected ? "Connecting to" : "Disconnecting") \(name)…"
             deviceStates[address] = connected ? "Connecting…" : "Disconnecting…"
-        case .powerOn: manualAddress = nil; activity = "Turning Bluetooth on…"
+        case .powerOn:
+            manualAddress = nil; activity = "Turning Bluetooth on…"
         }
         onChange?()
         queue.async { [weak self] in
@@ -456,13 +493,32 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         switch progress {
         case .radio(let poweredOn): radioPoweredOn = poweredOn
         case .connecting(let device):
+            activityWaitingNoted.remove(device.address)
+            if !activityRetryNoted.contains(device.address), activityAutomatic.count < 300 {
+                activityAutomatic[device.address] = activityJournal?.begin(.bluetoothConnect(true), trigger: .automatic)
+            }
             activity = "Connecting to \(device.name)…"
             deviceStates[device.address] = "Connecting…"
         case .connected(let device):
+            if let operation = activityAutomatic.removeValue(forKey: device.address) {
+                activityJournal?.finish(operation, result: .completed)
+            } else if activityRetryNoted.contains(device.address) {
+                activityJournal?.record(.bluetoothConnect(true), trigger: .automatic, result: .completed)
+            }
+            activityRetryNoted.remove(device.address); activityWaitingNoted.remove(device.address)
             deviceStates.removeValue(forKey: device.address); retryAfter.removeValue(forKey: device.address)
             if autoEnabled && switchAudioOutput { pendingAudioAddresses.insert(device.address) }
-        case .waiting(let device, let reason): deviceStates[device.address] = reason
+        case .waiting(let device, let reason):
+            if !activityWaitingNoted.contains(device.address), activityWaitingNoted.count < 300 {
+                activityWaitingNoted.insert(device.address)
+                activityJournal?.record(.bluetoothWaiting, trigger: .automatic, result: .completed)
+            }
+            deviceStates[device.address] = reason
         case .failed(let device, let reason):
+            if let operation = activityAutomatic.removeValue(forKey: device.address) {
+                activityJournal?.finish(operation, result: .retryScheduled)
+            }
+            if activityRetryNoted.count < 300 { activityRetryNoted.insert(device.address) }
             deviceStates[device.address] = "\(reason) · will retry after 30s"
             retryAfter[device.address] = Date().addingTimeInterval(30)
         }
@@ -471,6 +527,16 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
 
     private func complete(_ result: Result<[BluetoothDevice], Error>, reportError: Bool, manualOperation: ManualOperation? = nil) {
         if finishStoppedOperation() { return }
+        // An interrupted cycle cannot leave Started rows behind. Per-target
+        // successes/failures above have already finished their own rows.
+        cancelActivityConnections()
+        if manualOperation != nil, let activityManual {
+            switch result {
+            case .success: activityJournal?.finish(activityManual, result: .completed)
+            case .failure: activityJournal?.finish(activityManual, result: .failed)
+            }
+            self.activityManual = nil
+        }
         busy = false
         manualBusy = false
         activity = nil
@@ -486,7 +552,10 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
             }
             lastError = nil
             if let manualAddress { deviceStates.removeValue(forKey: manualAddress); retryAfter.removeValue(forKey: manualAddress) }
-            for device in updated where device.connected { deviceStates.removeValue(forKey: device.address); retryAfter.removeValue(forKey: device.address) }
+            for device in updated where device.connected {
+                deviceStates.removeValue(forKey: device.address); retryAfter.removeValue(forKey: device.address)
+                activityRetryNoted.remove(device.address); activityWaitingNoted.remove(device.address)
+            }
             if defaults.object(forKey: "bluetooth.autoAddresses") == nil,
                let name = defaults.string(forKey: "bluetooth.legacySpeakerName"),
                let device = updated.first(where: { $0.name == name }) {

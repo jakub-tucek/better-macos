@@ -83,6 +83,8 @@ final class KeepAwakeModule {
     }
     var onChange: (() -> Void)?
     var onError: ((Error) -> Void)?
+    var onActivity: ((ActivityEvent, ActivityTrigger, ActivityResult) -> Void)?
+    private var journalAppRuleActive = false
     var active: Bool { systemAssertion != nil || displayAssertion != nil }
     var canStop: Bool { active || deadline != nil || !activeAppNames.isEmpty }
     var remaining: TimeInterval { max(0, (deadline ?? now()) - now()) }
@@ -183,6 +185,8 @@ final class KeepAwakeModule {
     func start() throws {
         try expireIfNeeded()
         guard deadline == nil, !cleanupPending else { return }
+        var succeeded = false
+        defer { onActivity?(.awakeStart(selectedMinutes), .user, succeeded ? .completed : (cleanupPending ? .cleanupNeeded : .failed)) }
         let seconds = Double(selectedMinutes * 60)
         deadline = now() + seconds
         beginUpdates()
@@ -199,12 +203,15 @@ final class KeepAwakeModule {
             onChange?()
             throw creationError
         }
+        succeeded = true
         onChange?()
     }
 
     func extend() throws {
         try expireIfNeeded()
         guard deadline != nil, !cleanupPending else { return }
+        var succeeded = false
+        defer { onActivity?(.awakeExtend, .user, succeeded ? .completed : .failed) }
         let seconds = min(24 * 3600, remaining + 15 * 60)
         let timeout = assertionTimeout(remaining: seconds)
         do {
@@ -216,15 +223,19 @@ final class KeepAwakeModule {
             throw error
         }
         deadline = now() + seconds
+        succeeded = true
         onChange?()
     }
 
     /// Retry existing ownership, not Start: renewal failures retain their timed
     /// deadline and app-rule pauses. Never grant a fresh duration on retry.
     func retry() throws {
+        var succeeded = false
+        defer { onActivity?(.awakeRetry, .user, succeeded ? .completed : .failed) }
         defer { onChange?() }
         try reconcile()
         lastError = nil
+        succeeded = true
     }
 
     func setKeepDisplayAwake(_ enabled: Bool) throws {
@@ -242,9 +253,14 @@ final class KeepAwakeModule {
     }
 
     func tick() {
-        do { try reconcile(); protectionFailed = false; lastError = nil }
+        let wasFailed = protectionFailed
+        do {
+            try reconcile(); protectionFailed = false; lastError = nil
+            if wasFailed { onActivity?(.awakeProtection, .recovery, .completed) }
+        }
         catch {
             protectionFailed = true
+            if !wasFailed { onActivity?(.awakeProtection, .automatic, cleanupPending ? .cleanupNeeded : .failed) }
             if lastError != error.localizedDescription { lastError = error.localizedDescription; onError?(error) }
         }
         let state = PublishedState(active: active, seconds: Int(ceil(remaining)), apps: matchingApps,
@@ -253,12 +269,24 @@ final class KeepAwakeModule {
     }
 
     private func expireIfNeeded() throws {
-        if deadline != nil && remaining <= 0 { deadline = nil; try reconcile() }
+        if deadline != nil && remaining <= 0 { try reconcile() }
     }
 
     private func reconcile() throws {
-        do { try reconcileAssertions(); protectionFailed = false }
-        catch { protectionFailed = true; throw error }
+        let expired = deadline != nil && remaining <= 0
+        do {
+            try reconcileAssertions(); protectionFailed = false
+            let ruleActive = !activeAppNames.isEmpty && active
+            if expired { onActivity?(.awakeExpired(ruleActive), .automatic, .expired(appRuleActive: ruleActive)) }
+            if ruleActive != journalAppRuleActive {
+                journalAppRuleActive = ruleActive
+                onActivity?(.awakeRule(ruleActive), .automatic, .completed)
+            }
+        } catch {
+            protectionFailed = true
+            if expired { onActivity?(.awakeExpired(false), .automatic, cleanupPending ? .cleanupNeeded : .failed) }
+            throw error
+        }
     }
 
     private func reconcileAssertions() throws {
@@ -292,6 +320,11 @@ final class KeepAwakeModule {
     }
 
     func stop() throws {
+        let hadWork = canStop || cleanupPending
+        var succeeded = false
+        defer {
+            if hadWork { onActivity?(.awakeStop, watchingApps ? .user : .recovery, succeeded ? .completed : .cleanupNeeded) }
+        }
         defer { onChange?() }
         deadline = nil
         matchingApps = currentMatchingApps()
@@ -299,6 +332,8 @@ final class KeepAwakeModule {
         let instances = processInstances()
         for id in matchingApps.keys { pausedInstances[id] = instances[id] ?? [] }
         try releaseAssertions()
+        succeeded = true
+        journalAppRuleActive = false
     }
 
     private func releaseAssertions() throws {

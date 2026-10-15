@@ -45,7 +45,7 @@ case "${0##*/}" in
             esac
         done
         if [[ "$1" == swiftc ]]; then
-            for source in Sources/Features/KeepAwake/KeepAwakeFeature.swift Sources/Features/KeepAwake/KeepAwakePresentation.swift Sources/Core/Diagnostics.swift Sources/Core/LoginDiagnostics.swift; do
+            for source in Sources/Core/ActivityJournal.swift Sources/SharedUI/ActivityView.swift Sources/Features/KeepAwake/KeepAwakeFeature.swift Sources/Features/KeepAwake/KeepAwakePresentation.swift Sources/Core/Diagnostics.swift Sources/Core/LoginDiagnostics.swift; do
                 inputs=0
                 for arg in "$@"; do
                     if [[ "$arg" == "$source" ]]; then inputs=$((inputs + 1)); fi

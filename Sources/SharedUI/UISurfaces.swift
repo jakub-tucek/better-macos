@@ -752,6 +752,11 @@ struct SettingsView: View {
                 Button("Check for updates", action: model.onCheckUpdates).disabled(model.updateChecking)
                 if model.updateAvailable { Button("Install update…", action: model.onInstallUpdate) }
             }
+            DashboardCard {
+                Text("Activity").font(.headline)
+                Text("See what the app has been doing this session.").font(.caption).foregroundStyle(.secondary)
+                Button("Show activity…", action: model.onOpenActivity)
+            }
             DisclosureGroup("Diagnostics") { Text(model.watchdogStatus).textSelection(.enabled) }
         }
     }

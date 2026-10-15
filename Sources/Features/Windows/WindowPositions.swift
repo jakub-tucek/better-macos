@@ -96,11 +96,19 @@ final class WindowPositions: ObservableObject {
         set { guard acceptsActions() else { return }; selectedValue = newValue; defaults.set(newValue, forKey: "windows.selected"); generation += 1 }
     }
     var acceptsActions: () -> Bool = { true }
+    var activity: ActivityJournal?
     @Published private(set) var ready = false
     private let backend: WindowPositionBackend
     private let defaults: UserDefaults
     private let schedule: (@escaping () -> Void) -> Void
-    private var generation = 0
+    private var generation = 0 {
+        didSet {
+            if let activeRestore { activity?.finish(activeRestore, result: .windowsCanceled(activityMoved)) }
+            activeRestore = nil; activityMoved = 0
+        }
+    }
+    private var activeRestore: ActivityOperationID?
+    private var activityMoved = 0
     private var pending = false
     private var lastDisplaySet: [String]?
     private var stopped = false
@@ -156,7 +164,7 @@ final class WindowPositions: ObservableObject {
         guard automatic, !paused else { return }
         let candidates = layouts.filter { $0.displays.map(\.id).sorted() == ids }
         if let layout = candidates.first(where: { $0.id == selected }) ?? (candidates.count == 1 ? candidates.first : nil) {
-            restore(layout.id)
+            restore(layout.id, trigger: .automatic)
         } else { summary = "No unique saved layout for this display set; select one." }
     }
     func requestPermission() { guard acceptsActions() else { return }; backend.requestPermission() }
@@ -167,7 +175,11 @@ final class WindowPositions: ObservableObject {
         return layout.displays.map(\.id).sorted() == backend.displays().map(\.id).sorted()
     }
     private var excluded: Set<String> { Set(exclusions.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }) }
-    private func persist() { if let data = try? JSONEncoder().encode(layouts) { defaults.set(data, forKey: "windows.layouts") } }
+    @discardableResult private func persist() -> Bool {
+        guard let data = try? JSONEncoder().encode(layouts) else { return false }
+        defaults.set(data, forKey: "windows.layouts")
+        return true
+    }
     func delete(_ id: String) { guard acceptsActions() else { return }; generation += 1; layouts.removeAll { $0.id == id }; persist(); if selected == id { selected = "" } }
     @discardableResult func rename(_ id: String, to name: String) -> Bool {
         guard acceptsActions() else { return false }
@@ -179,6 +191,9 @@ final class WindowPositions: ObservableObject {
     }
     func save(_ name: String) {
         guard acceptsActions() else { return }
+        let operation = activity?.begin(.windowSave, trigger: .user)
+        var outcome = ActivityResult.blocked
+        defer { if let operation { activity?.finish(operation, result: outcome) } }
         guard ready, backend.permitted else { summary = "Wait for stable displays and grant Accessibility access."; return }
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { summary = "Enter a layout name."; return }
@@ -186,7 +201,7 @@ final class WindowPositions: ObservableObject {
         guard !displays.isEmpty else { summary = "No available displays."; return }
         let snapshot: [PositionedWindow]
         do { snapshot = try backend.windows() }
-        catch { summary = "Window discovery failed: \(error.localizedDescription)"; return }
+        catch { outcome = .failed; summary = "Window discovery failed: \(error.localizedDescription)"; return }
         let windows = snapshot.filter { !excluded.contains($0.app) }.compactMap { window -> PositionedWindow? in
             guard let display = displays.max(by: { $0.bounds.intersection(window.frame).area < $1.bounds.intersection(window.frame).area }), display.bounds.intersects(window.frame) else { return nil }
             var saved = window; saved.display = display.id
@@ -194,21 +209,29 @@ final class WindowPositions: ObservableObject {
             return saved
         }
         let layout = WindowLayout(name: name, displays: displays, windows: windows)
-        layouts.append(layout); selected = layout.id; persist()
+        layouts.append(layout); selected = layout.id
+        let persisted = persist()
         summary = "Saved \(windows.count) windows in \(name)."
+        outcome = persisted ? .windowsSaved(windows.count) : .failed
     }
-    func restore(_ id: String) {
+    func restore(_ id: String, trigger: ActivityTrigger = .user) {
         guard acceptsActions() else { return }
         generation += 1
         let ticket = generation
+        let operation = activity?.begin(.windowRestore, trigger: trigger)
+        activeRestore = operation
+        func finish(_ result: ActivityResult) {
+            if let operation { activity?.finish(operation, result: result) }
+            if activeRestore == operation { activeRestore = nil }
+        }
         pending = false
-        guard ready, !stopped, backend.permitted else { summary = "Wait for stable displays and grant Accessibility access."; return }
-        guard let layout = layouts.first(where: { $0.id == id }) else { return }
+        guard ready, !stopped, backend.permitted else { finish(.blocked); summary = "Wait for stable displays and grant Accessibility access."; return }
+        guard let layout = layouts.first(where: { $0.id == id }) else { finish(.blocked); return }
         let displays = backend.displays()
-        guard displays.map(\.id).sorted() == layout.displays.map(\.id).sorted() else { summary = "Saved display set is not connected."; return }
+        guard displays.map(\.id).sorted() == layout.displays.map(\.id).sorted() else { finish(.blocked); summary = "Saved display set is not connected."; return }
         let current: [PositionedWindow]
         do { current = try backend.windows() }
-        catch { summary = "Window discovery failed: \(error.localizedDescription). Try Restore now again."; return }
+        catch { finish(.failed); summary = "Window discovery failed: \(error.localizedDescription). Try Restore now again."; return }
         var moved = 0, missing = 0, ambiguous = 0, unsupported = 0, failed = 0, skipped = 0
         var requested: [WindowMove] = []
         for saved in layout.windows {
@@ -227,22 +250,26 @@ final class WindowPositions: ObservableObject {
             requested.append(WindowMove(window: matches[0], frame: frame))
         }
         guard let writes = WindowMovePlanner.plan(requested, current: current, displays: displays) else {
+            finish(.blocked)
             summary = "Restore skipped: overlapping same-app targets cannot be moved without ambiguous geometry."
             return
         }
         func publish() {
             summary = "Restored \(moved); missing \(missing); ambiguous \(ambiguous); unsupported \(unsupported); excluded \(skipped); failed \(failed)."
+            finish(.windowsRestored(ActivityWindowCounts(restored: moved, missing: missing, ambiguous: ambiguous, unsupported: unsupported, excluded: skipped, failed: failed)))
         }
         func step(_ index: Int) {
-            guard ticket == generation, acceptsActions() else { return }
+            guard ticket == generation, acceptsActions() else { finish(.windowsCanceled(moved)); return }
             guard ready, !stopped, backend.permitted, backend.displays() == displays else {
                 summary = "Restore canceled after \(moved) windows; display state, permission, or settings changed."
+                finish(.windowsCanceled(moved))
                 return
             }
             guard index < writes.count else { publish(); return }
             let write = writes[index]
             if backend.move(write.window, to: write.frame) {
                 if !write.temporary { moved += 1 }
+                activityMoved = moved
             } else {
                 failed += 1
                 // Every move can be a prerequisite for another destination.

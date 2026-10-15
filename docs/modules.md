@@ -47,6 +47,8 @@ for the broader lifecycle work that remains proposed.
 - [Dashboard.swift](../Sources/SharedUI/Dashboard.swift): `DashboardModel`, `AppModule.dashboardFeature`
   mapping, shared controls, and feature configuration views. The filename predates
   the current popup/Settings split; it does not mean this is a separate plugin.
+- [ActivityView.swift](../Sources/SharedUI/ActivityView.swift): the quiet General → Activity
+  entry point opens a separate session-only journal; see [scope and privacy](activity.md).
 - [SetupWizard.swift](../Sources/App/SetupWizard.swift): setup drafts and selected-feature
   configuration. [AppDelegate.swift](../Sources/App/AppDelegate.swift) applies Finish through host
   operations; views do not own the OS effects.

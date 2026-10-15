@@ -51,6 +51,7 @@ for source in CStrafe IOHIDPayload; do
 done
 xcrun clang -O2 -arch arm64 -mmacosx-version-min=15.0 -c MouseHID/MouseHID.c -o build/objects/MouseHID.o
 xcrun swiftc -swift-version 5 -warnings-as-errors -O -target arm64-apple-macos15.0 \
+    Sources/Core/ActivityJournal.swift Sources/SharedUI/ActivityView.swift \
     Sources/Core/Diagnostics.swift Sources/Core/LoginDiagnostics.swift "$STAGE/DiagnosticBuild.swift" \
     Sources/App/LoginService.swift Sources/Features/KeepAwake/KeepAwakeFeature.swift Sources/Features/KeepAwake/KeepAwakePresentation.swift \
     -I "$CLIPBOARD_PACKAGE_MODULES" "$CLIPBOARD_PACKAGE_ARCHIVE" \

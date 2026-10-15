@@ -108,6 +108,7 @@ final class DashboardModel: ObservableObject {
     @Published var launchWidget: WidgetKind?
     var onOpenSettings: (SettingsGroup?) -> Void = { _ in }
     var onRunSetup: () -> Void = {}
+    var onOpenActivity: () -> Void = {}
     var onSaveWidgets: (WidgetLayout) -> Bool = { _ in false }
     var onFinishSetup: (SetupDraft, @escaping ([String]) -> Void) -> Void = { _, _ in }
     var onSkipSetup: () -> Void = {}
