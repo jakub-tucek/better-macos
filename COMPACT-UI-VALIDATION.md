@@ -1,5 +1,40 @@
 # Compact native popup · 2026-10-15
 
+## Follow-up: content-sized popup
+
+Parent review's fixed-height whitespace gap is addressed. SwiftUI measures the
+natural document, header and footer separately; only the scroll viewport is capped.
+The popup has a 160-point floor, bounded by available screen space and a 650-point
+maximum. Native resizing runs on the next main-queue turn and skips identical sizes;
+the measured document is not constrained to the prior viewport height. Native
+scrollers retain their own gutter rather than clipping a forced-width document.
+Settings windows and their sizing are unchanged.
+
+Full `bash test.sh`: **3812 isolated checks + seven installer checks passed**.
+`git diff --check` passes. New tests cover the sizing policy, then exercise the real
+SwiftUI content and owned native fixture window: widget add/remove, active/app-rule
+and recovery growth, long editor cap, actual native scrolling to offscreen controls,
+shrinking/regrowing the available-height bound, restoration to identical empty size,
+and absence of further resize events after settling. No live app is launched or quit.
+
+Twenty final native PNGs (light/dark, including long/editor scrolled-to-bottom):
+`/private/var/folders/01/q8lbfsh16d9bjtl88bpwtr840000gn/T/opencode/compact-ui-sized-fixtures/`.
+Inspected empty, short, long, retry, recovery and editor states. Final dimensions:
+
+| Fixture | Points (width × height) |
+| --- | --- |
+| Empty | 390 × 178 |
+| Short (Keep Awake only) | 390 × 195 |
+| Inactive / active widget stack | 390 × 452 / 478 |
+| Hidden-widget recovery | 390 × 219 |
+| Retained-deadline Retry | 390 × 498 |
+| Long / editor (scrollable) | 390 × 580 (fixture screen bound) |
+
+Remaining native acceptance: real status-item popover anchoring across displays,
+keyboard/VoiceOver traversal, and device pickers. No live feature controls, permissions,
+clipboard, application launch/quit, or main-worktree changes were used for this pass.
+Independent follow-up review remains with the parent session.
+
 ## Follow-up: explicit retry
 
 Parent review identified that Retry called Start, whose retained-deadline guard
@@ -31,7 +66,8 @@ not acceptance or a CLEAN review claim.
 - Active Stop stays in global safety UI when editing or when the widget is absent
   or disabled. Protection failures remain globally visible regardless of layout.
 - Settings, wizard, widget editing/persistence, and clipboard history are not
-  rewritten. `AppDelegate.swift` changes only the two native popover widths.
+  rewritten. Host changes wire popup resizing and the admitted Retry callback;
+  the transaction coordinator is injectable for isolated admission regression tests.
 
 ## Evidence
 
@@ -54,9 +90,8 @@ not acceptance or a CLEAN review claim.
 - Window-local bitmap rendering does not establish live popover placement,
   VoiceOver/keyboard traversal, active-window button emphasis, or actual device
   picker behavior. These require independent native acceptance.
-- Popup retains the existing bounded fixed-height scroll surface, so small widget
-  selections leave blank space above Quit. Content-sized popover height is not
-  implemented here.
+- The original fixed-height whitespace gap is resolved by the content-sizing
+  follow-up above. Live popover anchoring remains unverified.
 - Settings/editor retain their existing cards; only everyday popup sections change.
 - Fragile assumptions for independent review: synchronous duration callbacks remain
   ordered before Start; the existing host continues to reject actions during quit;

@@ -157,8 +157,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         item.button?.action = #selector(toggleDashboard)
         popover.behavior = .transient
         popover.animates = false
-        popover.contentSize = NSSize(width: 390, height: 580)
-        popover.contentViewController = NSHostingController(rootView: QuickActionsView(model: model))
+        popover.contentSize = NSSize(width: PopupSizing.width, height: 160)
+        popover.contentViewController = NSHostingController(rootView: QuickActionsView(model: model, onResize: { [weak self] size in
+            // Defer native resizing out of the SwiftUI geometry update. The
+            // document measurement is independent of this viewport's height.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let bounded = NSSize(width: PopupSizing.width, height: min(size.height, model.popupHeight, 650))
+                guard popover.contentSize != bounded else { return }
+                popover.contentSize = bounded
+            }
+        }))
         updateModules()
         if animations.recoveryRequired {
             setAnimations(false, recoverOnly: true)
@@ -648,8 +657,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             showSettings(group); return
         }
         guard let button = item.button, !popover.isShown else { return }
-        model.popupHeight = min(650, max(260, (button.window?.screen?.visibleFrame.height ?? 700) - 80))
-        popover.contentSize = NSSize(width: 390, height: model.popupHeight)
+        model.popupHeight = max(1, (button.window?.screen?.visibleFrame.height ?? 700) - 80)
+        popover.contentSize.height = min(popover.contentSize.height, model.popupHeight, 650)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
     }

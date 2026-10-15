@@ -261,10 +261,34 @@ struct WidgetEditor: View {
     }
 }
 
+/// Measure natural document height at the popup's constrained width, never derive
+/// it from viewport height. Only the viewport is capped; long content stays intact.
+struct PopupSizing: Equatable {
+    static let width: CGFloat = 390
+    let height: CGFloat
+    let viewportHeight: CGFloat
+    init(contentHeight: CGFloat, chromeHeight: CGFloat, availableHeight: CGFloat) {
+        let limit = max(1, min(650, availableHeight.isFinite ? availableHeight : 650))
+        let chrome = max(0, chromeHeight.isFinite ? chromeHeight : 0)
+        let content = max(0, contentHeight.isFinite ? contentHeight : 0)
+        height = min(limit, max(160, ceil(content + chrome)))
+        viewportHeight = max(0, height - chrome)
+    }
+}
+
 struct QuickActionsView: View {
     @ObservedObject var model: DashboardModel
     @ObservedObject private var editor: WidgetEditingSession
-    init(model: DashboardModel) { self.model = model; self.editor = model.popupWidgetEditor }
+    @State private var contentHeight: CGFloat = 0
+    @State private var headerHeight: CGFloat = 40
+    @State private var footerHeight: CGFloat = 38
+    private let onResize: (NSSize) -> Void
+    init(model: DashboardModel, onResize: @escaping (NSSize) -> Void = { _ in }) {
+        self.model = model; self.editor = model.popupWidgetEditor; self.onResize = onResize
+    }
+    private var sizing: PopupSizing {
+        PopupSizing(contentHeight: contentHeight, chromeHeight: headerHeight + footerHeight + 2, availableHeight: model.popupHeight)
+    }
     private var entries: [WidgetEntry] {
         var entries = model.widgetLayout.entries.filter { $0.known != nil }
         if let launch = model.launchWidget {
@@ -287,7 +311,8 @@ struct QuickActionsView: View {
                 Button { model.onOpenSettings(nil) } label: { Image(systemName: "gearshape") }
                     .accessibilityLabel("Settings")
             }.padding(.horizontal, 14).padding(.vertical, 10)
-            Divider()
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { headerHeight = $0 }
+            Divider().frame(height: 1)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     SafetyAlerts(model: model, showAwakeSession: editor.draft != nil || !entries.contains { $0.known == .keepAwake && model.enabledModules.contains(.keepAwake) })
@@ -312,13 +337,21 @@ struct QuickActionsView: View {
                         }
                     }
                 }
+                .frame(maxWidth: .infinity)
+                .fixedSize(horizontal: false, vertical: true)
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { contentHeight = $0 }
             }
-            Divider()
+            .frame(height: sizing.viewportHeight)
+            Divider().frame(height: 1)
             HStack { Spacer(); Button("Quit", action: model.onQuit).disabled(model.monitorBusy) }.padding(.horizontal, 14).padding(.vertical, 8)
-        }.frame(width: 390, height: model.popupHeight)
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { footerHeight = $0 }
+        }.frame(width: PopupSizing.width, height: sizing.height)
             .background(Color(nsColor: .windowBackgroundColor))
             .controlSize(.small)
             .onExitCommand(perform: model.onClose)
+            .onChange(of: sizing.height, initial: true) { _, height in
+                onResize(NSSize(width: PopupSizing.width, height: height))
+            }
     }
 }
 

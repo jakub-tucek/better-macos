@@ -58,6 +58,7 @@ private final class UIWindows: WindowPositionBackend {
 
 func runUITests() throws {
     runAwakeQuickActionTests()
+    runPopupSizingTests()
     let suite = "fix-mac-os.ui-tests.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
@@ -279,6 +280,96 @@ private func runAwakeQuickActionTests() {
     withExtendedLifetime(host) {}
 }
 
+private final class PopupFixtureHost {
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: PopupSizing.width, height: 160), styleMask: [.borderless], backing: .buffered, defer: false)
+    private(set) var resizeEvents: [NSSize] = []
+    init(model: DashboardModel, dark: Bool = false) {
+        let view = NSHostingView(rootView: QuickActionsView(model: model, onResize: { [weak self] size in
+            DispatchQueue.main.async { [weak self] in
+                guard let self, window.contentLayoutRect.size != size else { return }
+                resizeEvents.append(size)
+                window.setContentSize(size)
+            }
+        }))
+        view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        window.contentView = view
+        view.frame = window.contentView!.bounds
+    }
+    func settle() {
+        for _ in 0..<12 {
+            window.contentView?.layoutSubtreeIfNeeded()
+            window.display()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+    }
+    @discardableResult func scrollToBottom() -> Bool {
+        func find(_ view: NSView) -> NSScrollView? {
+            if let scroll = view as? NSScrollView { return scroll }
+            return view.subviews.lazy.compactMap { find($0) }.first
+        }
+        guard let view = window.contentView, let scroll = find(view), let document = scroll.documentView,
+              document.bounds.height > scroll.contentView.bounds.height else { return false }
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: document.bounds.height - scroll.contentView.bounds.height))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        return scroll.contentView.bounds.origin.y > 0
+    }
+}
+
+private func runPopupSizingTests() {
+    expect(PopupSizing(contentHeight: 80, chromeHeight: 76, availableHeight: 650).height == 160,
+           "empty popup has a reasonable compact floor rather than screen-height whitespace")
+    expect(PopupSizing(contentHeight: 240, chromeHeight: 76, availableHeight: 650).height == 316,
+           "short popup follows its measured content plus chrome")
+    let long = PopupSizing(contentHeight: 2000, chromeHeight: 76, availableHeight: 500)
+    expect(long.height == 500 && long.viewportHeight == 424, "long popup bounds only its scroll viewport to available screen height")
+    expect(PopupSizing(contentHeight: 2000, chromeHeight: 76, availableHeight: 1200).height == 650,
+           "large screens retain the popup maximum height")
+    expect(PopupSizing(contentHeight: 0, chromeHeight: 76, availableHeight: 120).height == 120,
+           "available screen space takes precedence over the empty-state floor")
+
+    _ = NSApplication.shared
+    let model = DashboardModel(); model.watchdogReady = true
+    model.widgetLayout = WidgetLayout()
+    model.enabledModules = [.keepAwake, .audio, .clipboard, .bluetooth]
+    let host = PopupFixtureHost(model: model)
+    host.settle()
+    let empty = host.window.contentLayoutRect.height
+    expect((160...220).contains(empty), "actual empty SwiftUI popup resizes its native fixture window to compact content")
+    model.widgetLayout.entries = [.init(.keepAwake)]
+    host.settle()
+    let short = host.window.contentLayoutRect.height
+    expect(short > empty && short < 350, "adding a real quick widget grows the native popup without filling its screen cap")
+    model.keepAwakeActive = true; model.keepAwakeCanStop = true; model.keepAwakeRemaining = 1800
+    model.keepAwakeAppNames = ["Fixture app one", "Fixture app two"]
+    model.keepAwakeAppsPaused = true
+    host.settle()
+    expect(host.window.contentLayoutRect.height > short, "active session reasons and Resume grow the actual native popup")
+    model.keepAwakeProtectionFailed = true; model.errorMessage = "Fixture recovery requires retry."
+    host.settle()
+    let recovery = host.window.contentLayoutRect.height
+    expect(recovery > short, "global recovery participates in measured popup content")
+    model.widgetLayout.entries = WidgetKind.allCases.map { WidgetEntry($0, expanded: true) }
+    model.popupWidgetEditor.begin(model.widgetLayout)
+    host.settle()
+    expect(host.window.contentLayoutRect.height == model.popupHeight, "long real widget editor caps the native window and leaves content scrollable")
+    expect(host.scrollToBottom(), "bounded real widget editor scrolls its owned native document to reveal offscreen controls")
+    model.popupHeight = 300
+    host.settle()
+    expect(host.window.contentLayoutRect.height == 300, "open editor responds to a smaller available-screen bound")
+    model.popupHeight = 580
+    host.settle()
+    expect(host.window.contentLayoutRect.height == 580, "restoring the bound regrows a long popup without measuring its previous viewport as content")
+    model.popupWidgetEditor.cancel(); model.widgetLayout.entries.removeAll()
+    model.keepAwakeActive = false; model.keepAwakeCanStop = false; model.keepAwakeRemaining = 0
+    model.keepAwakeProtectionFailed = false; model.errorMessage = nil
+    host.settle()
+    expect(host.window.contentLayoutRect.height == empty, "removing widgets and recovery shrinks native popup back to the same empty height")
+    let events = host.resizeEvents.count
+    host.settle()
+    expect(host.resizeEvents.count == events && events < 30, "content-sized native popup settles without resize feedback oscillation")
+    host.window.orderOut(nil)
+}
+
 /// Explicit snapshot route: only a fresh model and a window owned by this test
 /// process. No AppDelegate, clipboard, host modules, permissions or screen capture.
 func renderCompactUIFixtures(directory: String) throws {
@@ -286,8 +377,8 @@ func renderCompactUIFixtures(directory: String) throws {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     _ = NSApplication.shared
     for dark in [false, true] {
-        for scenario in ["inactive", "active", "recovery", "editing", "empty"] {
-            let active = scenario == "active" || scenario == "recovery"
+        for scenario in ["inactive", "active", "retry", "recovery", "editing", "editing-bottom", "empty", "short", "long", "long-bottom"] {
+            let active = scenario == "active" || scenario == "recovery" || scenario == "retry"
             let model = DashboardModel()
             model.watchdogReady = true
             model.enabledModules = [.keepAwake, .audio, .clipboard, .bluetooth]
@@ -300,6 +391,7 @@ func renderCompactUIFixtures(directory: String) throws {
             model.audioDevices = [AudioDevice(uid: "fixture-output", name: "Studio headphones — USB audio", directions: [.output], bluetooth: false), AudioDevice(uid: "fixture-input", name: "Built-in microphone", directions: [.input], bluetooth: false)]
             model.audioRoutes = [.output: "fixture-output", .input: "fixture-input"]
             model.audioStatus = "Preferred routes"
+            if scenario == "retry" { model.keepAwakeProtectionFailed = true }
             if scenario == "recovery" {
                 model.widgetLayout.entries.removeAll()
                 model.keepAwakeProtectionFailed = true
@@ -307,14 +399,19 @@ func renderCompactUIFixtures(directory: String) throws {
                 model.errorMessage = "Fixture: assertion release needs retry."
             }
             if scenario == "empty" { model.widgetLayout.entries.removeAll() }
-            if scenario == "editing" { model.popupWidgetEditor.begin(model.widgetLayout) }
-            let view = NSHostingView(rootView: QuickActionsView(model: model))
-            view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 390, height: model.popupHeight), styleMask: [.borderless], backing: .buffered, defer: false)
-            window.contentView = view
-            view.frame = window.contentView!.bounds
-            view.layoutSubtreeIfNeeded()
-            window.display()
+            if scenario.hasPrefix("editing") { model.popupWidgetEditor.begin(model.widgetLayout) }
+            if scenario == "short" { model.widgetLayout.entries = [.init(.keepAwake)] }
+            if scenario.hasPrefix("long") {
+                model.widgetLayout.entries = WidgetKind.allCases.map { WidgetEntry($0, expanded: true) }
+                model.keepAwakeAppsPaused = true
+                model.keepAwakeAppNames = Array(repeating: "Fixture presentation app with a long name", count: 8)
+                model.errorMessage = "Fixture recovery: a long message wraps at the popup's fixed width; no live devices are accessed."
+            }
+            let host = PopupFixtureHost(model: model, dark: dark)
+            host.settle()
+            if scenario.hasSuffix("-bottom") { host.scrollToBottom(); host.settle() }
+            let window = host.window
+            let view = window.contentView!
             guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { throw CocoaError(.fileWriteUnknown) }
             view.cacheDisplay(in: view.bounds, to: bitmap)
             guard let data = bitmap.representation(using: .png, properties: [:]) else { throw CocoaError(.fileWriteUnknown) }
