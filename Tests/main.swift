@@ -398,6 +398,7 @@ displaySetModule.reconcile(ready: true, settled: true)
 expect(displaySetBackend.moves.count == 1, "repeated A B C snapshot does not repeat restoration")
 displaySetDefaults.removePersistentDomain(forName: displaySetDomain)
 runHostTransactionsTests()
+runKeepAwakeFeatureTests()
 try runUITests()
 try runClipboardTests()
 

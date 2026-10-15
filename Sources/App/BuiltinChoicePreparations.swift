@@ -9,7 +9,7 @@ struct ModuleChoiceFailure: Error {
 /// The host admits the request and commits the choice only after success.
 /// Like HostTransactions, preparation and its continuations run on the main thread.
 struct BuiltinChoicePreparations {
-    let keepAwake: KeepAwakeChoicePreparation
+    let keepAwake: KeepAwakeFeature
     let clipboard: ClipboardChoicePreparation
     let displays: DisplayChoicePreparation
 
@@ -19,20 +19,6 @@ struct BuiltinChoicePreparations {
         case .clipboard where !enabled: completion(clipboard.prepareUnload())
         case .monitors, .arrangement: displays.prepare(module, enabled: enabled, completion: completion)
         default: completion(.success(()))
-        }
-    }
-}
-
-struct KeepAwakeChoicePreparation {
-    let owner: () -> KeepAwakeModule?
-
-    func prepareDisable() -> Result<Void, ModuleChoiceFailure> {
-        guard let module = owner() else { return .success(()) }
-        do { try module.deactivate(); return .success(()) }
-        catch {
-            // Preserve the same owner and restart observation/retry after refusal.
-            module.activate()
-            return .failure(ModuleChoiceFailure(detail: error.localizedDescription, message: error.localizedDescription))
         }
     }
 }

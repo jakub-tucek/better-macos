@@ -45,6 +45,13 @@ case "${0##*/}" in
             esac
         done
         if [[ "$1" == swiftc ]]; then
+            for source in Sources/Features/KeepAwake/KeepAwakeFeature.swift Sources/Features/KeepAwake/KeepAwakePresentation.swift; do
+                inputs=0
+                for arg in "$@"; do
+                    if [[ "$arg" == "$source" ]]; then inputs=$((inputs + 1)); fi
+                done
+                [[ "$inputs" == 1 ]] || exit 32
+            done
             if [[ "$*" == *'-o build/isolated-tests'* ]]; then
                 [[ "$*" == *'Tests/main.swift'* && "$*" != *'Sources/App/main.swift'* ]] || exit 30
             else

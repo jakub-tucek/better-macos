@@ -43,6 +43,7 @@ for source in CStrafe IOHIDPayload; do
 done
 xcrun clang -O2 -arch arm64 -mmacosx-version-min=15.0 -c MouseHID/MouseHID.c -o build/objects/MouseHID.o
 xcrun swiftc -swift-version 5 -warnings-as-errors -O -target arm64-apple-macos15.0 \
+    Sources/Features/KeepAwake/KeepAwakeFeature.swift Sources/Features/KeepAwake/KeepAwakePresentation.swift \
     -I "$CLIPBOARD_PACKAGE_MODULES" "$CLIPBOARD_PACKAGE_ARCHIVE" \
     -I Vendor/strafe/CStrafe/include -I MouseHID Sources/Features/Clipboard/ClipboardModule.swift Sources/Features/Windows/WindowPositions.swift Sources/Features/Windows/WindowPositionsView.swift \
     Sources/App/AppModules.swift Sources/App/BuiltinFeatures.swift Sources/App/BuiltinChoicePreparations.swift Sources/Core/HostTransactions.swift Sources/Features/Displays/DisplayController.swift Sources/Features/Displays/DisplayTopology.swift Sources/Features/Displays/DisplayArrangementEditor.swift Sources/Features/Displays/DisplayRefreshGate.swift Sources/App/SafetyWatchdog.swift Sources/SharedUI/Dashboard.swift Sources/App/AppDelegate.swift Sources/Core/CommandRunner.swift Sources/Features/Bluetooth/BluetoothModule.swift \

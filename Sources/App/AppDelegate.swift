@@ -19,12 +19,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let animations: AnimationPreferences
     private let menuBarSpacing: MenuBarSpacing
     private let makeAudio: () -> AudioModule
-    private let makeKeepAwake: () -> KeepAwakeModule
+    private let awakeFeature: KeepAwakeFeature
+    private let awakePresentation: KeepAwakePresentation
     private let makeBluetooth: () -> BluetoothModule
     private let makeMenuBar: () -> MenuBarModule
     private var menuBar: MenuBarModule?
     private var quitGuard: QuitGuard?
-    private var keepAwake: KeepAwakeModule?
     private var windowPositions: WindowPositions?
     private var clipboard: ClipboardModule?
     private let injectedMouseLifecycle: MouseLifecycle?
@@ -60,7 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let transactions: HostTransactions
     private var moduleFailures: [AppModule: String] = [:]
     private lazy var choicePreparations = BuiltinChoicePreparations(
-        keepAwake: KeepAwakeChoicePreparation(owner: { [weak self] in self?.keepAwake }),
+        keepAwake: awakeFeature,
         clipboard: ClipboardChoicePreparation(owner: { [weak self] in self?.clipboard }),
         displays: DisplayChoicePreparation(
             isRecovering: { [weak self] in self?.recovering == true },
@@ -88,6 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
      init(commandRunner: CommandRunning = CommandRunner(), spaces: SpacesModule? = nil, windowPositions: WindowPositions? = nil, clipboard: ClipboardModule? = nil, mouseLifecycle: MouseLifecycle? = nil, model: DashboardModel = DashboardModel(), preferences: UserDefaults = .standard,
           makeAudio: (() -> AudioModule)? = nil, makeKeepAwake: (() -> KeepAwakeModule)? = nil, makeBluetooth: (() -> BluetoothModule)? = nil,
           makeMenuBar: (() -> MenuBarModule)? = nil, menuBarSpacing: MenuBarSpacing? = nil, animations: AnimationPreferences? = nil,
+          chooseKeepAwakeApps: @escaping KeepAwakePresentation.ChooseApps = KeepAwakePresentation.chooseApplications,
           presentWindow: @escaping (NSWindow) -> Void = { $0.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) },
           restartAnimationClients: @escaping () -> Void = { _ = try? CommandRunner().run("/usr/bin/killall", ["Dock", "Finder"]) },
           controlStateSnapshot: (() -> SystemControlLifecycle.State)? = nil,
@@ -101,7 +102,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
          self.modules = ModuleSettings(defaults: preferences)
          self.uiStore = UISettingsStore(defaults: preferences)
          self.makeAudio = makeAudio ?? { AudioModule(defaults: preferences) }
-         self.makeKeepAwake = makeKeepAwake ?? { KeepAwakeModule(defaults: preferences) }
+         let awakePresentation = KeepAwakePresentation(model: model, acceptsActions: { transactions.acceptsActions }, chooseApps: chooseKeepAwakeApps)
+         self.awakePresentation = awakePresentation
+         self.awakeFeature = KeepAwakeFeature(
+             makeOwner: makeKeepAwake ?? { KeepAwakeModule(defaults: preferences) },
+             acceptsActions: { transactions.acceptsActions },
+             publish: { [weak awakePresentation] in awakePresentation?.publish($0) },
+             reportError: { [weak model] in model?.errorMessage = $0.localizedDescription })
          self.makeBluetooth = makeBluetooth ?? { BluetoothModule(defaults: preferences) }
          self.makeMenuBar = makeMenuBar ?? { MenuBarModule(defaults: preferences) }
          self.menuBarSpacing = menuBarSpacing ?? MenuBarSpacing(defaults: preferences)
@@ -118,6 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         self.injectedMouseLifecycle = mouseLifecycle
         self.terminationReply = terminationReply
         super.init()
+         awakePresentation.didPublish = { [weak self] in self?.refreshKeepAwakeStatus($0) }
          configureActions()
          windowPositions?.acceptsActions = { [weak self] in self?.transactions.acceptsActions == true }
          clipboard?.acceptsActions = { [weak self] in self?.transactions.acceptsActions == true }
@@ -268,27 +276,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             guard let self, transactions.acceptsActions else { return }
             mouseLifecycle.apply(acceleration: model.mouseAcceleration, speed: model.mouseTracking)
         }
-        model.onKeepAwakeStart = { [weak self] in self?.actionHost?.performKeepAwake { try $0.start() } }
-        model.onKeepAwakeRetry = { [weak self] in self?.actionHost?.performKeepAwake { try $0.retry() } }
-        model.onKeepAwakeStop = { [weak self] in self?.actionHost?.performKeepAwake { try $0.stop() } }
-        model.onKeepAwakeExtend = { [weak self] in self?.actionHost?.performKeepAwake { try $0.extend() } }
-        model.onKeepAwakeResume = { [weak self] in self?.actionHost?.performKeepAwake { try $0.resumeApps() } }
-        model.onKeepAwakeRemoveApp = { [weak self] id in self?.actionHost?.performKeepAwake { try $0.setApp(id, name: id, selected: false) } }
-        model.onKeepAwakeAddApp = { [weak self] in
-            guard self?.actionHost != nil else { return }
-            let panel = NSOpenPanel()
-            panel.title = "Choose apps that keep the Mac awake"
-            panel.allowedContentTypes = [.applicationBundle]
-            panel.allowsMultipleSelection = true
-            panel.canChooseDirectories = false
-            guard panel.runModal() == .OK else { return }
-            for url in panel.urls {
-                guard let bundle = Bundle(url: url), let id = bundle.bundleIdentifier else { continue }
-                self?.actionHost?.performKeepAwake { try $0.setApp(id, name: url.deletingPathExtension().lastPathComponent, selected: true) }
-            }
-        }
-        model.onKeepAwakeMinutesChanged = { [weak self] in self?.actionHost?.keepAwake?.selectedMinutes = $0 }
-        model.onKeepDisplayAwakeChanged = { [weak self] enabled in self?.actionHost?.performKeepAwake { try $0.setKeepDisplayAwake(enabled) } }
+        awakePresentation.bind(awakeFeature)
         model.onQuitGuardChanged = { [weak self] enabled in
             guard let self, transactions.acceptsActions else { return }
             do { try quitGuard?.setEnabled(enabled) } catch { showError(error) }
@@ -423,24 +411,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    private func performKeepAwake(_ action: (KeepAwakeModule) throws -> Void) {
-        guard let keepAwake else { return }
-        do { try action(keepAwake) } catch { showError(error) }
-        refreshKeepAwake()
-    }
-
-    private func refreshKeepAwake() {
-        model.keepAwakeActive = keepAwake?.active ?? false
-        model.keepAwakeCanStop = keepAwake?.canStop ?? false
-        model.keepAwakeRemaining = keepAwake?.remaining ?? 0
-        model.keepAwakeMinutes = keepAwake?.selectedMinutes ?? 30
-        model.keepAwakeApps = keepAwake?.selectedApps ?? [:]
-        model.keepAwakeAppNames = keepAwake?.activeAppNames ?? []
-        model.keepAwakeAppsPaused = keepAwake?.appsPaused ?? false
-        model.keepAwakeProtectionFailed = keepAwake?.protectionFailed ?? false
-        model.keepDisplayAwake = keepAwake?.keepDisplayAwake ?? false
-        item?.button?.image = NSImage(systemSymbolName: model.keepAwakeActive ? DashboardTab.keepAwake.symbol : "slider.horizontal.3", accessibilityDescription: model.keepAwakeActive ? "Fix macOS — Keep awake active" : "Fix macOS")
-        item?.button?.toolTip = model.keepAwakeProtectionFailed ? "Fix macOS — keep awake needs retry" : (model.keepAwakeActive ? "Fix macOS — keeping awake" : "Fix macOS")
+    private func refreshKeepAwakeStatus(_ state: KeepAwakeFeature.State) {
+        item?.button?.image = NSImage(systemSymbolName: state.active ? DashboardTab.keepAwake.symbol : "slider.horizontal.3", accessibilityDescription: state.active ? "Fix macOS — Keep awake active" : "Fix macOS")
+        item?.button?.toolTip = state.protectionFailed ? "Fix macOS — keep awake needs retry" : (state.active ? "Fix macOS — keeping awake" : "Fix macOS")
         publishModuleStatus()
     }
 
@@ -507,19 +480,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         refreshClipboard()
         mouseLifecycle.reconcile()
-        if modules.enabled.contains(.keepAwake) {
-            if keepAwake == nil {
-                let module = makeKeepAwake()
-                keepAwake = module
-                module.onChange = { [weak self] in self?.refreshKeepAwake() }
-                module.onError = { [weak self] in self?.showError($0) }
-                module.activate()
-            }
-        } else {
-            keepAwake?.onChange = nil
-            keepAwake = nil
-        }
-        refreshKeepAwake()
+        awakeFeature.reconcile(enabled: modules.enabled.contains(.keepAwake))
         if modules.enabled.contains(.quitGuard) {
             if quitGuard == nil {
                 let module = QuitGuard(defaults: preferences)
@@ -852,7 +813,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case .audio: missing = audio == nil
         case .bluetooth: missing = bluetooth == nil
         case .quitGuard: missing = quitGuard == nil
-        case .keepAwake: missing = keepAwake == nil
+        case .keepAwake: missing = !awakeFeature.state.loaded
         case .clipboard: missing = clipboard == nil
         case .windows: missing = windowPositions == nil
         default: missing = false
@@ -892,12 +853,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             } catch { completion(.failed(error.localizedDescription)); return }
             if value.quitGuard && !model.quitGuardActive { completion(.pendingAccess("Hold to quit is inactive; check Accessibility and Retry in Input settings.")); return }
         case .keepAwake:
-            if let keepAwake {
-                do { try keepAwake.configureForSetup(minutes: value.awakeMinutes, display: value.displayAwake, apps: value.awakeApps) }
-                catch { showError(error); completion(.failed(error.localizedDescription)); return }
-                refreshKeepAwake()
-            }
-            completion(keepAwake!.configurationOutcome); return
+            completion(awakeFeature.configureForSetup(minutes: value.awakeMinutes, display: value.displayAwake, apps: value.awakeApps)); return
         case .clipboard:
             if value.clipboardDays != old.clipboardDays { model.onClipboardDays(value.clipboardDays) }
             if value.clipboardExclusions != old.clipboardExclusions { model.onClipboardExclusions(value.clipboardExclusions) }
@@ -1169,7 +1125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "menuBarLoaded": menuBar != nil, "menuBarHidden": menuBar?.hidden == true,
             "compactMenuBar": menuBarSpacing.enabled,
             "quitGuardLoaded": quitGuard != nil, "quitGuardActive": quitGuard?.isRunning == true,
-            "keepAwakeLoaded": keepAwake != nil, "keepAwakeActive": keepAwake?.active == true,
+            "keepAwakeLoaded": awakeFeature.state.loaded, "keepAwakeActive": awakeFeature.state.active,
             "mouseLoaded": mouseLifecycle.module != nil, "mouseActive": mouseLifecycle.module?.active == true,
             "mouseRecoveryRequired": model.mouseRecoveryRequired,
             "animationsEnabled": animations.enabled, "animationsBusy": model.animationsBusy,
@@ -1379,7 +1335,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         windowPositions?.stop()
-        try? keepAwake?.deactivate()
+        awakeFeature.shutdown()
         audio?.stop()
         clipboard?.stop()
         quitGuard?.stop()
