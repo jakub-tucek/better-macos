@@ -12,7 +12,7 @@ A macOS menu-bar app for managing monitors, Bluetooth connections, and desktop s
 - **Audio:** select microphone and output independently by stable device UID. Keep ordered preferences and an optional fallback for each. Automatic routing starts off; when enabled, device-list changes (polled every two seconds) apply preferences. Manual selections, including external changes, pause that direction until its device list changes or **Resume preferred routes**. Connected Bluetooth output and explicitly protected headphones take precedence over automatic preferences. Bluetooth forwards post-connect requests to the same routing owner.
 - **Animations:** limit Dock, Finder, window, and scrolling effects; replace Genie minimization with Scale and try experimental tiling-animation suppression. Fast desktop switching lives under Advanced. Turning the preset off restores your previous settings. Effects vary by app; Mission Control and Control Center may still animate.
 - **Menu bar:** experimental compact spacing and a movable divider for hiding extra icons. Both controls start off. ⌘-drag the divider left of the chevron, and less-used icons left of the divider. Click the chevron to hide/reveal them; quitting reveals them. Spacing changes may require restarting apps or logging out; turning spacing or the module off restores original values. This is not a separate overflow panel for icons behind the notch.
-- **Hold to quit:** under **Keyboard**, hold ⌘Q for 3 seconds by default, adjustable from 1 to 99 seconds. A popup names the app while Pac-Man eats dots across the countdown. Releasing early, switching apps, or clicking cancels. Uses normal quit requests, preserving save prompts. Requires Accessibility access; starts off. Menu commands and other quit shortcuts are unaffected.
+- **Hold to quit:** under **Input**, hold ⌘Q for 3 seconds by default, adjustable from 1 to 99 seconds. A popup names the app while Pac-Man eats dots across the countdown. Releasing early, switching apps, or clicking cancels. Uses normal quit requests, preserving save prompts. Requires Accessibility access; starts off. Menu commands and other quit shortcuts are unaffected.
 - **Keep awake:** timed presets, five-minute custom increments, +15 minutes, and optional display wake. Add apps by bundle identity to stay awake while they run in the background. Timed and app reasons overlap; Stop pauses currently matching apps until they exit, and Resume restores them. Disabling the module releases assertions; timed sessions never survive relaunch. Saved app rules apply to already-running apps on activation.
 - **Mouse:** opt-in acceleration and tracking controls use mouse-specific IOKit runtime parameters. Click Apply to change devices using HIDMouseAcceleration; disable or quit restores the captured runtime values. No system preferences are written, and settings are not automatically reapplied on relaunch/reconnect. Capability reads and write readback detect API failures, not physical effectiveness. Per-device controls and wheel direction/speed remain unsupported.
 
@@ -20,23 +20,46 @@ Enable or disable each module from the **gear icon**. Disabled modules stop back
 
 ### Quick controls and Settings
 
-The native **430 × 580** popover opens on **Quick controls**, with direct icon-labelled
-cards for Monitors, Keep awake, Audio, Clipboard, and Windows. Each opens a focused
-everyday panel: switch/restore displays and enter the arrangement editor; start,
-extend, stop or resume awake sessions; switch microphone/output; open searchable
-clipboard history and copy entries; or restore saved window layouts. **Back** returns
-home. There is no top-level feature dropdown.
+The **430-point-wide** menu-bar popup contains actions directly, in a single scrolling
+column. Height is bounded by the screen (up to 650 points). Choose from Keep awake,
+Audio, Displays, Window layouts, Clipboard, and Bluetooth. **Edit** supports an Add
+gallery, compact/expanded presentation, drag ordering, accessible up/down buttons,
+Remove, and Restore suggested. **Done** saves; **Cancel** discards the draft. Widget
+removal never disables a feature, ends a session, changes a route, or clears history.
+Disabled features and unavailable targets retain a **Set up** link. Recovery alerts
+and an active awake session's **Stop** remain reachable even with no widgets.
+Clipboard content is never previewed in widgets; history stays nonactivating.
 
-The **gear** opens **Settings**: module setup buttons with independent enable switches,
-launch at login, diagnostics, and updates. Setup includes Bluetooth reconnect targets
-and policies (plus manual device actions), animations, Mouse tuning, Keyboard's
-1–99-second quit hold, Menu bar setup, Audio preferences/fallbacks, Windows save,
-rename, delete, exclusions and automatic restore, Keep awake app rules/display
-defaults, Clipboard retention/exclusions, and monitor safety/screen-edge preferences.
-**Setup** in a quick panel opens that module's configuration directly. Setup **Back**
-returns to the Settings list; Settings **Back** restores the prior quick panel (or
-home). Recovery/error actions stay available, and disabled modules remain reachable
-with an **Enable in settings** action. Toggles do not dismiss the popover.
+The **gear** opens one reusable, resizable **Settings** window with a sidebar:
+General, Quick actions, Displays, Sound & connections, Input, System, and Clipboard.
+Each feature has its own enable switch; grouping does not combine lifecycles. All
+existing controls remain available, including recovery, window-layout naming and
+confirmed deletion, permissions, automatic policies, updates, and explicit Mouse Apply.
+There is no top-level navigation dropdown. Ordinary quick actions keep the popup open.
+
+### Guided setup
+
+Fresh installations begin with features off and an empty widget layout. Setup offers
+Skip, independent feature descriptions/selections, configuration only for selected
+groups, contextual permission guidance, widget editing, and Review/Finish. Existing
+installations keep preferences, receive a suggested layout once, and are not forced
+through setup. **General → Run setup again** starts from current choices. Back keeps
+the draft; Cancel discards it. Interrupted drafts are offered for explicit Resume;
+**Save draft & close** is also available. Permission grants belong to macOS and cannot
+be undone by Cancel.
+
+Only **Finish** applies feature/configuration changes through the existing host
+operations, reporting each feature separately. Successful changes are not rolled back
+because another feature fails. Selecting Clipboard never starts recording or enables
+disk retention; disk retention requires its own explicit draft choice and Finish.
+Setup never captures/moves windows, changes display positions, starts a timed awake
+session, or applies pointer tuning. Mouse proposals transfer to Input settings for
+explicit Apply. Enabling features can activate saved policies: running-app awake
+rules, Bluetooth reconnect, and automatic audio routing. Animation changes may restart
+Dock/Finder. Review explains these effects before confirmation.
+
+See the [UI/UX plan](UI-UX-PLAN.md) and [replacement validation](UI-REPLACEMENT-VALIDATION.md)
+for implementation coverage and outstanding native acceptance checks.
 
 ## Install from source
 
@@ -52,7 +75,7 @@ The installer installs the Bluetooth dependencies, keeps its source checkout in
 skip rebuilding. Add `| bash -s -- --force` instead of `| bash` to force a rebuild.
 Local checkout changes are preserved: the installer stops rather than overwriting them.
 
-The app checks GitHub for source changes daily. **Settings → Updates** offers a
+The app checks GitHub for source changes daily. **Settings → General → Updates** offers a
 manual check and, for installer-managed copies, **Install update…**. Updates build
 from source in Terminal and quit the old app normally before replacing it.
 

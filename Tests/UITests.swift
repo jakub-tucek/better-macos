@@ -121,6 +121,11 @@ func runUITests() throws {
     hostModel.onFinishSetup(clipboardOnly) { finished = $0 }
     expect(!finished.isEmpty && !history.recording && !history.persistent && board.reads == 0 && archive.writes == 0, "actual host Finish selecting Clipboard and its widget never captures or enables persistence")
     expect(defaults.integer(forKey: UISettingsStore.completionKey) == 1 && hostModel.widgetLayout.entries.first?.known == .clipboard, "actual Finish persists completion independently from features and widget layout")
+    history.setRecording(true)
+    let entriesBeforeRemoval = history.entries
+    hostModel.onSaveWidgets(WidgetLayout())
+    expect(history.recording && history.entries == entriesBeforeRemoval && ModuleSettings(defaults: defaults).enabled == [.clipboard], "actual host widget removal neither disables Clipboard nor stops recording or changes history")
+    history.setRecording(false)
     let failingDraft = SetupDraft(current: hostModel, defaults: defaults)
     failingDraft.controls.onClipboardPersistence(true); failingDraft.controls.onClipboardDays(4)
     archive.fail = true
@@ -137,5 +142,16 @@ func runUITests() throws {
     expect(!positions.automatic && !positions.paused && positions.selected.isEmpty && positions.exclusions.isEmpty && windowsBackend.reads == 0 && windowsBackend.moves == 0, "window settings and quick Restore recheck host admission at invocation time")
     positions.acceptsActions = { true }; positions.automatic = true
     expect(positions.automatic, "window configuration can resume after canceled quit reopens admission")
+    let scheduledBackend = FakeWindowBackend()
+    var work: [() -> Void] = []
+    let scheduledPositions = WindowPositions(backend: scheduledBackend, defaults: defaults, schedule: { work.append($0) })
+    var admitted = true
+    scheduledPositions.acceptsActions = { admitted }
+    scheduledPositions.reconcile(ready: true, settled: true)
+    scheduledPositions.save("Scheduled fixture")
+    scheduledPositions.restore(scheduledPositions.selected)
+    admitted = false
+    while !work.isEmpty { work.removeFirst()() }
+    expect(scheduledBackend.moves.isEmpty, "queued quick window Restore rechecks admission before its first OS write")
     withExtendedLifetime(host) {}
 }

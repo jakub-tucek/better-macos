@@ -534,10 +534,14 @@ func runClipboardTests() throws {
     let widgetBeforeQuit = quitModel.widgetLayout
     let lateWidgets = WidgetLayout(entries: [WidgetEntry(.clipboard)])
     quitModel.onSaveWidgets(lateWidgets)
+    quitModel.onOpenSettings(.clipboard)
+    quitModel.onRunSetup()
+    quitModel.onSkipSetup()
     var blockedSetup: [String] = []
     quitModel.onFinishSetup(SetupDraft(current: quitModel, defaults: defaults)) { blockedSetup = $0 }
     expect(quitModel.widgetLayout == widgetBeforeQuit && blockedSetup.contains { $0.contains("shutting down") },
            "actual widget Done and wizard Finish callbacks reject mutation during asynchronous quit")
+    expect(quitModel.settingsGroup == .general, "actual Settings, setup-open, and Skip callbacks are inert during asynchronous quit")
     expect(!quitModel.animationsBusy && quitModel.enabledModules == enabledBeforeQuit && !quitHistory.recording && !mouseLifecycle.recoveryRequired,
            "real host actions reject new animation, module, Mouse and recording work during blocked quit drain")
     failing.failing = true; quitHistory.delete(savedEntry.id)
