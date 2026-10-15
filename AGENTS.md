@@ -34,9 +34,9 @@ strict signature verification and staged replacement/rollback.
 - Feature owners retain restoration responsibility. Preserve pending recovery and
   retry state after failures, including disabled-feature startup/teardown paths.
   Keep shared Audio/Bluetooth ownership and shared display recovery reachable.
-- Input activation requires watchdog/readiness checks; recovery must remain usable
-  without a ready watchdog. Drain active gestures and cancel queued gestures before
-  display changes/shutdown. Preserve last-usable-display and identity safeguards.
+- Input activation requires watchdog/readiness checks. Display disabling requires a ready watchdog;
+  restore/recovery must remain available without one. Drain active gestures and cancel queued
+  gestures before display changes/shutdown. Preserve last-usable-display and identity safeguards.
 - Keep persisted `AppModule` raw IDs, preference keys and existing user choices stable.
   Widget removal is not feature disable or data deletion; Clipboard capture,
   retention and cleanup are distinct choices, with unload/quit vetoes on pending work.
