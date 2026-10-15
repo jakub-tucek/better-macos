@@ -1,7 +1,8 @@
 # Development roadmap
 
 Plan based on `2620a32` (2026-10-15), with implementation status updated below.
-Pinned developer tooling is available; architecture/source moves and CI remain proposed. Current behavior lives in
+Pinned developer tooling and the first Clipboard policy SwiftPM slice are available;
+broader source moves, feature registration and CI remain proposed. Current behavior lives in
 [MODULES.md](MODULES.md); acceptance and failures live in [VALIDATION.md](VALIDATION.md).
 Keep the concise README and its install command. This plan promises no release date or tag.
 
@@ -11,7 +12,7 @@ Keep the concise README and its install command. This plan promises no release d
 | --- | --- | --- |
 | 0 | Finish release safety | Core fixes and watchdog/corrupt-journal regressions are reviewed and integrated through `dc96e9c`; complete native acceptance and record remaining hardware gaps at the tested revision. |
 | 1 | Documentation and developer baseline (partial) | Pinned SwiftLint/SwiftFormat, bootstrap, checks and developer guide are integrated; resolve compiler compatibility and finish the documentation map/moves below. |
-| 2 | One SwiftPM slice and source organization | Extract one existing policy/backend boundary with tests; preserve app/helper behavior, CLT source installation and signed-bundle packaging. Move files in reviewable batches. |
+| 2 | One SwiftPM slice and source organization (partial) | Clipboard policy is extracted and statically linked with named tests; wider source organization remains pending. Preserve app/helper behavior and packaging; resolve the separate CLT app-build gap. |
 | 3 | Built-in feature registration | Register multiple different features through a small host interface without changing persisted IDs, shared ownership or drain/veto behavior. |
 | 4 | Test migration and CI | Run named isolated suites and shell/process regressions as PR gates; prove clean and incremental builds agree. |
 | 5 | Native UI automation, if needed | Add a separate full-Xcode GUI job only for acceptance gaps that require app-driving tests. |
@@ -25,8 +26,9 @@ and corrupt-journal preservation fixes are independently reviewed CLEAN and inte
 
 ## Build and source boundaries
 
-- Introduce **one local Swift package**, starting with an existing testable slice.
-  Use a few meaningful targets for app composition, policy/backends and C boundaries;
+- Implemented: **one local Swift package** for [Clipboard policy](docs/swiftpm.md),
+  with sole SwiftPM compilation ownership and static app/legacy-test linking.
+  Future extraction should use meaningful targets for policy/backends and C boundaries;
   avoid a target per file or a package per feature. Reuse existing backend seams.
 - Keep `build.sh` as the app-bundling entry point: plist/revision metadata, resources,
   complete licenses, signing verification and replacement rollback remain its job.
@@ -72,10 +74,12 @@ mode for release reproducibility; do not claim byte-identical output across SDKs
   SwiftLint **0.65.1** and SwiftFormat **0.63.1**, non-mutating checks, narrow lint
   baseline, `.editorconfig` and offline tooling regressions. Standalone CLT 27.0's
   `SwiftUIMacros.StateMacro` app-build failure remains under diagnosis, not a pass.
-  SwiftPM, source/document moves, suite migration and CI below remain pending.
+  The first SwiftPM policy slice and ten named tests in three suites are implemented;
+  further source/document moves, suite migration and CI below remain pending.
 - Document a tested compiler/SDK baseline. Today's scripts use Swift **5 language
-  mode**; that differs from a Swift **6 toolchain**. Swift Testing ships with Swift 6 /
-  Xcode 16: adopt it only after verifying the chosen CLT toolchain supports it.
+  mode**; that differs from a Swift **6 toolchain**. The package declares tools 6.0
+  and uses Swift Testing; only Apple Swift **6.4** has been validated here, including
+  standalone-CLT policy tests. A working minimum-toolchain app build remains unproven.
 - Preserve pinned development-only tool versions, version-checked bootstrap and
   `.editorconfig`. Expand the narrow ruleset only in reviewed increments; exclude
   vendor, build and generated files and review baseline exceptions. Future CI checks
@@ -86,8 +90,9 @@ mode for release reproducibility; do not claim byte-identical output across SDKs
   clocks; serialize unavoidable shared state rather than racing global fixtures.
 - Keep shell packaging/installer tests and watchdog subprocess tests as distinct
   suites. Keep live OS/hardware mutation opt-in and outside default unit checks.
-- Replace `test.sh`'s `build/objects/*.o` link input with explicit target outputs or
-  invocation-owned object lists; add a stale-object regression and clean-build check.
+- Implemented: `test.sh` links only three explicit owned C objects and the policy
+  archive; fixtures reject stale objects, duplicate policy inputs and missing package
+  outputs. Continue clean/incremental-build checks as more code moves.
 - On macOS arm64 CI, assert architecture and toolchain before lint, format-check,
   build, unit/process tests and packaging/installer PR gates. Select an available
   runner rather than assuming a hosted label implies Apple Silicon.

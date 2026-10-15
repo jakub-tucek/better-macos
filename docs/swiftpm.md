@@ -1,10 +1,10 @@
 # Clipboard policy package
 
-Requires Apple Silicon, macOS 15+, and Swift 6.0+ Command Line Tools (Xcode 16
-generation or newer). Swift **5 language mode** remains in use. The manifest uses
-Swift tools 6.0; `--build-system native` is available in that toolchain. Tested here
-with Apple Swift 6.4 and standalone CLT for package builds/tests; the 6.0 minimum
-has not been run locally. The installed CLT's default macOS 27 SDK cannot compile
+Requires Apple Silicon and macOS 15+. The manifest declares Swift tools 6.0
+(Xcode 16 generation); Swift **5 language mode** remains in use and the helper
+selects `--build-system native`. Only Apple Swift 6.4 has been validated here,
+including standalone CLT package builds/tests; Swift 6.0 is a declared minimum,
+not a locally validated toolchain. The installed CLT's default macOS 27 SDK cannot compile
 the app's existing SwiftUI `@State` declarations (`SwiftUIMacros` is missing), also
 reproducible with a standalone SwiftUI typecheck unrelated to the package. This
 environment failure is not a requirement for full Xcode or a change to app sources.
@@ -82,3 +82,28 @@ On 2026-10-15, Apple Swift 6.4:
   dependency, and signature/plist/notices retained after relocation, without launch.
 
 These are build/test checks, not native device acceptance or permission validation.
+
+## Main integration · 2026-10-15
+
+Reviewed CLEAN source `f5094a8359b98f9e108ff91897ada049cdded0b8` integrated without
+conflicts as `35fc4df82bcafe3923d4e53586becae0d37487d2`, preserving the current
+pinned tooling and agent instructions. Selected tools: Xcode 27.0, Apple Swift 6.4,
+SDK 27.0 on macOS 26.6.2 arm64; this is not a new standalone-CLT app-build result.
+
+The single integrated `bash test.sh` run passed: **4,220 legacy isolated checks**,
+**10 Swift Testing tests in three suites**, **13 mocked installer scenarios**,
+expanded package/build rollback and link-ownership fixtures, and real/relocated
+signed-bundle notice/dependency checks. Log: `build/swiftpm-integration.log` (ignored
+local output). Release policy compilation and debug policy tests both ran; the
+legacy runner links the release archive. SwiftPM emits a known native-engine
+deprecation warning; future toolchain upgrades must revisit that contract.
+
+Lint and format-check passed across **39 files**, including the moved policy, both
+new test files and manifest; offline tooling regressions also passed. Source/built
+plist lint, strict Apple Development signature and metadata checks passed: the
+bundle embeds the integration revision above, version `0.4`, build `4`, arm64/macOS 15+.
+All ten shell files passed `bash -n`; 93 local links/anchors across the five
+integration documents and `git diff --check` passed. README was unchanged.
+No real app launch/quit/install, live clipboard/preference/device mutation, version bump
+or publication was performed. The separate CLT compatibility work is not integrated.
+An evidence-only commit does not claim a final artifact at its own revision.

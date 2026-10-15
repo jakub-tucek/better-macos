@@ -13,7 +13,9 @@ Tested on 2026-10-15 against source baseline `b7a67ab`:
 | Standalone CLT 27.0 (`27.0.0.0.1788430756`) | Same compiler version and SDK | Lint/format-check pass; app build fails: missing `SwiftUIMacros.StateMacro` plugin at `WindowPositionsView.swift`. |
 
 `build.sh` and `test.sh` use **Swift 5 language mode** (`-swift-version 5`), not a
-Swift 5 compiler. Swift 6 strict concurrency and Swift Testing are not adopted here.
+Swift 5 compiler. Swift 6 strict concurrency is not adopted. The [Clipboard policy
+package](swiftpm.md) now uses Swift Testing and declares Swift tools 6.0; only Swift
+6.4 has been validated here, not the declared 6.0 minimum.
 The CLT-only source-install path remains independent of developer tools, but this
 CLT 27.0 app-build failure is an open compatibility gap, not a successful install
 test. No older CLT minimum is established by these checks.
@@ -43,9 +45,11 @@ Build output: `build/Fix macOS.app`. Building signs the local bundle; it does no
 install or launch it. Existing signing configuration still applies; use
 `MAC_UTILS_SIGNING_IDENTITY=- bash scripts/dev build` for explicit ad-hoc signing.
 
-The existing full regression entry point is `bash test.sh` (build, packaging/build
-fixtures, isolated Swift runner, installer fixtures). Individual Swift suites are
-not separate commands yet. See [validation](../VALIDATION.md) and
+The full regression entry point is `bash test.sh` (build, packaging/build fixtures,
+ten Swift Testing policy tests in three suites, legacy isolated runner and installer
+fixtures). [Named policy-suite commands and compilation ownership](swiftpm.md#commands-repository-root)
+are available separately; other feature suites still use the legacy runner.
+See [validation](../VALIDATION.md) and
 [release checks](../RELEASE-CHECKLIST.md) for safety/hardware acceptance; a build or
 lint pass does not replace them. Tooling verification does not run the full suite
 or manipulate live preferences, applications or devices. No CI is added here.
@@ -88,12 +92,13 @@ Hashes authenticate pinned upstream bytes, not a separate publisher signature.
   bridging code, not arbitrary new forced casts. Review exceptions when touching
   that code; do not blanket-regenerate the baseline to make checks pass.
 - SwiftFormat checks trailing spaces, consecutive blank lines and final newline
-  only. All 36 first-party Swift files pass without source edits. No full-style
+  only. All 39 first-party Swift files (including the manifest and new policy/tests)
+  pass without formatter edits. No full-style
   baseline, mass formatting, naming/length rules or automatic rewrite command.
 - Both tools exclude `Vendor/`, `build/`, `.build/`, `.swiftpm/`, `.git/`,
   `worktrees/`, `.worktrees/`, `generated/` and `Generated/`. Keep worktrees outside
   the repo or in those excluded directories; add any future generated roots to
-  both configurations. First-party app code and `Tests/` remain checked.
+  both configurations. First-party app code, `Sources/` and `Tests/` remain checked.
 
 Keep style expansion and formatter rewrites separate from architecture changes.
 Project context: [modules](../MODULES.md), [glossary](../GLOSSARY.md),
