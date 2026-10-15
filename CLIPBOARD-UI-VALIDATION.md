@@ -1,5 +1,35 @@
 # Clipboard history UI
 
+## Main integration · 2026-10-15
+
+Starting from clean main `755ba12`, the independently reviewed CLEAN clipboard
+commits were cherry-picked in the requested order without conflicts:
+
+| Reviewed source | Integrated main |
+| --- | --- |
+| `d74f5e1` | `c9d4300` |
+| `3e6d72d` | `b353b36` |
+| `cfbc0aa` | `270de63` |
+
+No integration code fixes were needed. The dynamic-height compact popup, native
+widgets, Keep Awake Retry, setup wizard, HostTransactions, their existing tests,
+and build/installer hooks are unchanged from `755ba12`. The existing test command
+adds the new clipboard presentation test file; no previous test input is removed.
+The only host changes bind clipboard actions to the existing transaction gate for
+both injected and newly created modules.
+
+Full integrated `bash test.sh` at `270de63` passed **3,875 isolated checks and all
+seven mocked installer/source-update checks**, including the optimized app build
+and strict signature verification. `git diff --check 755ba12..HEAD` and the
+documentation working-diff check passed. Full local output:
+`/Users/jakubtucek/.local/share/opencode/shell/bbca1830258a025f83a964775d49a34decdaa84e/sh_13f337f58001yVZewJS0u0X9Mp.out`.
+
+The prior CLEAN review applies to the supplied implementation commits; this is
+integration evidence, not a claim of another independent review. Live clipboard
+history, global shortcut delivery, destination-app focus restoration, VoiceOver,
+cross-display popover anchoring, and real device pickers remain manual gaps. No
+live history panel or device/permission controls are used for this integration.
+
 The dedicated nonactivating panel uses a compact, 56-point native list with text/image icons, 96-pixel downsampled PNG thumbnails, a single-line normalized text preview, relative age, source, and pin indicators. Pins appear first without duplication; retention/exclusions remain in Settings. A click selects, double-click/Return copies and dismisses; copying never pastes. Search keeps keyboard focus while arrows move selection. Escape dismisses.
 
 Context menus offer Copy, Pin/Unpin, and Delete. Clear asks for confirmation and uses the existing memory/archive deletion path, including pins; it does not change the current clipboard or recording/persistence intent. Missing/deleted/expired selections are not silently redirected. Host transaction admission guards both shortcut opening and panel mutations, including deferred Clear confirmation.
