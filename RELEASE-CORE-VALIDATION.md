@@ -124,3 +124,43 @@ After the fix it verifies zero Off runner calls, busy reset, retained journal,
 immediate retry, and successful On/Restore after watchdog loss. All gestures,
 helpers, snapshots, and journals are isolated fakes. Full `bash test.sh` passed:
 **4,172 isolated checks**, build and installer fixtures.
+
+## Boundary follow-up — every journal reload and record save
+
+The constructor fix did not protect later refreshes: refresh silently ignored an
+unreadable journal, discovered displays using cached records, and saved over the
+bad data. Refresh now reloads through the shared throwing loader before any
+discovery. Failed reloads retain cached recovery ownership. Every record save
+revalidates the stored journal immediately before writing; failed saves preserve
+the previous cache, and restoration flags are staged until persistence succeeds.
+Injected discovery now applies to repeated refreshes as well as initialization.
+
+The post-initialization regression failed before the fix at
+`post-init corrupt/non-Data journal refresh throws before discovery and retains cached recovery authority`.
+Tests cover malformed bytes, invalid JSON shape, non-Data values, zero discovery
+on bad reload, exact raw-value retention, corruption during fake discovery,
+cached-ownership retention, and successful refresh after repair. The shared CLI
+restore routine and arrangement recovery also reject post-init corruption.
+
+Audit scope and resulting changes:
+
+- All controller record decoding now goes through `loadRecords`; malformed data cannot be
+  silently replaced by cached or empty records on a reload.
+- All record saves go through the throwing, revalidating `saveRecords`; the
+  legacy migration is separately validated before its existing copy step.
+- Helper restore, arrangement apply/recovery, and restore finalization reload
+  before using cached ownership. GUI refresh propagates errors without replacing
+  its existing controller/model snapshot. The read-only dashboard metadata cache
+  remains non-authoritative.
+- Pending-arrangement and saved-layout data reads reject non-Data values rather
+  than treating them as absent. A wrong-type pending arrangement remains pending
+  and recovery throws without clearing it; a regression covers that case.
+- All three host helper callers were checked: Off and arrangement require typed
+  executor-time supervision; On and explicit Restore use recovery permission.
+  The single gesture drain/executor/completion path remains centralized.
+
+Final `bash test.sh` passed: **4,201 isolated checks**, build and installer
+fixtures. `git diff --check` passed. These regressions use isolated preferences,
+fake discovery/gestures/helpers, and no live device/journal or app launch/quit.
+This is not cross-process transactional locking or live hardware acceptance.
+Main remains untouched; parent independent review remains outstanding.

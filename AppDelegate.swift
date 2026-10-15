@@ -950,7 +950,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             catch { showError(error); return }
         }
         guard let controller else { return }
-        controller.refreshDisplays()
+        do { try controller.refreshDisplays() }
+        catch { showError(error); return }
         item.button?.toolTip = "Fix macOS\n" + controller.status()
         model.monitors = controller.monitors
         model.activeMonitorCount = (try? controller.activeIDs().count) ?? 0

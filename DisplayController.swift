@@ -53,6 +53,7 @@ enum DisplaySafety {
 
 // Shared by the CLI helper and isolated helper-boundary tests.
 func restoreFromCLI(_ controller: DisplayController) throws {
+    try controller.refreshDisplays()
     try controller.restorePendingArrangement()
     for uuid in controller.disabledUUIDs {
         try controller.setEnabled(true, for: uuid)
@@ -67,22 +68,36 @@ final class DisplayController {
     static func hasPendingRecovery(defaults: UserDefaults) -> Bool {
         // Helpers are separate processes; refresh the preferences cache first.
         defaults.synchronize()
-        if defaults.data(forKey: "pendingArrangement") != nil || defaults.bool(forKey: "disabledByApp") { return true }
+        if defaults.object(forKey: "pendingArrangement") != nil || defaults.bool(forKey: "disabledByApp") { return true }
         guard let records = try? loadRecords(defaults: defaults) else { return true }
         return records.contains(where: \.disabledByApp)
     }
 
     /// Read-only validation, shared by initialization and pending ownership.
     static func loadRecords(defaults: UserDefaults) throws -> [DisplayRecord] {
-        guard let value = defaults.object(forKey: "displayRecords") else { return [] }
-        guard let data = value as? Data,
-              let records = try? JSONDecoder().decode([DisplayRecord].self, from: data) else {
+        defaults.synchronize()
+        guard let data = try journalData(forKey: "displayRecords", defaults: defaults) else { return [] }
+        guard let records = try? JSONDecoder().decode([DisplayRecord].self, from: data) else {
             throw ToggleError(message: "The display recovery journal is unreadable. Recovery information has been retained; repair the journal before changing displays.")
         }
         return records
     }
 
+    private static func journalData(forKey key: String, defaults: UserDefaults) throws -> Data? {
+        guard let value = defaults.object(forKey: key) else { return nil }
+        guard let data = value as? Data else {
+            throw ToggleError(message: "The display recovery journal \(key) is unreadable. Recovery information has been retained.")
+        }
+        return data
+    }
+
+    private func reloadRecords() throws {
+        let loaded = try Self.loadRecords(defaults: defaults)
+        records = loaded // Failed validation must leave cached recovery authority intact.
+    }
+
     private let defaults: UserDefaults
+    private let discoverDisplays: ((DisplayController) -> Void)?
     private let framework: UnsafeMutableRawPointer?
     private let configureEnabled: (@convention(c) (CGDisplayConfigRef?, UInt32, Bool) -> Int32)?
     private var records: [DisplayRecord] = []
@@ -99,6 +114,7 @@ final class DisplayController {
          legacyDefaults: UserDefaults? = UserDefaults(suiteName: "local.jakub.monitor-toggle"),
          discoverDisplays: ((DisplayController) -> Void)? = nil) throws {
         self.defaults = defaults
+        self.discoverDisplays = discoverDisplays
         // Validate before migration, graphics discovery, or any journal writes.
         // In particular, never convert an unreadable journal into an empty one.
         defaults.synchronize()
@@ -130,10 +146,9 @@ final class DisplayController {
             records.append(DisplayRecord(uuid: uuid, name: "Dell S2716DG", lastID: id,
                                          bootSession: defaults.string(forKey: "disabledBootSession"), disabledByApp: true))
         }
-        saveRecords()
+        try saveRecords()
         defaults.removeObject(forKey: "disabledByApp")
-        if let discoverDisplays { discoverDisplays(self) }
-        else { refreshDisplays() }
+        try refreshDisplays()
     }
 
     var supported: Bool { configureEnabled != nil }
@@ -142,9 +157,10 @@ final class DisplayController {
     var canDisableDisplays = false
     var smartArrangementEnabled = true
     var disabledUUIDs: [String] { records.filter(\.disabledByApp).map(\.uuid) }
-    var hasPendingArrangement: Bool { defaults.data(forKey: "pendingArrangement") != nil }
+    var hasPendingArrangement: Bool { defaults.object(forKey: "pendingArrangement") != nil }
 
     func applyArrangement(_ request: DisplayArrangementRequest) throws {
+        try reloadRecords()
         guard disabledUUIDs.isEmpty, !hasPendingArrangement, let bootSession else {
             throw ToggleError(message: "Restore disabled screens and confirm or restore the current layout first.")
         }
@@ -173,7 +189,8 @@ final class DisplayController {
     }
 
     func restorePendingArrangement() throws {
-        guard let data = defaults.data(forKey: "pendingArrangement") else { return }
+        try reloadRecords()
+        guard let data = try Self.journalData(forKey: "pendingArrangement", defaults: defaults) else { return }
         let trial = try JSONDecoder().decode(DisplayArrangementTrial.self, from: data)
         guard trial.bootSession == bootSession else {
             defaults.removeObject(forKey: "pendingArrangement")
@@ -213,13 +230,25 @@ final class DisplayController {
         return id == kCGNullDirectDisplay ? nil : id
     }
 
-    private func saveRecords() {
-        if let data = try? JSONEncoder().encode(records) { defaults.set(data, forKey: "displayRecords") }
+    private func saveRecords(_ updated: [DisplayRecord]? = nil) throws {
+        let next = updated ?? records
+        let data = try JSONEncoder().encode(next)
+        // Revalidate immediately before every write, including after discovery
+        // or restoration, which may have yielded to another journal writer.
+        _ = try Self.loadRecords(defaults: defaults)
+        defaults.set(data, forKey: "displayRecords")
+        records = next
     }
 
-    func refreshDisplays() {
-        if let data = defaults.data(forKey: "displayRecords"),
-           let saved = try? JSONDecoder().decode([DisplayRecord].self, from: data) { records = saved }
+    func refreshDisplays() throws {
+        let previous = records
+        try reloadRecords()
+        do { try discoverAndSaveDisplays() }
+        catch { records = previous; throw error }
+    }
+
+    private func discoverAndSaveDisplays() throws {
+        if let discoverDisplays { discoverDisplays(self); try saveRecords(); return }
         var visibleUUIDs = Set<String>()
         for screen in NSScreen.screens {
             guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? UInt32,
@@ -255,7 +284,7 @@ final class DisplayController {
         // Keep disabled ghost rows so they can be re-enabled. Forget unplugged
         // displays we did not disable; discard stale IDs after reboot.
         records.removeAll { !visibleUUIDs.contains($0.uuid) && (!$0.disabledByApp || $0.bootSession != bootSession) }
-        saveRecords()
+        try saveRecords()
     }
 
     func displayID(for value: String) -> UInt32? {
@@ -313,7 +342,7 @@ final class DisplayController {
             throw ToggleError(message: "Display disabling is paused for safety while investigating a system freeze.")
         }
         guard let configureEnabled else { throw ToggleError(message: "This macOS version lacks the display disconnect API.") }
-        refreshDisplays()
+        try refreshDisplays()
         guard let index = records.firstIndex(where: { $0.uuid == value }), let id = displayID(for: value) else {
             throw ToggleError(message: "Monitor not found. Check its cable and power.")
         }
@@ -335,10 +364,11 @@ final class DisplayController {
                 defaults.set(try JSONEncoder().encode(positions), forKey: "savedLayout")
                 defaults.set(uuid(for: CGMainDisplayID()), forKey: "savedMainUUID")
             }
-            records[index].bootSession = bootSession
-            records[index].lastID = id
-            records[index].disabledByApp = true
-            saveRecords() // A crash during the transaction must still be recoverable.
+            var pending = records
+            pending[index].bootSession = bootSession
+            pending[index].lastID = id
+            pending[index].disabledByApp = true
+            try saveRecords(pending) // A crash during the transaction must still be recoverable.
         }
         // Plan before changing the hardware; disable + compact origins commit
         // together so macOS cannot pick a different intermediate arrangement.
@@ -355,11 +385,13 @@ final class DisplayController {
     }
 
     func finishRestore(_ value: String) throws {
+        try reloadRecords()
         guard isEnabled(value) else { throw ToggleError(message: "Monitor did not come back. Check its cable/power; logout resets session-only changes.") }
         // Recompute from the original baseline, including partial restoration.
         try restoreLayout()
-        if let index = records.firstIndex(where: { $0.uuid == value }) { records[index].disabledByApp = false }
-        saveRecords()
+        var restored = records
+        if let index = restored.firstIndex(where: { $0.uuid == value }) { restored[index].disabledByApp = false }
+        try saveRecords(restored)
         if disabledUUIDs.isEmpty {
             defaults.removeObject(forKey: "savedLayout")
             defaults.removeObject(forKey: "savedMainUUID")
@@ -372,7 +404,7 @@ final class DisplayController {
             return
         }
         // Compatibility with layouts saved before dimensions were recorded.
-        guard let data = defaults.data(forKey: "savedLayout") else { return }
+        guard let data = try Self.journalData(forKey: "savedLayout", defaults: defaults) else { return }
         let positions = try JSONDecoder().decode([DisplayPosition].self, from: data)
         guard positions.allSatisfy({ $0.width == nil && $0.height == nil }) else { return }
         let active = try activeIDs()
@@ -398,7 +430,7 @@ final class DisplayController {
     }
 
     private func plannedLayout(excluding: String? = nil, preview: Bool = false) throws -> [(UInt32, DisplayPosition)]? {
-        let data = defaults.data(forKey: "savedLayout")
+        let data = try Self.journalData(forKey: "savedLayout", defaults: defaults)
         let baseline: [DisplayPosition]
         if preview && disabledUUIDs.isEmpty { baseline = try currentLayout() }
         else if let data { baseline = try JSONDecoder().decode([DisplayPosition].self, from: data) }

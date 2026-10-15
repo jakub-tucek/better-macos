@@ -116,6 +116,7 @@ private final class JournalLoadingRestoreRunner: CommandRunning {
 }
 
 private func runUnreadableDisplayJournalTests() {
+    runDisplayJournalReloadTests()
     // Exercise production initialization plus the exact CLI restore routine, not
     // just the cheap host predicate. Inject discovery so even the buggy loader
     // cannot query graphics state during the red run.
@@ -216,6 +217,66 @@ private func runUnreadableDisplayJournalTests() {
                "host helper rejects unreadable journal before graphics discovery")
         withExtendedLifetime(host) {}
     }
+}
+
+private func runDisplayJournalReloadTests() {
+    for invalid: Any in [Data("damaged after initialization".utf8), Data("{}".utf8), "non-Data after initialization"] {
+        let suite = "fix-mac-os.display-journal-reload.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        do {
+            let original = DisplayRecord(uuid: "owned", name: "Owned", lastID: 1, bootSession: nil, disabledByApp: true)
+            defaults.set(try JSONEncoder().encode([original]), forKey: "displayRecords")
+            var discoveries = 0
+            var corruptDuringDiscovery = false
+            let controller = try DisplayController(defaults: defaults, legacyDefaults: nil, discoverDisplays: { _ in
+                discoveries += 1
+                if corruptDuringDiscovery { defaults.set(invalid, forKey: "displayRecords") }
+            })
+            expect(controller.disabledUUIDs == ["owned"] && discoveries == 1, "reload regression begins with valid production initialization and cached recovery authority")
+            defaults.set(invalid, forKey: "displayRecords")
+            let corrupted = defaults.persistentDomain(forName: suite)!
+            var failed = false
+            do { try controller.refreshDisplays() } catch { failed = true }
+            expect(failed && discoveries == 1 && controller.disabledUUIDs == ["owned"],
+                   "post-init corrupt/non-Data journal refresh throws before discovery and retains cached recovery authority")
+            expect(NSDictionary(dictionary: defaults.persistentDomain(forName: suite)!).isEqual(to: corrupted),
+                   "post-init journal refresh preserves exact corrupt bytes/type without saving cached records")
+            do { try restoreFromCLI(controller); expect(false, "helper must reload and reject post-init journal corruption") }
+            catch { expect(error.localizedDescription.contains("unreadable"), "helper propagates post-init journal loading error, not false restoration success") }
+            do { try controller.restorePendingArrangement(); expect(false, "arrangement recovery must reject corrupt display records before any discovery") }
+            catch { expect(error.localizedDescription.contains("unreadable"), "arrangement recovery propagates post-init record loading failure") }
+            expect(discoveries == 1 && controller.disabledUUIDs == ["owned"] && NSDictionary(dictionary: defaults.persistentDomain(forName: suite)!).isEqual(to: corrupted),
+                   "all recovery-entry reloads preserve cached ownership and raw corrupt data without discovery")
+            let repaired = DisplayRecord(uuid: "repaired", name: "Repaired", lastID: 2, bootSession: nil, disabledByApp: true)
+            let repairedBytes = try JSONEncoder().encode([repaired])
+            defaults.set(repairedBytes, forKey: "displayRecords")
+            try controller.refreshDisplays()
+            expect(discoveries == 2 && controller.disabledUUIDs == ["repaired"],
+                   "repair permits refresh retry and replaces stale cached authority with validated journal")
+            corruptDuringDiscovery = true
+            do { try controller.refreshDisplays(); expect(false, "journal corruption during discovery must block subsequent save") }
+            catch {}
+            expect(defaults.object(forKey: "displayRecords").map { NSDictionary(dictionary: ["value": $0]).isEqual(to: ["value": invalid]) } == true && controller.disabledUUIDs == ["repaired"],
+                   "final save revalidates journal, preserving corruption and prior cached recovery authority")
+            corruptDuringDiscovery = false
+            defaults.set(repairedBytes, forKey: "displayRecords")
+            try controller.refreshDisplays()
+            expect(discoveries == 4 && controller.disabledUUIDs == ["repaired"], "failed save remains retriable after journal repair")
+        } catch { expect(false, "isolated production reload fixture failed: \(error)") }
+    }
+
+    let suite = "fix-mac-os.invalid-arrangement-journal-type.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    do {
+        let controller = try DisplayController(defaults: defaults, legacyDefaults: nil, discoverDisplays: { _ in })
+        defaults.set("invalid arrangement journal type", forKey: "pendingArrangement")
+        expect(controller.hasPendingArrangement && DisplayController.hasPendingRecovery(defaults: defaults),
+               "non-Data arrangement journal retains pending recovery authority")
+        do { try controller.restorePendingArrangement(); expect(false, "invalid arrangement journal type cannot become a successful no-op") }
+        catch { expect(defaults.string(forKey: "pendingArrangement") == "invalid arrangement journal type", "invalid arrangement journal type throws without clearing recovery data") }
+    } catch { expect(false, "isolated arrangement journal fixture initializes: \(error)") }
 }
 
 private func runDisplayOwnershipTests() {
