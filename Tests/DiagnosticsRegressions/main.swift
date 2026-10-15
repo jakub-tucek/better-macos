@@ -70,6 +70,14 @@ func responsiveDelivery() throws {
     try check(sink.entered.wait(timeout: .now() + 5) == .success, "writer reaches deterministic filesystem gate")
     try check(returned.wait(timeout: .now() + 5) == .success && safetyAction.wait(timeout: .now() + 5) == .success,
               "blocked writer never delays caller or subsequent safety work")
+    let host = HostTransactions()
+    var preparations = 0
+    let decision = host.requestQuit(.init(isBusy: { false }, prepareMouse: { preparations += 1; return true },
+                                         quiesce: {}, prepareClipboard: { true }, needsDisplayRecovery: { false },
+                                         restoreDisplays: { _ in }, suspendSpaces: nil, resumeClipboard: {},
+                                         restoreSpacesChoice: {}, didReopen: {}, didVeto: { _ in }), reply: { _ in })
+    try check(decision == .now && preparations == 1 && !host.acceptsActions,
+              "real host quit preparation completes while diagnostic writer remains gated, without OS effects")
     for index in 0..<1000 { blocked.emit("test", "queued\(index)", fields: ["bounded": String(repeating: "x", count: 1024)]) }
     let state = blocked.deliveryStateForTesting
     try check(state.outstanding == 4 && state.dropped == 997, "admission bounds active plus pending events before scheduling and drops overflow")
