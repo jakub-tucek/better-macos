@@ -157,8 +157,8 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     private var onStopped: (() -> Void)?
     private var busy = false
     private var manualBusy = false
-    private enum ManualRequest { case connection(String, Bool); case powerOn }
-    private var pendingManual: ManualRequest?
+    enum ManualOperation: Equatable { case connection(String, Bool); case powerOn }
+    private var pendingManual: ManualOperation?
     private var manualAddress: String?
     private var cycleCancellation: BluetoothCycleCancellation?
     private var pendingAudioName: String?
@@ -181,6 +181,9 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     private(set) var status = "Loading paired devices…"
     var onChange: (() -> Void)?
     var onError: ((Error) -> Void)?
+    // Delivered after onError for failures; only successful manual operations
+    // resolve action errors. A healthy observation alone does not resolve intent.
+    var onManualOperationCompleted: ((ManualOperation, Result<Void, Error>) -> Void)?
     var onAudioOutputRequested: ((String) -> Void)?
 
     init(defaults: UserDefaults = .standard, backend: BluetoothBackend? = nil, importLegacyConfiguration: Bool = true,
@@ -445,7 +448,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
                     return try backend.devices()
                 }
             }
-            DispatchQueue.main.async { self?.complete(result, reportError: true) }
+            DispatchQueue.main.async { self?.complete(result, reportError: true, manualOperation: request) }
         }
     }
 
@@ -466,7 +469,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         onChange?()
     }
 
-    private func complete(_ result: Result<[BluetoothDevice], Error>, reportError: Bool) {
+    private func complete(_ result: Result<[BluetoothDevice], Error>, reportError: Bool, manualOperation: ManualOperation? = nil) {
         if finishStoppedOperation() { return }
         busy = false
         manualBusy = false
@@ -502,6 +505,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
             if reportError { onError?(error) }
         }
         manualAddress = nil
+        if let manualOperation { onManualOperationCompleted?(manualOperation, result.map { _ in () }) }
         onChange?()
         if let name = pendingAudioName, cycleCancellation?.isCanceled == false, lastError == nil {
             pendingAudioName = nil

@@ -211,7 +211,12 @@ final class DashboardModel: ObservableObject {
     var onMenuBarHidingChanged: (Bool) -> Void = { _ in }
     var onToggleMenuBar: () -> Void = {}
     var onRestoreMenuBarSpacing: () -> Void = {}
-    @Published var errorMessage: String?
+    // Each publication has an identity, including replacement with identical text.
+    // Feature recovery must not dismiss a newer, independently published error.
+    private(set) var errorGeneration = UUID()
+    @Published var errorMessage: String? {
+        didSet { errorGeneration = UUID() }
+    }
 
     var onMonitorChanged: (String, Bool) -> Void = { _, _ in }
     var onMonitorDisableModeChanged: (Bool) -> Void = { _ in }

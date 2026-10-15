@@ -68,6 +68,7 @@ private final class UIWindows: WindowPositionBackend {
 }
 
 func runUITests() throws {
+    try runBluetoothErrorRecoveryTests()
     runBuiltinCatalogTests()
     try runRegisteredOwnerChoiceTests()
     runStoredStateTests()

@@ -7,6 +7,7 @@ import os
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var controller: DisplayController?
     private var bluetooth: BluetoothModule?
+    private var bluetoothActionError: (operation: BluetoothModule.ManualOperation, generation: UUID)?
     private var audio: AudioModule?
     private var spaces: SpacesModule?
     private var screenEdges: ScreenEdgeController?
@@ -527,12 +528,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 module.suspendAutomaticReconnection = guiTestTarget != nil
                 module.onChange = { [weak self] in self?.refreshBluetooth() }
                 module.onError = { [weak self] in self?.showError($0) }
+                module.onManualOperationCompleted = { [weak self] operation, result in
+                    guard let self else { return }
+                    switch result {
+                    case .failure:
+                        // onError has just published this operation's failure.
+                        bluetoothActionError = (operation, model.errorGeneration)
+                    case .success:
+                        guard let owned = bluetoothActionError, owned.operation == operation else { return }
+                        bluetoothActionError = nil
+                        if model.errorGeneration == owned.generation { model.errorMessage = nil }
+                    }
+                }
                 module.start()
             }
         } else if let module = bluetooth, !model.stoppingModules.contains(.bluetooth) {
             model.stoppingModules.insert(.bluetooth)
             module.onChange = nil
             module.onError = nil
+            module.onManualOperationCompleted = nil
+            bluetoothActionError = nil
             module.stop { [weak self, weak module] in
                 guard let self, bluetooth === module else { return }
                 bluetooth = nil
