@@ -35,7 +35,12 @@ struct LocalDiagnosticFiles: DiagnosticFiles {
     private let manager = FileManager.default
     func prepare(_ directory: URL) throws {
         // Do not recursively create or chmod broad parent directories.
-        try manager.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        do {
+            try manager.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        } catch CocoaError.fileWriteFileExists {
+            // Another session may already own it, including a concurrent creator.
+            // Never accept EEXIST without the type/ownership checks below.
+        }
         let attributes = try manager.attributesOfItem(atPath: directory.path)
         guard attributes[.type] as? FileAttributeType == .typeDirectory,
               (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid() else { throw CocoaError(.fileWriteNoPermission) }
