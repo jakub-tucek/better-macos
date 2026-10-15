@@ -110,6 +110,27 @@ struct SetupConfiguration: Codable, Equatable {
         model.clipboardPersistence = clipboardPersistence; model.clipboardDays = clipboardDays; model.clipboardExclusions = clipboardExclusions
         model.mouseAcceleration = mouseAcceleration; model.mouseTracking = mouseTracking
     }
+
+    /// Preferences only, for an owner which is not enabled yet. Recovery journals
+    /// and module admission are deliberately excluded. The host stages every new
+    /// owner before activating any of them (Audio can also be owned by Bluetooth).
+    func inactivePreferences(for module: AppModule) -> [String: Any] {
+        switch module {
+        case .audio: return ["audio.automatic": audioAutomatic, "audio.output.preferences": outputPreferences,
+            "audio.input.preferences": inputPreferences, "audio.output.fallback": outputFallback, "audio.input.fallback": inputFallback]
+        case .bluetooth: return ["bluetooth.autoEnabled": bluetoothAutomatic, "bluetooth.autoAddresses": bluetoothTargets.sorted(),
+            "bluetooth.protectAudio": protectAudio, "bluetooth.switchAudio": switchAudio, "bluetooth.protectedAudioAddresses": protectedTargets.sorted()]
+        case .keepAwake: return ["keepAwake.minutes": awakeMinutes, "keepAwake.display": displayAwake, "keepAwake.apps": awakeApps]
+        case .menuBar: return ["menuBar.compact": compactMenu, "menuBar.hiding": hideMenu]
+        case .quitGuard: return ["quitGuard.enabled": quitGuard, "quitGuard.duration": quitDuration]
+        case .spaces: return ["animations.enabled": animations, "spaces.enabled": spaces, "spaces.speed": speed]
+        case .clipboard: return ["clipboard.persistence": clipboardPersistence, "clipboard.days": clipboardDays, "clipboard.exclusions": clipboardExclusions]
+        case .windows: return ["windows.auto": windowsAutomatic, "windows.paused": windowsPaused, "windows.selected": windowsSelected, "windows.exclusions": windowsExclusions]
+        case .monitors: return ["monitors.confirmDisable": confirmDisplays]
+        case .arrangement: return ["arrangement.matchEdges": matchEdges]
+        case .mouse: return [:]
+        }
+    }
 }
 
 struct SetupCheckpoint: Codable {

@@ -16,8 +16,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if screenEdges == nil { screenEdges = ScreenEdgeController() }
         try screenEdges?.start(layout: layout)
     }, stopCursor: { [weak self] in self?.screenEdges?.stop() })
-    private let animations = AnimationPreferences()
-    private let menuBarSpacing = MenuBarSpacing()
+    private let animations: AnimationPreferences
+    private let menuBarSpacing: MenuBarSpacing
+    private let makeAudio: () -> AudioModule
+    private let makeKeepAwake: () -> KeepAwakeModule
+    private let makeBluetooth: () -> BluetoothModule
+    private let makeMenuBar: () -> MenuBarModule
     private var menuBar: MenuBarModule?
     private var quitGuard: QuitGuard?
     private var keepAwake: KeepAwakeModule?
@@ -57,11 +61,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let terminationReply: (NSApplication, Bool) -> Void
 
      init(commandRunner: CommandRunning = CommandRunner(), spaces: SpacesModule? = nil, windowPositions: WindowPositions? = nil, clipboard: ClipboardModule? = nil, mouseLifecycle: MouseLifecycle? = nil, model: DashboardModel = DashboardModel(), preferences: UserDefaults = .standard,
+          makeAudio: (() -> AudioModule)? = nil, makeKeepAwake: (() -> KeepAwakeModule)? = nil, makeBluetooth: (() -> BluetoothModule)? = nil,
+          makeMenuBar: (() -> MenuBarModule)? = nil, menuBarSpacing: MenuBarSpacing? = nil, animations: AnimationPreferences? = nil,
          terminationReply: @escaping (NSApplication, Bool) -> Void = { $0.reply(toApplicationShouldTerminate: $1) }) {
          self.commandRunner = commandRunner
          self.preferences = preferences
          self.modules = ModuleSettings(defaults: preferences)
          self.uiStore = UISettingsStore(defaults: preferences)
+         self.makeAudio = makeAudio ?? { AudioModule(defaults: preferences) }
+         self.makeKeepAwake = makeKeepAwake ?? { KeepAwakeModule(defaults: preferences) }
+         self.makeBluetooth = makeBluetooth ?? { BluetoothModule(defaults: preferences) }
+         self.makeMenuBar = makeMenuBar ?? { MenuBarModule(defaults: preferences) }
+         self.menuBarSpacing = menuBarSpacing ?? MenuBarSpacing(defaults: preferences)
+         self.animations = animations ?? AnimationPreferences(defaults: preferences)
         self.model = model
         self.spaces = spaces
         self.windowPositions = windowPositions
@@ -255,12 +267,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.onMonitorChanged = { [weak self] uuid, enabled in self?.actionHost?.setMonitor(uuid, enabled: enabled) }
         model.onMonitorDisableModeChanged = { [weak self] confirm in
             guard let self, transactions.acceptsActions else { return }
-            UserDefaults.standard.set(confirm, forKey: "monitors.confirmDisable")
+            preferences.set(confirm, forKey: "monitors.confirmDisable")
             refreshPreferences()
         }
         model.onMatchScreenEdgesChanged = { [weak self] enabled in
             guard let self, transactions.acceptsActions else { return }
-            UserDefaults.standard.set(enabled, forKey: "arrangement.matchEdges")
+            preferences.set(enabled, forKey: "arrangement.matchEdges")
             refreshPreferences()
             updateScreenEdges()
         }
@@ -272,8 +284,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.onArrangeDisplays = { [weak self] in self?.actionHost?.showArrangementEditor() }
         model.onKeepArrangement = { [weak self] in
             guard let self, transactions.acceptsActions, !recovering, rollbackUUID == "layout" else { return }
-            UserDefaults.standard.removeObject(forKey: "pendingArrangement")
-            UserDefaults.standard.synchronize()
+            preferences.removeObject(forKey: "pendingArrangement")
+            preferences.synchronize()
             model.pendingArrangement = false
             clearRollback()
         }
@@ -408,7 +420,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.enabledModules = modules.enabled
         if modules.enabled.contains(.windows) {
             if windowPositions == nil {
-                let module = WindowPositions()
+                let module = WindowPositions(defaults: preferences)
                 module.acceptsActions = { [weak self] in self?.transactions.acceptsActions == true }
                 module.onWake = { [weak self] in self?.displayRefresh.requestRefresh() }
                 module.start()
@@ -421,7 +433,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.windowPositions = windowPositions
         if !modules.enabled.isDisjoint(with: [.audio, .bluetooth]) {
             if audio == nil {
-                let module = AudioModule()
+                let module = makeAudio()
                 audio = module
                 module.onChange = { [weak self] in self?.refreshAudio() }
                 module.bluetoothProtection = { [weak self] in
@@ -439,7 +451,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         refreshAudio()
         if modules.enabled.contains(.clipboard) {
             if clipboard == nil {
-                let module = ClipboardModule()
+                let module = ClipboardModule(defaults: preferences)
                 clipboard = module
                 module.onChange = { [weak self] in self?.refreshClipboard() }
                 module.onError = { [weak self] in self?.model.errorMessage = $0 }
@@ -453,7 +465,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         mouseLifecycle.reconcile()
         if modules.enabled.contains(.keepAwake) {
             if keepAwake == nil {
-                let module = KeepAwakeModule()
+                let module = makeKeepAwake()
                 keepAwake = module
                 module.onChange = { [weak self] in self?.refreshKeepAwake() }
                 module.onError = { [weak self] in self?.showError($0) }
@@ -466,7 +478,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         refreshKeepAwake()
         if modules.enabled.contains(.quitGuard) {
             if quitGuard == nil {
-                let module = QuitGuard()
+                let module = QuitGuard(defaults: preferences)
                 quitGuard = module
                 module.onChange = { [weak self] in self?.refreshQuitGuard() }
                 module.onError = { [weak self] error in
@@ -484,7 +496,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         refreshQuitGuard()
         if modules.enabled.contains(.menuBar) {
             if menuBar == nil {
-                let module = MenuBarModule()
+                let module = makeMenuBar()
                 module.onChange = { [weak self] in self?.refreshMenuBar() }
                 module.onError = { [weak self] error in
                     self?.showError(error)
@@ -504,7 +516,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         refreshMenuBar()
         if modules.enabled.contains(.bluetooth) {
             if bluetooth == nil {
-                let module = BluetoothModule()
+                let module = makeBluetooth()
                 bluetooth = module
                 module.onAudioOutputRequested = { [weak self] name in self?.audio?.bluetoothConnected(name: name) }
                 module.suspendAutomaticReconnection = guiTestTarget != nil
@@ -526,7 +538,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         if modules.enabled.contains(.spaces) {
             if spaces == nil {
-                spaces = SpacesModule()
+                spaces = SpacesModule(defaults: preferences)
                 spaces?.onChange = { [weak self] in self?.refreshPreferences() }
             }
             spaces?.isAvailable = safety.isReady
@@ -552,8 +564,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         // Recovery metadata is cheap to read and must remain reachable even if
         // every feature was disabled before an unclean exit.
-        model.pendingArrangement = UserDefaults.standard.data(forKey: "pendingArrangement") != nil
-        if controller == nil, let data = UserDefaults.standard.data(forKey: "displayRecords"),
+        model.pendingArrangement = preferences.data(forKey: "pendingArrangement") != nil
+        if controller == nil, let data = preferences.data(forKey: "displayRecords"),
            let records = try? JSONDecoder().decode([DisplayRecord].self, from: data) {
             model.disabledMonitorCount = records.filter(\.disabledByApp).count
         }
@@ -715,9 +727,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let configuration = draft.configuration
         let selected = draft.selected
         let requestedWidgets = draft.widgets
+        // Install the reviewed choices before *any* activation can synchronously
+        // poll or acquire assertions. Restore only unactivated choices on refusal;
+        // never overwrite recovery metadata or choices owned by an active feature.
+        var staged: [AppModule: [String: Any]] = [:]
+        let newlyEnabled = selected.subtracting(modules.enabled)
+        for module in newlyEnabled {
+            let values = configuration.inactivePreferences(for: module)
+            staged[module] = Dictionary(uniqueKeysWithValues: values.keys.map { ($0, preferences.object(forKey: $0) ?? NSNull()) })
+            for (key, value) in values { preferences.set(value, forKey: key) }
+        }
+        func restoreUnactivated(_ module: AppModule) {
+            guard !modules.enabled.contains(module), let original = staged.removeValue(forKey: module) else { return }
+            for (key, value) in original {
+                if value is NSNull { preferences.removeObject(forKey: key) } else { preferences.set(value, forKey: key) }
+            }
+        }
+        // An already-running shared Audio owner must not route with the old
+        // policy when another selected feature (notably Bluetooth) starts.
+        if selected.contains(.audio), let audio {
+            audio.configureForSetup(automatic: configuration.audioAutomatic, output: configuration.outputPreferences,
+                input: configuration.inputPreferences, outputFallback: configuration.outputFallback, inputFallback: configuration.inputFallback)
+        }
         var results: [String] = []
         func advance(_ index: Int) {
             guard transactions.acceptsActions else {
+                for module in newlyEnabled { restoreUnactivated(module) }
                 completion(results + ["Remaining setup changes were not applied: shutdown is in progress. Successful changes above remain applied."]); return
             }
             guard index < AppModule.allCases.count else {
@@ -729,8 +764,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let module = AppModule.allCases[index]
             let enabled = selected.contains(module)
             func configure(_ success: Bool) {
-                guard transactions.acceptsActions else { completion(results + ["Remaining setup changes were not applied during shutdown."]); return }
+                guard transactions.acceptsActions else {
+                    for pending in newlyEnabled { restoreUnactivated(pending) }
+                    completion(results + ["Remaining setup changes were not applied during shutdown."]); return
+                }
                 guard success else {
+                    restoreUnactivated(module)
                     results.append("\(module.title): not applied. \(model.errorMessage ?? "Busy or recovery is still pending; retry in Settings.")")
                     advance(index + 1); return
                 }
@@ -794,13 +833,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if value.quitGuard != old.quitGuard { model.onQuitGuardChanged(value.quitGuard) }
             if value.quitGuard && !model.quitGuardActive { note = "Hold to quit is inactive; check Accessibility and Retry in Input settings." }
         case .keepAwake:
-            if value.awakeMinutes != old.awakeMinutes { model.onKeepAwakeMinutesChanged(value.awakeMinutes) }
-            if value.displayAwake != old.displayAwake { model.onKeepDisplayAwakeChanged(value.displayAwake) }
             if let keepAwake {
-                for id in Set(old.awakeApps.keys).union(value.awakeApps.keys) where old.awakeApps[id] != value.awakeApps[id] {
-                    do { try keepAwake.setApp(id, name: value.awakeApps[id] ?? id, selected: value.awakeApps[id] != nil) }
-                    catch { showError(error) }
-                }
+                do { try keepAwake.configureForSetup(minutes: value.awakeMinutes, display: value.displayAwake, apps: value.awakeApps) }
+                catch { showError(error) }
                 refreshKeepAwake()
             }
             note = "Saved app rules may be active. No timed session started."
@@ -897,7 +932,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.switchAudioOutput = bluetooth.switchAudioOutput
         model.protectedAudioAddresses = bluetooth.protectedAudioAddresses
         model.legacyServicePresent = bluetooth.legacyServicePresent
-        if let data = bluetooth.diagnostics() { UserDefaults.standard.set(data, forKey: "bluetooth.lastSnapshot") }
+        if let data = bluetooth.diagnostics() { preferences.set(data, forKey: "bluetooth.lastSnapshot") }
         checkGUIBluetoothTest()
     }
 
@@ -928,7 +963,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                                    "error": bluetooth.lastError ?? "", "context": "running-gui",
                                    "updatedAt": ISO8601DateFormatter().string(from: Date())]
         if let data = try? JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]) {
-            UserDefaults.standard.set(data, forKey: "bluetooth.guiTestResult")
+            preferences.set(data, forKey: "bluetooth.guiTestResult")
         }
         if let originalOutput = guiTestOriginalOutput, let audio = CommandRunner.find("SwitchAudioSource") {
             recoveryQueue.async {
@@ -942,10 +977,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func refreshPreferences() {
         reconcileWindows()
-        model.matchScreenEdges = UserDefaults.standard.bool(forKey: "arrangement.matchEdges")
+        model.matchScreenEdges = preferences.bool(forKey: "arrangement.matchEdges")
         updateScreenEdges()
         model.displaySupported = controller?.supported == true && safety.isReady
-        model.confirmMonitorDisable = UserDefaults.standard.bool(forKey: "monitors.confirmDisable")
+        model.confirmMonitorDisable = preferences.bool(forKey: "monitors.confirmDisable")
         model.animationsEnabled = animations.enabled
         model.animationRecoveryRequired = animations.recoveryRequired
         if transactions.acceptsActions && animations.enabled && !model.animationsBusy && controlState.inputReady && spaces?.isAvailable == true {
@@ -962,7 +997,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var controlState: SystemControlLifecycle.State {
         SystemControlLifecycle.State(watchdogReady: safety.isReady && transactions.acceptsActions, displaySettling: displayRefresh.isSettling,
             displayOperation: recovering, pendingConfirmation: model.pendingArrangement || rollbackUUID != nil,
-            layoutFresh: layoutFresh, cursorRequested: UserDefaults.standard.bool(forKey: "arrangement.matchEdges"),
+            layoutFresh: layoutFresh, cursorRequested: preferences.bool(forKey: "arrangement.matchEdges"),
             arrangementEnabled: modules.enabled.contains(.arrangement), layout: model.currentLayout)
     }
 
@@ -999,7 +1034,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                         completion?()
                         if enabled && !preserveChoice && spaces?.hasPermission == true {
                             // Starting waits for display/watchdog readiness via refreshPreferences.
-                            spaces?.requestRestore(enabled: UserDefaults.standard.object(forKey: "spaces.enabled") == nil || spaces?.savedEnabled == true)
+                            spaces?.requestRestore(enabled: preferences.object(forKey: "spaces.enabled") == nil || spaces?.savedEnabled == true)
                         }
                         refreshPreferences()
                         resultCompletion?(true)
@@ -1050,7 +1085,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "arrangementEditorLoaded": arrangementWindow?.contentView != nil
         ]
         if let data = try? JSONSerialization.data(withJSONObject: status, options: [.prettyPrinted, .sortedKeys]) {
-            UserDefaults.standard.set(data, forKey: "modules.runtimeStatus")
+            preferences.set(data, forKey: "modules.runtimeStatus")
         }
     }
 

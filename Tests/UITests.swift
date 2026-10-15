@@ -1,4 +1,20 @@
 import AppKit
+import IOKit.pwr_mgt
+
+private final class SetupAudioBackend: AudioRoutingBackend {
+    var writes: [String] = []
+    var fail = false
+    func devices() throws -> [AudioDevice] { [AudioDevice(uid: "old", name: "Old", directions: [.output], bluetooth: false), AudioDevice(uid: "new", name: "New", directions: [.output], bluetooth: false)] }
+    func current(_ direction: AudioDirection) throws -> String? { direction == .output ? "new" : nil }
+    func select(_ uid: String, direction: AudioDirection) throws { writes.append(uid); if fail { throw ToggleError(message: "Repeated routing failure") } }
+}
+private final class SetupPowerBackend: PowerAssertionBackend {
+    var creates = 0
+    var fail = false
+    func create(display: Bool, timeout: TimeInterval) throws -> IOPMAssertionID { creates += 1; if fail { throw ToggleError(message: "Repeated assertion failure") }; return IOPMAssertionID(creates) }
+    func setTimeout(_ id: IOPMAssertionID, seconds: TimeInterval) throws {}
+    func release(_ id: IOPMAssertionID) throws {}
+}
 
 private final class UIClipboard: ClipboardAccess {
     var changeCount = 0
@@ -153,5 +169,42 @@ func runUITests() throws {
     admitted = false
     while !work.isEmpty { work.removeFirst()() }
     expect(scheduledBackend.moves.isEmpty, "queued quick window Restore rechecks admission before its first OS write")
+    withExtendedLifetime(host) {}
+    runSetupActivationOrderingTests()
+}
+
+private func runSetupActivationOrderingTests() {
+    let suite = "fix-mac-os.setup-activation.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    for module in AppModule.allCases { ModuleSettings(defaults: defaults).set(module, enabled: false) }
+    defaults.set(true, forKey: "audio.automatic")
+    defaults.set(["old"], forKey: "audio.output.preferences")
+    defaults.set(["old.app": "Old app"], forKey: "keepAwake.apps")
+    defaults.set(true, forKey: "keepAwake.display")
+    defaults.set(true, forKey: "menuBar.compact")
+    defaults.set("unselected sentinel", forKey: "clipboard.exclusions")
+    let audioBackend = SetupAudioBackend(); let power = SetupPowerBackend()
+    let audio = AudioModule(backend: audioBackend, defaults: defaults)
+    let awake = KeepAwakeModule(defaults: defaults, backend: power, automaticUpdates: false, runningApps: { ["old.app": "Old app"] }, processInstances: { [:] })
+    var spacingWrites = 0
+    let spacing = MenuBarSpacing(defaults: defaults, read: { _ in nil }, write: { _, _ in spacingWrites += 1 })
+    let model = DashboardModel(); model.enabledModules = []
+    let host = AppDelegate(model: model, preferences: defaults, makeAudio: { audio }, makeKeepAwake: { awake }, menuBarSpacing: spacing)
+    let draft = SetupDraft(current: model, defaults: defaults)
+    draft.selected = [.audio, .keepAwake, .menuBar]; draft.syncSelection()
+    draft.controls.onAudioAutomatic(false)
+    draft.controls.onAudioPreferences(["new"], .output)
+    draft.controls.onKeepAwakeRemoveApp("old.app")
+    draft.controls.onKeepDisplayAwakeChanged(false)
+    draft.controls.onCompactMenuBarChanged(false)
+    var results: [String] = []
+    model.onFinishSetup(draft) { results = $0 }
+    expect(!results.isEmpty && model.enabledModules == draft.selected, "actual Finish enables selected owners using injected backends")
+    expect(audioBackend.writes.isEmpty, "disabled Audio saved automatic On cannot write an obsolete route before reviewed Off is installed")
+    expect(power.creates == 0, "disabled Keep awake cannot acquire even an intermediate assertion for app rules removed in review")
+    expect(spacingWrites == 0, "disabled Menu bar cannot write compact spacing before reviewed Off is installed")
+    expect(defaults.string(forKey: "clipboard.exclusions") == "unselected sentinel", "preactivation staging leaves unselected feature preferences untouched")
+    audio.stop(); try? awake.deactivate()
     withExtendedLifetime(host) {}
 }

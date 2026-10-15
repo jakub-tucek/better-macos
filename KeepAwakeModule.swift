@@ -138,6 +138,18 @@ final class KeepAwakeModule {
         onChange?()
     }
 
+    func configureForSetup(minutes: Int, display: Bool, apps: [String: String]) throws {
+        guard selectedMinutes != minutes || keepDisplayAwake != display || selectedApps != apps else { return }
+        // Replace the complete policy before reconciling once. Timed ownership
+        // and app pauses stay intact; removed rules cannot acquire a new lease.
+        defaults.set(apps, forKey: "keepAwake.apps")
+        defaults.set(min(1440, max(5, minutes)), forKey: "keepAwake.minutes")
+        defaults.set(display, forKey: "keepAwake.display")
+        if watchingApps && !apps.isEmpty { beginUpdates() }
+        try reconcile()
+        onChange?()
+    }
+
     func resumeApps() throws {
         pausedApps.removeAll()
         pausedInstances.removeAll()

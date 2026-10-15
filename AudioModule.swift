@@ -140,6 +140,16 @@ final class AudioModule {
         defaults.set(uid, forKey: "audio.\(direction.rawValue).fallback"); onChange?()
     }
     func isOverridden(_ direction: AudioDirection) -> Bool { overrides.contains(direction) }
+    func configureForSetup(automatic desired: Bool, output: [String], input: [String], outputFallback: String, inputFallback: String) {
+        guard automatic != desired || preferences(.output) != output || preferences(.input) != input ||
+            fallback(.output) != outputFallback || fallback(.input) != inputFallback else { return }
+        // The off transition cannot write a route. Replace all inputs before the
+        // single explicit resume, rather than exposing intermediate preferences.
+        automatic = false
+        setPreferences(output, direction: .output); setPreferences(input, direction: .input)
+        setFallback(outputFallback, direction: .output); setFallback(inputFallback, direction: .input)
+        automatic = desired
+    }
     func start() {
         guard !running else { return }
         running = true; poll()
