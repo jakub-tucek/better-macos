@@ -6,9 +6,9 @@ struct DisplayArrangementEditor: View {
     let mainUUID: String
     let onApply: (DisplayArrangementRequest) -> Void
     let onCancel: () -> Void
-    @State private var draft: [DisplayPosition]
-    @State private var dragging: String?
-    @State private var translation = CGSize.zero
+    @StoredState private var draft: [DisplayPosition]
+    @StoredState private var dragging: String?
+    @StoredState private var translation = CGSize.zero
 
     init(original: [DisplayPosition], monitors: [Monitor], mainUUID: String,
          onApply: @escaping (DisplayArrangementRequest) -> Void, onCancel: @escaping () -> Void) {

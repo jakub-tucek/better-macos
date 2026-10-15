@@ -392,12 +392,12 @@ struct DashboardView: View {
     var feature: DashboardTab
     var setup = true
     var draftMode = false
-    @State private var disconnectWarning: BluetoothDevice?
-    @State private var showDisconnectWarning = false
-    @State private var showLegacyWarning = false
-    @State private var previewMonitor: String?
-    @State private var customAwakeDuration = false
-    @State private var clipboardExclusionsDraft = ClipboardExclusionsDraft()
+    @StoredState private var disconnectWarning: BluetoothDevice?
+    @StoredState private var showDisconnectWarning = false
+    @StoredState private var showLegacyWarning = false
+    @StoredState private var previewMonitor: String?
+    @StoredState private var customAwakeDuration = false
+    @StoredState private var clipboardExclusionsDraft = ClipboardExclusionsDraft()
     private var isSetup: Bool { setup }
 
     private var disconnectDisablesRule: Bool {

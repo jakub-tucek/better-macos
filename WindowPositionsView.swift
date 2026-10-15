@@ -3,10 +3,10 @@ import SwiftUI
 struct WindowPositionsView: View {
     @ObservedObject var module: WindowPositions
     var setup = true
-    @State private var name = ""
-    @State private var renamingID: String?
-    @State private var renameDraft = ""
-    @State private var deletingID: String?
+    @StoredState private var name = ""
+    @StoredState private var renamingID: String?
+    @StoredState private var renameDraft = ""
+    @StoredState private var deletingID: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {

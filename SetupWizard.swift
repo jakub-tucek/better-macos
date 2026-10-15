@@ -316,7 +316,7 @@ struct SetupWizard: View {
     @ObservedObject var model: DashboardModel
     @ObservedObject var draft: SetupDraft
     let close: () -> Void
-    @State private var confirmFinish = false
+    @StoredState private var confirmFinish = false
     var body: some View {
         VStack(spacing: 0) {
             HStack { Text(title).font(.title2); Spacer(); if draft.applying { ProgressView().controlSize(.small) } }.padding(20)

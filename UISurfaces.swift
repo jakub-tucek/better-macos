@@ -195,7 +195,7 @@ struct WidgetEditor: View {
     @ObservedObject var model: DashboardModel
     var allowSettings = true
     var layouts: [WindowLayout]? = nil
-    @State private var gallery = false
+    @StoredState private var gallery = false
     private var availableLayouts: [WindowLayout] { layouts ?? model.windowPositions?.layouts ?? [] }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -279,9 +279,9 @@ struct PopupSizing: Equatable {
 struct QuickActionsView: View {
     @ObservedObject var model: DashboardModel
     @ObservedObject private var editor: WidgetEditingSession
-    @State private var contentHeight: CGFloat = 0
-    @State private var headerHeight: CGFloat = 40
-    @State private var footerHeight: CGFloat = 38
+    @StoredState private var contentHeight: CGFloat = 0
+    @StoredState private var headerHeight: CGFloat = 40
+    @StoredState private var footerHeight: CGFloat = 38
     private let onResize: (NSSize) -> Void
     init(model: DashboardModel, onResize: @escaping (NSSize) -> Void = { _ in }) {
         self.model = model; self.editor = model.popupWidgetEditor; self.onResize = onResize
@@ -438,7 +438,7 @@ struct AwakeDurationEditor: View {
     @ObservedObject var model: DashboardModel
     var showsStart = false
     private let commands: AwakeDurationEditorCommands?
-    @State private var draft: AwakeDurationDraft
+    @StoredState private var draft: AwakeDurationDraft
     @FocusState private var focused: Bool
 
     init(model: DashboardModel, showsStart: Bool = false, commands: AwakeDurationEditorCommands? = nil) {
@@ -490,7 +490,7 @@ struct AwakeDurationEditor: View {
 struct AwakeSessionWidget: View {
     @ObservedObject var model: DashboardModel
     let expanded: Bool
-    @State private var custom = false
+    @StoredState private var custom = false
     private var actions: AwakeSessionActions { AwakeSessionActions(model: model) }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -562,7 +562,7 @@ struct AwakeSessionWidget: View {
 struct QuickWidget: View {
     @ObservedObject var model: DashboardModel
     let entry: WidgetEntry
-    @State private var disconnect: BluetoothDevice?
+    @StoredState private var disconnect: BluetoothDevice?
     var body: some View {
         if let kind = entry.known {
             VStack(alignment: .leading, spacing: 8) {
@@ -689,7 +689,7 @@ struct WindowRestoreWidget: View {
     @ObservedObject var module: WindowPositions
     let expanded: Bool
     let target: String
-    @State private var choice = ""
+    @StoredState private var choice = ""
     private var selected: String { target.isEmpty ? choice : target }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {

@@ -63,6 +63,7 @@ private final class UIWindows: WindowPositionBackend {
 }
 
 func runUITests() throws {
+    runStoredStateTests()
     runAudioPreferenceAdditionTests()
     try renderReleaseUIFixtures()
     runAwakeCountdownTests()
