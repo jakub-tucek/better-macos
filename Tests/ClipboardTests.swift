@@ -459,21 +459,35 @@ func runClipboardTests() throws {
         MouseModule(backend: mouseBackend, recovery: FakeMouseRecovery())
     })
     mouseLifecycle.reconcile()
-    let host = AppDelegate(clipboard: module, mouseLifecycle: mouseLifecycle)
+    let finalCheckSpaces = SpacesModule(defaults: defaults, engine: GestureSwitchEngine(spaceInfo: { nil }, postPhase: { _, _, _ in true }))
+    var finalCheckReply: Bool?
+    let host = AppDelegate(spaces: finalCheckSpaces, clipboard: module, mouseLifecycle: mouseLifecycle,
+                           terminationReply: { _, approved in finalCheckReply = approved })
+    func awaitFinalCheck() -> Bool? {
+        let deadline = Date().addingTimeInterval(2)
+        while finalCheckReply == nil && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+        return finalCheckReply
+    }
     failedLoad.setRecording(true)
-    expect(host.prepareClipboardTermination() && !failedLoad.recording, "host quit preparation quiesces clipboard recording")
+    expect(host.applicationShouldTerminate(NSApplication.shared) == .terminateLater && !failedLoad.recording,
+           "host quit preparation quiesces clipboard recording")
     failing.failing = true; failedLoad.delete(savedEntry.id)
-    expect(!host.finishClipboardTermination(approved: true), "host async quit completion rechecks cleanup and refuses pending deletion")
+    expect(awaitFinalCheck() == false, "host async quit completion rechecks cleanup and refuses pending deletion")
     failing.failing = false
-    expect(host.finishClipboardTermination(approved: true) && failing.entries.isEmpty, "host quit approves only after late cleanup succeeds")
+    // Retry through the full host seam, then simulate a non-dashboard Mouse
+    // mutation after admission has closed but before the final asynchronous check.
+    finalCheckReply = nil
+    expect(host.applicationShouldTerminate(NSApplication.shared) == .terminateLater && failing.entries.isEmpty,
+           "host quit retries only after late clipboard cleanup succeeds")
     mouseLifecycle.apply(acceleration: false, speed: 2)
     mouseBackend.failRestore = true
-    expect(!host.finishClipboardTermination(approved: true) && mouseLifecycle.recoveryRequired,
-           "final host quit rechecks late Mouse Apply and vetoes failed restoration even with clean Clipboard")
+    expect(awaitFinalCheck() == false && mouseLifecycle.recoveryRequired,
+            "final host quit rechecks late Mouse Apply and vetoes failed restoration even with clean Clipboard")
     mouseBackend.failRestore = false
-    expect(host.finishClipboardTermination(approved: true) && !mouseLifecycle.recoveryRequired && mouseBackend.value.speed == .number(1.25),
-           "final host quit retries late Mouse cleanup before approving termination")
-    module.stop()
+    finalCheckReply = nil
+    expect(host.applicationShouldTerminate(NSApplication.shared) == .terminateLater && awaitFinalCheck() == true && !mouseLifecycle.recoveryRequired && mouseBackend.value.speed == .number(1.25),
+            "final host quit retries late Mouse cleanup before approving termination")
+    module.stop(); finalCheckSpaces.stop()
 
     let switchArchive = FailingClipboardArchive()
     switchArchive.entries = [savedEntry]; switchArchive.failLoad = true

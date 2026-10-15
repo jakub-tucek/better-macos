@@ -46,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var guiTestFinished = false
     private var guiTestOriginalOutput: String?
     private let commandRunner: CommandRunning
-    private var terminationPending = false
+    private let transactions = HostTransactions()
     private let terminationReply: (NSApplication, Bool) -> Void
 
      init(commandRunner: CommandRunning = CommandRunner(), spaces: SpacesModule? = nil, windowPositions: WindowPositions? = nil, clipboard: ClipboardModule? = nil, mouseLifecycle: MouseLifecycle? = nil, model: DashboardModel = DashboardModel(),
@@ -135,7 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Host-side barrier, not a UI-only disable: callbacks retained by views also
     // consult it at invocation time. Cleanup paths deliberately bypass this gate.
-    private var actionHost: AppDelegate? { terminationPending ? nil : self }
+    private var actionHost: AppDelegate? { transactions.acceptsActions ? self : nil }
 
     private func configureActions() {
         model.onAudioSelect = { [weak self] uid, direction in self?.actionHost?.audio?.select(uid, direction: direction) }
@@ -153,13 +153,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model.onClipboardExclusions = { [weak self] in self?.actionHost?.clipboard?.setExclusions($0) }
         model.onRestoreMouse = { [weak self] in
-            guard let self, !terminationPending else { return }
+            guard let self, transactions.acceptsActions else { return }
             mouseLifecycle.restore()
             if !mouseLifecycle.recoveryRequired { refreshMouseCapability(forceDraft: true) }
         }
         model.onRefreshMouse = { [weak self] in self?.actionHost?.refreshMouseCapability(forceDraft: true) }
         model.onApplyMouse = { [weak self] in
-            guard let self, !terminationPending else { return }
+            guard let self, transactions.acceptsActions else { return }
             mouseLifecycle.apply(acceleration: model.mouseAcceleration, speed: model.mouseTracking)
         }
         model.onKeepAwakeStart = { [weak self] in self?.actionHost?.performKeepAwake { try $0.start() } }
@@ -183,23 +183,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onKeepAwakeMinutesChanged = { [weak self] in self?.actionHost?.keepAwake?.selectedMinutes = $0 }
         model.onKeepDisplayAwakeChanged = { [weak self] enabled in self?.actionHost?.performKeepAwake { try $0.setKeepDisplayAwake(enabled) } }
         model.onQuitGuardChanged = { [weak self] enabled in
-            guard let self, !terminationPending else { return }
+            guard let self, transactions.acceptsActions else { return }
             do { try quitGuard?.setEnabled(enabled) } catch { showError(error) }
             refreshQuitGuard()
         }
         model.onQuitGuardDurationChanged = { [weak self] in self?.actionHost?.quitGuard?.duration = $0 }
         model.onRetryQuitGuard = { [weak self] in
-            guard let self, !terminationPending else { return }
+            guard let self, transactions.acceptsActions else { return }
             do { try quitGuard?.startIfEnabled() } catch { showError(error) }
             refreshQuitGuard()
         }
         model.onCompactMenuBarChanged = { [weak self] enabled in
-            guard let self, !terminationPending else { return }
+            guard let self, transactions.acceptsActions else { return }
             do { try menuBarSpacing.setEnabled(enabled) } catch { showError(error) }
             refreshMenuBar()
         }
         model.onRestoreMenuBarSpacing = { [weak self] in
-            guard let self, !terminationPending else { return }
+            guard let self, transactions.acceptsActions else { return }
             do { try menuBarSpacing.restore() } catch { showError(error) }
             refreshMenuBar()
         }
@@ -208,24 +208,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onModuleChanged = { [weak self] module, enabled in self?.actionHost?.setModule(module, enabled: enabled) }
         model.onMonitorChanged = { [weak self] uuid, enabled in self?.actionHost?.setMonitor(uuid, enabled: enabled) }
         model.onMonitorDisableModeChanged = { [weak self] confirm in
-            guard let self, !terminationPending else { return }
+            guard let self, transactions.acceptsActions else { return }
             UserDefaults.standard.set(confirm, forKey: "monitors.confirmDisable")
             refreshPreferences()
         }
         model.onMatchScreenEdgesChanged = { [weak self] enabled in
-            guard let self, !terminationPending else { return }
+            guard let self, transactions.acceptsActions else { return }
             UserDefaults.standard.set(enabled, forKey: "arrangement.matchEdges")
             refreshPreferences()
             updateScreenEdges()
         }
         model.onKeepDisabled = { [weak self] uuid in
-            guard let self, !terminationPending, rollbackUUID == uuid else { return }
+            guard let self, transactions.acceptsActions, rollbackUUID == uuid else { return }
             clearRollback()
         }
         model.onRestoreAll = { [weak self] in self?.actionHost?.restoreAll() }
         model.onArrangeDisplays = { [weak self] in self?.actionHost?.showArrangementEditor() }
         model.onKeepArrangement = { [weak self] in
-            guard let self, !terminationPending, !recovering, rollbackUUID == "layout" else { return }
+            guard let self, transactions.acceptsActions, !recovering, rollbackUUID == "layout" else { return }
             UserDefaults.standard.removeObject(forKey: "pendingArrangement")
             UserDefaults.standard.synchronize()
             model.pendingArrangement = false
@@ -239,14 +239,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onProtectAudioChanged = { [weak self] enabled in self?.actionHost?.bluetooth?.protectOtherAudio = enabled; self?.actionHost?.refreshBluetooth() }
         model.onSwitchAudioChanged = { [weak self] enabled in self?.actionHost?.bluetooth?.switchAudioOutput = enabled; self?.actionHost?.refreshBluetooth() }
         model.onProtectedDeviceChanged = { [weak self] address, enabled in
-            guard let self, !terminationPending else { return }
+            guard let self, transactions.acceptsActions else { return }
             if enabled { bluetooth?.protectedAudioAddresses.insert(address) }
             else { bluetooth?.protectedAudioAddresses.remove(address) }
             refreshBluetooth()
         }
         model.onTakeOverLegacy = { [weak self] in self?.actionHost?.bluetooth?.takeOverLegacyService() }
         model.onSpacesChanged = { [weak self] enabled in
-            guard let self, !terminationPending else { return }
+            guard let self, transactions.acceptsActions else { return }
             guard !enabled || controlState.inputReady else {
                 showError(ToggleError(message: "Wait for the watchdog and pending display changes before enabling Space interception.")); return
             }
@@ -261,7 +261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model.onSpeedChanged = { [weak self] speed in self?.actionHost?.spaces?.speed = speed; self?.actionHost?.refreshPreferences() }
         model.onLoginChanged = { [weak self] enabled in
-            guard let self, !terminationPending else { return }
+            guard let self, transactions.acceptsActions else { return }
             do {
                 if enabled { try SMAppService.mainApp.register() }
                 else { try SMAppService.mainApp.unregister() }
@@ -273,7 +273,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setModule(_ module: AppModule, enabled: Bool) {
-        guard !terminationPending, !model.stoppingModules.contains(module) else { return }
+        guard transactions.acceptsActions, !model.stoppingModules.contains(module) else { return }
         if module == .clipboard && !enabled && clipboard?.history.flushPendingStorage() == false {
             model.errorMessage = "Clipboard disk cleanup is pending. Retry after storage becomes available."
             return
@@ -665,7 +665,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.confirmMonitorDisable = UserDefaults.standard.bool(forKey: "monitors.confirmDisable")
         model.animationsEnabled = animations.enabled
         model.animationRecoveryRequired = animations.recoveryRequired
-        if !terminationPending && animations.enabled && !model.animationsBusy && controlState.inputReady && spaces?.isAvailable == true {
+        if transactions.acceptsActions && animations.enabled && !model.animationsBusy && controlState.inputReady && spaces?.isAvailable == true {
             do { try spaces?.restoreSavedState() } catch { showError(error) }
         }
         model.spacesEnabled = spaces?.isEnabled ?? false
@@ -677,7 +677,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var controlState: SystemControlLifecycle.State {
-        SystemControlLifecycle.State(watchdogReady: safety.isReady && !terminationPending, displaySettling: displayRefresh.isSettling,
+        SystemControlLifecycle.State(watchdogReady: safety.isReady && transactions.acceptsActions, displaySettling: displayRefresh.isSettling,
             displayOperation: recovering, pendingConfirmation: model.pendingArrangement || rollbackUUID != nil,
             layoutFresh: layoutFresh, cursorRequested: UserDefaults.standard.bool(forKey: "arrangement.matchEdges"),
             arrangementEnabled: modules.enabled.contains(.arrangement), layout: model.currentLayout)
@@ -699,7 +699,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setAnimations(_ enabled: Bool, preserveChoice: Bool = false, recoverOnly: Bool = false, completion: (() -> Void)? = nil) {
-        guard !terminationPending, !model.animationsBusy else { return }
+        guard transactions.acceptsActions, !model.animationsBusy else { return }
         model.animationsBusy = true
         afterGestureDrain { [weak self] in
             guard let self else { return }
@@ -862,7 +862,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyArrangement(_ request: DisplayArrangementRequest) {
-        guard !terminationPending else { return }
+        guard transactions.acceptsActions else { return }
         guard modules.enabled.contains(.arrangement), controlState.inputReady,
               model.disabledMonitorCount == 0,
               let executable = Bundle.main.executableURL?.path else {
@@ -928,52 +928,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard !terminationPending else { return .terminateLater }
-        guard !model.animationsBusy, model.stoppingModules.isEmpty, !recovering else {
-            showError(ToggleError(message: "Wait for current settings and module operations before quitting."))
-            return .terminateCancel
+        let actions = HostTransactions.QuitActions(
+            isBusy: { self.model.animationsBusy || !self.model.stoppingModules.isEmpty || self.recovering },
+            prepareMouse: { self.mouseLifecycle.prepareToQuit() },
+            quiesce: { self.windowPositions?.invalidate(); self.screenEdges?.stop() },
+            prepareClipboard: { self.clipboard?.prepareTermination() != false },
+            needsDisplayRecovery: { self.model.disabledMonitorCount > 0 || self.rollbackUUID != nil || self.model.pendingArrangement },
+            restoreDisplays: { self.restoreAll(completion: $0) },
+            suspendSpaces: spaces.map { module in { module.suspend(completion: $0) } },
+            resumeClipboard: { self.clipboard?.resumeMonitoring() },
+            restoreSpacesChoice: { if let spaces = self.spaces { spaces.requestRestore(enabled: spaces.savedEnabled) } },
+            didReopen: { self.refreshPreferences() },
+            didVeto: { veto in
+                switch veto {
+                case .busy: self.model.errorMessage = "Wait for current settings and module operations before quitting."
+                case .clipboard: self.model.errorMessage = "Clipboard disk cleanup is pending. Retry quitting after storage becomes available."
+                case .mouse: self.model.errorMessage = self.mouseLifecycle.errorMessage
+                case .recovery: break // Display restoration already presented its error.
+                }
+            })
+        switch transactions.requestQuit(actions, reply: { self.terminationReply(sender, $0) }) {
+        case .cancel: return .terminateCancel
+        case .now: return .terminateNow
+        case .later: return .terminateLater
         }
-        guard mouseLifecycle.prepareToQuit() else { return .terminateCancel }
-        terminationPending = true
-        windowPositions?.invalidate()
-        screenEdges?.stop()
-        if !prepareClipboardTermination() {
-            terminationPending = false
-            clipboard?.resumeMonitoring()
-            refreshPreferences()
-            model.errorMessage = "Clipboard disk cleanup is pending. Retry quitting after storage becomes available."
-            return .terminateCancel
-        }
-        guard model.disabledMonitorCount > 0 || rollbackUUID != nil || model.pendingArrangement else {
-            guard let spaces else { return .terminateNow }
-            // Always reply asynchronously: an idle engine can drain immediately.
-            // Suspension is reversible if a final clipboard flush vetoes quit.
-            spaces.suspend { DispatchQueue.main.async { self.finishTermination(sender, approved: true) } }
-            return .terminateLater
-        }
-        restoreAll { restored in self.finishTermination(sender, approved: restored) }
-        return .terminateLater
-    }
-
-    private func finishTermination(_ sender: NSApplication, approved: Bool) {
-        terminationReply(sender, finishClipboardTermination(approved: approved))
-    }
-
-    func prepareClipboardTermination() -> Bool { clipboard?.prepareTermination() != false }
-
-    func finishClipboardTermination(approved: Bool) -> Bool {
-        // Defense in depth for mutations outside dashboard callbacks.
-        let mouseClean = mouseLifecycle.prepareToQuit()
-        let clean = prepareClipboardTermination()
-        terminationPending = approved && clean && mouseClean && !model.animationsBusy && !recovering && model.stoppingModules.isEmpty
-        if !terminationPending {
-            clipboard?.resumeMonitoring()
-            if let spaces { spaces.requestRestore(enabled: spaces.savedEnabled) }
-            refreshPreferences()
-        }
-        if !clean { model.errorMessage = "Clipboard disk cleanup is pending. Retry quitting after storage becomes available." }
-        else if !mouseClean { model.errorMessage = mouseLifecycle.errorMessage }
-        return terminationPending
     }
 
     func applicationWillTerminate(_ notification: Notification) {
