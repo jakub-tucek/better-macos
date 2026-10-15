@@ -1,5 +1,31 @@
 # Compact native popup · 2026-10-15
 
+## Main integration
+
+The four reviewed compact-UI commits were cherry-picked in order onto main
+`6878956`, producing `6c97051`, `dbd6255`, `d319b55`, and `d68869c` without conflicts.
+The original main working tree was clean.
+
+Actual merged-tree validation at `d68869c`: full `bash test.sh` succeeded with
+**3812 isolated checks and seven mocked installer/source-update checks**. This
+includes the app build/signature verification and native owned-window popup sizing,
+scrolling, settling, and production-action tests using fake backends. Both
+`git diff --check 6878956..HEAD` and the documentation working-diff check passed.
+Run log:
+`/private/var/folders/01/q8lbfsh16d9bjtl88bpwtr840000gn/T/opencode/compact-main-integration-tests.log`.
+
+Integrated-source comparison confirms `HostTransactions.swift`, `SetupWizard.swift`,
+`AppModules.swift`, `DisplayArrangementEditor.swift`, `SystemControlLifecycle.swift`,
+`WindowPositions.swift`, both clipboard implementation files, and transaction tests
+are unchanged. Settings/layout models, the widget editor, and the complete
+settings/window-restore views in `UISurfaces.swift` are also byte-for-byte unchanged.
+
+Earlier fixture paths and counts below describe implementation-branch evidence,
+not a new live acceptance run on main. No running application is restarted or quit;
+no real clipboard/device actions or permission probes are part of this integration.
+Live popover anchoring, keyboard/VoiceOver traversal, and device-picker acceptance
+remain unverified by this integration.
+
 ## Follow-up: content-sized popup
 
 Parent review's fixed-height whitespace gap is addressed. SwiftUI measures the
