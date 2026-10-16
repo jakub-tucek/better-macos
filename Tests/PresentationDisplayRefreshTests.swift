@@ -19,27 +19,60 @@ private func presentationViews(_ view: NSView) -> [NSView] {
     [view] + view.subviews.flatMap(presentationViews)
 }
 
-private func presentationEvents(for duration: TimeInterval) {
-    let deadline = Date().addingTimeInterval(duration)
-    while Date() < deadline {
-        if let event = NSApp.nextEvent(matching: .any, until: deadline, inMode: .default, dequeue: true) {
+private func presentationEvents(until ready: () -> Bool, timeout: TimeInterval = 0.5) {
+    let deadline = Date().addingTimeInterval(timeout)
+    while !ready() && Date() < deadline {
+        if let event = NSApp.nextEvent(matching: .any, until: min(deadline, Date().addingTimeInterval(0.01)), inMode: .default, dequeue: true) {
             NSApp.sendEvent(event)
         }
         NSApp.updateWindows()
     }
 }
 
+private func presentationWindowBounds(_ window: NSWindow) -> CGRect? {
+    // Query only this fixture's window, never another application's inventory.
+    guard let info = (CGWindowListCopyWindowInfo(.optionIncludingWindow, CGWindowID(window.windowNumber)) as? [[String: Any]])?.first,
+          let values = info[kCGWindowBounds as String] as? [String: Any],
+          let bounds = CGRect(dictionaryRepresentation: values as CFDictionary),
+          bounds.width > 0, bounds.height > 0 else { return nil }
+    return bounds
+}
+
 private func presentationClick(_ view: NSView, at point: NSPoint) {
     guard let window = view.window else { expect(false, "presentation click has a fixture window"); return }
-    let location = view.convert(point, to: nil)
+    let intendedLocation = view.convert(point, to: nil)
+    presentationEvents(until: { presentationWindowBounds(window) != nil })
+    guard let bounds = presentationWindowBounds(window), let screenTop = NSScreen.screens.first?.frame.maxY else {
+        expect(false, "native fixture window has server geometry before a click"); return
+    }
+    // In a locked session WindowServer can scale/translate even an invisible
+    // popup. NSEvent's factory uses logical coordinates, but nextEvent converts
+    // its CG screen location through that server transform. Target the rendered
+    // fixture, then verify the dequeued event still reaches the intended point.
+    let physical = NSPoint(x: bounds.minX + intendedLocation.x / window.frame.width * bounds.width,
+        y: screenTop - bounds.minY - (window.frame.height - intendedLocation.y) / window.frame.height * bounds.height)
+    let location = window.convertPoint(fromScreen: physical)
     let time = ProcessInfo.processInfo.systemUptime
     let down = NSEvent.mouseEvent(with: .leftMouseDown, location: location, modifierFlags: [], timestamp: time,
         windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!
     let up = NSEvent.mouseEvent(with: .leftMouseUp, location: location, modifierFlags: [], timestamp: time + 0.001,
         windowNumber: window.windowNumber, context: nil, eventNumber: 2, clickCount: 1, pressure: 0)!
+    var delivered = 0
+    let monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { event in
+        guard event.window === window else { return event }
+        let actual = event.locationInWindow
+        // WindowServer bounds are integral pixels; allow only their rounding,
+        // far less than the switch's 22-point height. Never retry a missed click.
+        expect(abs(actual.x - intendedLocation.x) < 2 && abs(actual.y - intendedLocation.y) < 2,
+            "native fixture \(event.type) arrives at its intended control point (\(actual), expected \(intendedLocation))")
+        delivered += 1
+        return event
+    }!
+    defer { NSEvent.removeMonitor(monitor) }
     // SwiftUI needs currentEvent from nextEvent, not direct mouseDown dispatch.
     NSApp.postEvent(down, atStart: false); NSApp.postEvent(up, atStart: false)
-    presentationEvents(for: 0.06)
+    presentationEvents(until: { delivered == 2 })
+    expect(delivered == 2, "native fixture dispatches exactly one mouse-down/up pair")
 }
 
 /// Real production popup/Settings, fixture-owned invisible anchor, injected
@@ -87,8 +120,20 @@ func runPresentationDisplayRefreshTests() {
             fatalError("Production popup must return its own hosting view")
         }
         root.window?.alphaValue = 0
-        RunLoop.main.run(until: Date().addingTimeInterval(0.04))
-        root.layoutSubtreeIfNeeded()
+        var previousGeometry: [CGRect] = []
+        var stablePasses = 0
+        presentationEvents(until: {
+            root.layoutSubtreeIfNeeded()
+            guard presentationViews(root).contains(where: { ($0 as? NSScrollView)?.documentView != nil }),
+                  let window = root.window, let serverBounds = presentationWindowBounds(window) else { return false }
+            let geometry = [root.bounds, window.frame, serverBounds]
+            stablePasses = geometry == previousGeometry ? stablePasses + 1 : 0
+            previousGeometry = geometry
+            return stablePasses >= 3
+        })
+        guard stablePasses >= 3 else {
+            fatalError("Production popup must mount native scroll content and stabilize client/server geometry before interaction")
+        }
         return root
     }
     func settle() {
@@ -112,7 +157,7 @@ func runPresentationDisplayRefreshTests() {
     }
     let stable = show()
     // Actual first display row: 40pt header, divider, 10pt widget padding,
-    // 14pt widget heading, 8pt gap, and the 22pt switch. No live CG IDs are used.
+    // 14pt widget heading, 8pt gap, and the 22pt switch. No live display IDs are used.
     presentationClick(stable, at: NSPoint(x: stable.bounds.width - 33, y: 84))
     expect(monitorActions == 1, "stable popup's first display-control click acts without an activation/loading click")
     expect(!model.displaySettling && snapshots == 1, "stable popup opening neither invalidates nor rediscovers displays")
