@@ -5,6 +5,7 @@ cd "$(dirname "$0")"
 bash Tests/swiftui-compatibility.sh
 bash Tests/diagnostics-regressions.sh
 bash Tests/gesture-terminal-proof.sh --instant-safety
+bash Tests/bluetooth-permission-regressions.sh
 bash build.sh
 bash Tests/packaging.sh
 bash Tests/build.sh

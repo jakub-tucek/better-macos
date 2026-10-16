@@ -1072,6 +1072,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             model.bluetoothBusy = false
             model.bluetoothManualBusy = false
             model.bluetoothPermissionRequired = false
+            model.bluetoothObservationStale = false
             model.bluetoothRadioOn = nil
             model.bluetoothSummary = "Bluetooth module is off"
             return
@@ -1085,6 +1086,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.bluetoothManualBusy = bluetooth.isManualBusy
         model.bluetoothRadioOn = bluetooth.radioPoweredOn
         model.bluetoothPermissionRequired = bluetooth.permissionRequired
+        model.bluetoothObservationStale = bluetooth.observationStale
         model.bluetoothDeviceStates = bluetooth.deviceStates
         model.bluetoothSummary = bluetooth.reconnectSummary
         model.protectOtherAudio = bluetooth.protectOtherAudio

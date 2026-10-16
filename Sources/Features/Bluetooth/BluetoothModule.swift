@@ -169,6 +169,8 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     private(set) var radioPoweredOn: Bool?
     private(set) var deviceStates: [String: String] = [:]
     private(set) var lastError: String?
+    private(set) var observationStale = false
+    private var lastErrorIsObservation = false
     var suspendAutomaticReconnection = false {
         didSet { if suspendAutomaticReconnection { cycleCancellation?.cancel(); clearAudioIntent() } }
     }
@@ -323,10 +325,12 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
 
     var reconnectSummary: String {
         if permissionRequired { return "Bluetooth access required — allow Fix macOS in Privacy & Security → Bluetooth" }
-        if radioPoweredOn == false { return "Bluetooth is off — turn the radio on first" }
         if pendingManual != nil { return "Manual request queued; waiting for the current attempt" }
         if busy, let activity { return activity }
-        if let lastError { return lastError }
+        if let lastError {
+            return lastErrorIsObservation ? observationFailureSummary(lastError) : lastError
+        }
+        if radioPoweredOn == false { return "Bluetooth is off — turn the radio on first" }
         if suspendAutomaticReconnection { return "Hardware-test session: automatic reconnection temporarily paused" }
         if legacyServicePresent { return "Existing Bluetooth service owns reconnection" }
         if autoEnabled, let waiting = autoAddresses.sorted().compactMap({ deviceStates[$0] }).first(where: { $0.hasPrefix("Waiting for") }) { return waiting }
@@ -334,6 +338,10 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
             return "A selected device is unavailable; retrying automatically after 30s"
         }
         return BluetoothPresentation.summary(enabled: autoEnabled, selected: autoAddresses, devices: devices)
+    }
+
+    private func observationFailureSummary(_ detail: String) -> String {
+        "Could not read Bluetooth status. Device information may be out of date. \(detail)"
     }
 
     func setAutoReconnect(_ enabled: Bool, for address: String) {
@@ -552,6 +560,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         switch result {
         case .success(let updated):
             lastObservation = Date()
+            observationStale = false
             if devices.contains(where: { old in old.connected && !updated.contains { $0.address == old.address && $0.connected } }) {
                 audioPolicyGeneration = UUID()
             }
@@ -560,6 +569,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
                 updated.contains { $0.address == address && $0.connected } && autoAddresses.contains(address)
             }
             lastError = nil
+            lastErrorIsObservation = false
             if let manualAddress { deviceStates.removeValue(forKey: manualAddress); retryAfter.removeValue(forKey: manualAddress) }
             for device in updated where device.connected {
                 deviceStates.removeValue(forKey: device.address); retryAfter.removeValue(forKey: device.address)
@@ -577,8 +587,10 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
             }
             status = reconnectSummary
         case .failure(let error):
-            status = error.localizedDescription
             lastError = error.localizedDescription
+            lastErrorIsObservation = !reportError
+            if !reportError { observationStale = true }
+            status = reportError ? error.localizedDescription : observationFailureSummary(error.localizedDescription)
             if let manualAddress { deviceStates[manualAddress] = error.localizedDescription }
             if reportError { onError?(error) }
         }

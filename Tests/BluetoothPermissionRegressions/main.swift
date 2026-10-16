@@ -4,7 +4,7 @@ import CoreBluetooth
 var checks = 0
 func check(_ condition: @autoclosure () -> Bool, _ label: String) {
     checks += 1
-    guard condition() else { fatalError("FAIL: \(label)") }
+    guard condition() else { print("FAIL: \(label)"); exit(1) }
     print("PASS: \(label)")
 }
 
@@ -76,7 +76,7 @@ check(module.radioPoweredOn == false && !module.permissionRequired, "parent allo
 try mode("abort")
 module.poll(); wait()
 check(module.lastError?.contains("134") == true && !module.permissionRequired, "child exit 134 does not falsely set parent authorization denied")
-check(module.reconnectSummary.contains("Bluetooth is off"), "REPRO: stale radio-off summary masks newer helper failure")
+check(module.reconnectSummary.contains("Could not read Bluetooth status") && module.reconnectSummary.contains("134"), "new helper failure replaces stale radio-off guidance with observation error")
 print("OBSERVED status=\(module.status); summary=\(module.reconnectSummary)")
 
 for failure in ["signal", "timeout"] {

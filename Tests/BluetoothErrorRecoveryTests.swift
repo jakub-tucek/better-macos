@@ -20,7 +20,14 @@ func runBluetoothErrorRecoveryTests() throws {
     cd "$(dirname "$0")" || exit 70
     echo "$*" >> calls
     case "$*" in
-      '--power') if [ -f powered ]; then echo 1; else echo 0; fi ;;
+      '--power')
+        if [ -f observation-failure ]; then
+          case "$(cat observation-failure)" in
+            signal) kill -TERM $$ ;;
+            *) echo 'Synthetic observation failure' >&2; exit "$(cat observation-failure)" ;;
+          esac
+        fi
+        if [ -f powered ]; then echo 1; else echo 0; fi ;;
       '--paired --format json')
         if [ -f connected ]; then state=true; else state=false; fi
         printf '[{"address":"fixture","name":"Fixture speaker","connected":%s}]\n' "$state" ;;
@@ -66,10 +73,36 @@ func runBluetoothErrorRecoveryTests() throws {
     let initialCalls = try calls()
     expect(module.radioPoweredOn == false && !initialCalls.contains("--power 1"), "host activation with saved automatic reconnect does not power on Bluetooth")
     expect(model.errorMessage == "Unrelated preexisting error", "successful Bluetooth observation preserves unrelated global error")
+    model.onAutoDeviceChanged("fixture", true)
+    let cached = module.devices
+    for failure in ["75", "134", "signal"] {
+        try failure.write(to: root.appendingPathComponent("observation-failure"), atomically: true, encoding: .utf8)
+        module.poll(); wait()
+        expect(module.reconnectSummary.contains("Could not read Bluetooth status") && model.bluetoothSummary == module.reconnectSummary,
+               "actual host projects failed observation instead of cached radio-off instruction")
+        expect(module.devices == cached && model.devices == cached && model.selectedAddresses == ["fixture"] && module.radioPoweredOn == false,
+               "failed observation preserves cached devices, target choice and last known radio state")
+        expect(!model.bluetoothPermissionRequired && model.errorMessage == "Unrelated preexisting error",
+               "helper failures neither invent denied authorization nor change global error ownership")
+        expect(model.bluetoothObservationStale && !model.bluetoothCanOfferPowerOn && model.bluetoothEmptyMessage == "Paired devices could not be refreshed.",
+               "UI marks cached observations stale and hides misleading power-on or empty-inventory guidance")
+        try FileManager.default.removeItem(at: root.appendingPathComponent("observation-failure"))
+        module.poll(); wait()
+        expect(module.lastError == nil && model.bluetoothSummary.contains("Bluetooth is off"), "fresh observation restores truthful radio-off guidance")
+        expect(!model.bluetoothObservationStale && model.bluetoothCanOfferPowerOn, "fresh snapshot alone restores nonstale power guidance")
+    }
+    model.onAutoDeviceChanged("fixture", false)
     model.onBluetoothPowerOn()
     wait()
     let exact = "blueutil failed (exit 75): Failed to switch bluetooth power on in 10 seconds"
     expect(module.lastError == exact && model.errorMessage == exact, "actual host manual action publishes exact screenshot error through real CommandRunner stderr/exit handling")
+    let manualPublication = model.errorGeneration
+    try "134".write(to: root.appendingPathComponent("observation-failure"), atomically: true, encoding: .utf8)
+    module.poll(); wait()
+    try FileManager.default.removeItem(at: root.appendingPathComponent("observation-failure"))
+    module.poll(); wait()
+    expect(model.errorMessage == exact && model.errorGeneration == manualPublication,
+           "observation recovery cannot clear or replace the existing manual-error publication UUID")
     expect(logger.flushForTesting(), "Bluetooth host diagnostic events drain through test-only flush")
     let failedPublication = model.errorGeneration.uuidString
     let actionFailure = memory.records.last { $0["event"] as? String == "manual_action_finished" }

@@ -141,12 +141,19 @@ final class DashboardModel: ObservableObject {
     @Published var bluetoothManualBusy = false
     @Published var bluetoothRadioOn: Bool?
     @Published var bluetoothPermissionRequired = false
+    @Published var bluetoothObservationStale = false
     @Published var bluetoothDeviceStates: [String: String] = [:]
     @Published var bluetoothSummary = "Loading devices…"
     @Published var protectOtherAudio = true
     @Published var switchAudioOutput = true
     @Published var protectedAudioAddresses = Set<String>()
     @Published var legacyServicePresent = false
+    var bluetoothCanOfferPowerOn: Bool { !bluetoothPermissionRequired && !bluetoothObservationStale && bluetoothRadioOn == false }
+    var bluetoothEmptyMessage: String {
+        if bluetoothPermissionRequired { return "Grant Bluetooth access to show your paired devices." }
+        if bluetoothObservationStale { return "Paired devices could not be refreshed." }
+        return "No paired devices found yet."
+    }
     @Published var spacesEnabled = false
     @Published var animationsEnabled = false
     @Published var animationsBusy = false
@@ -882,7 +889,7 @@ struct DashboardView: View {
                 }
                 if model.bluetoothPermissionRequired && !draftMode {
                     Button("Allow Bluetooth access…", action: model.onBluetoothAccessRequested)
-                } else if model.bluetoothRadioOn == false && !draftMode {
+                } else if model.bluetoothCanOfferPowerOn && !draftMode {
                     Button("Turn Bluetooth on", action: model.onBluetoothPowerOn).disabled(model.bluetoothManualBusy)
                 }
                 if model.legacyServicePresent && !draftMode {
@@ -902,7 +909,7 @@ struct DashboardView: View {
                         VStack(spacing: 12) { bluetoothRows(otherDevices) }.padding(.top, 8)
                     }
                 }
-                if model.devices.isEmpty { Text(model.bluetoothPermissionRequired ? "Grant Bluetooth access to show your paired devices." : "No paired devices found yet.").font(.caption).foregroundStyle(.secondary) }
+                if model.devices.isEmpty { Text(model.bluetoothEmptyMessage).font(.caption).foregroundStyle(.secondary) }
                 ForEach(model.selectedAddresses.subtracting(Set(model.devices.map(\.address))).sorted(), id: \.self) { address in
                     HStack {
                         Text("Unavailable target · \(address)").font(.caption)
