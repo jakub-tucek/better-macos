@@ -49,6 +49,8 @@ private func fixtureDevice(_ index: Int) -> [String: Any] {
 }
 
 func runBluetoothObservationTests() throws {
+    try runBluetoothMergedAdmissionTests()
+    try runBluetoothMergedManualTests()
     func data(_ root: [String: Any]) throws -> Data { try JSONSerialization.data(withJSONObject: root) }
     func parse(_ root: [String: Any]) throws -> BluetoothNativeSnapshot { try BluetoothProfilerParser.parse(data(root), at: 10) }
     func issue(_ root: [String: Any], _ expected: BluetoothReadIssue) {
@@ -274,6 +276,82 @@ func runBluetoothIdentityTests() throws {
         expect(module.autoAddresses == [target] && defaults.stringArray(forKey: "bluetooth.autoAddresses") == [target],
                "\(mode): canonical resolution does not migrate stored target IDs")
     }
+}
+
+func runBluetoothMergedAdmissionTests() throws {
+    let off = try JSONSerialization.data(withJSONObject: profilerFixture(power: "attrib_off"))
+    for revoke in [false, true] {
+        let suite = "fix-mac-os.merged-admission.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(false, forKey: "bluetooth.autoEnabled")
+        defaults.set(true, forKey: "bluetooth.legacyTakenOver")
+        let runner = ObservationRunner(); runner.allowFixturePowerOn = true
+        var now: TimeInterval = 0, fetches = 0
+        var authorization = CBManagerAuthorization.allowedAlways
+        let entered = DispatchSemaphore(value: 0)
+        let service = BluetoothObservationService(clock: { now }) { continuing in
+            fetches += 1
+            if fetches == 1 { return off }
+            entered.signal()
+            let deadline = Date().addingTimeInterval(2)
+            while continuing() && Date() < deadline { Thread.sleep(forTimeInterval: 0.005) }
+            throw BluetoothReadIssue.unavailable
+        }
+        let module = BluetoothModule(defaults: defaults,
+            backend: BluetoothBackend(runner: runner, blueutil: "/fixture/blueutil", audioTool: nil, observationService: service),
+            importLegacyConfiguration: false, authorizationProvider: { authorization })
+        defer { module.stop() }
+        func wait() {
+            let deadline = Date().addingTimeInterval(3)
+            while module.isBusy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
+            expect(!module.isBusy, "merged queued-admission fixture drains")
+        }
+        module.poll(); wait()
+        expect(module.controlsAvailable, "coherent off comparison initially permits explicit power request")
+        now = 31; module.poll()
+        expect(entered.wait(timeout: .now() + 1) == .success, "expired native comparison reaches deterministic gate")
+        module.turnBluetoothOn()
+        if revoke { authorization = .denied }
+        wait()
+        expect(!runner.calls.contains(["--power", "1"]) && !module.controlsAvailable,
+               "canceled unknown comparison or revoked access cannot drain queued power using old admission")
+    }
+}
+
+func runBluetoothMergedManualTests() throws {
+    let first = BluetoothDevice(address: "aa-bb-cc-dd-ee-01", name: "Manual fixture", connected: false)
+    for unknown in [false, true] {
+        let suite = "fix-mac-os.merged-manual.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(false, forKey: "bluetooth.autoEnabled")
+        defaults.set(true, forKey: "bluetooth.legacyTakenOver")
+        let runner = ObservationMutationRunner([first]); runner.failing = [first.address]
+        runner.failReadAfterMutation = unknown
+        let module = BluetoothModule(defaults: defaults,
+            backend: BluetoothBackend(runner: runner, blueutil: "/fixture/blueutil", audioTool: nil, waitForConnection: {},
+                                      observationService: BluetoothObservationService { _ in throw BluetoothReadIssue.unavailable }),
+            importLegacyConfiguration: false, authorizationProvider: { .allowedAlways })
+        defer { module.stop() }
+        func wait() {
+            let deadline = Date().addingTimeInterval(2)
+            while module.isBusy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
+            expect(!module.isBusy, "merged manual readback fixture drains")
+        }
+        module.poll(); wait(); module.requestConnection(true, address: first.address); wait()
+        if unknown {
+            expect(!module.controlsAvailable && module.readback?.helperDevices == nil,
+                   "unknown manual post-command state blocks control without inventing a readback")
+        } else {
+            expect(module.controlsAvailable && module.displayedDevices.first?.connected == true && module.lastError != nil,
+                   "failed manual command with known changed state publishes fresh helper presentation and retains failure")
+        }
+    }
+    expect(BluetoothModule.ManualOperation.connection("AA:BB:CC:DD:EE:01", true) == .connection("aa-bb-cc-dd-ee-01", true),
+           "manual operation retry identity is canonical across helper spelling changes")
+    expect(BluetoothModule.ManualOperation.connection("AA:BB:CC:DD:EE:01", true) != .connection("aa-bb-cc-dd-ee-01", false),
+           "canonical retry identity retains the requested direction")
 }
 
 private func runBluetoothObservationModuleFixture(_ nativeData: Data, logger: Diagnostics) throws {

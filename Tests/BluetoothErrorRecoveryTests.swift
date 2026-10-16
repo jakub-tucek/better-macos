@@ -335,7 +335,7 @@ private func runBluetoothNativePresentationTests() throws {
     expect(runner.commands.allSatisfy { $0.dropFirst() == ["--power"] || $0.dropFirst() == ["--paired", "--format", "json"] },
            "actual host native fallback performs no automatic mutations")
     expect(diagnosticLogger.flushForTesting(), "merged native and discovery diagnostics drain through the injected sink")
-    let fields = sink.records.last { $0["event"] as? String == "discovery_state_changed" }
+    let fields = sink.records.last { $0["event"] as? String == "discovery_state_changed" }?["fields"] as? [String: String]
     expect(fields?["parsed_device_count"] == "0" && fields?["inventory_device_count"] == "0" && fields?["radio_state"] == "off" &&
            fields?["helper_authorization"] == "unknown" && fields?["helper_discovery_source"] == "unknown",
            "native presentation never relabels primary discovery counts, power or helper authorization")
@@ -349,9 +349,33 @@ private func runBluetoothNativePresentationTests() throws {
     expect(!module.isBusy && model.bluetoothControlsAvailable && model.selectedAddresses == saved,
            "fresh coherent helper inventory restores control without rewriting saved canonical aliases")
     expect(diagnosticLogger.flushForTesting(), "canonical helper recovery diagnostics drain through the injected sink")
-    let recovered = sink.records.last { $0["event"] as? String == "discovery_state_changed" }
+    let recovered = sink.records.last { $0["event"] as? String == "discovery_state_changed" }?["fields"] as? [String: String]
     expect(recovered?["matched_target_count"] == "2" && recovered?["inventory_device_count"] == "2" && recovered?["radio_state"] == "on",
            "merged helper discovery counts use canonical matches after native conflict recovery")
+    module.autoEnabled = false
+    func drain() {
+        let deadline = Date().addingTimeInterval(3)
+        while module.isBusy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
+        expect(!module.isBusy, "canonical owned-error host fixture drains")
+    }
+    drain()
+    for preserveNewer in [false, true] {
+        runner.current = [BluetoothDevice(address: "aa-bb-cc-dd-ee-01", name: "Fixture 1", connected: false)]
+        module.poll(); drain()
+        runner.failConnect = true
+        model.onManualConnection("AA:BB:CC:DD:EE:01"); drain()
+        expect(model.errorMessage != nil, "canonical host failure publishes an owned manual error")
+        runner.failConnect = false
+        runner.current = [BluetoothDevice(address: "AABBCCDDEE01", name: "Fixture 1", connected: false)]
+        module.poll(); drain()
+        if preserveNewer { model.errorMessage = "Newer independent error" }
+        let publication = model.errorGeneration
+        model.onManualConnection("aa-bb-cc-dd-ee-01"); drain()
+        expect(runner.commands.contains(["/fixture/blueutil", "--connect", "AABBCCDDEE01"]),
+               "canonical retry commands use the current helper raw ID")
+        expect(preserveNewer ? model.errorMessage == "Newer independent error" && model.errorGeneration == publication : model.errorMessage == nil,
+               "canonical retry clears only its owned error and preserves newer UUID publications")
+    }
 }
 
 /// Real host callbacks and subprocess runner while a fixture helper is blocked.

@@ -283,7 +283,17 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     private var onStopped: (() -> Void)?
     private var busy = false
     private var manualBusy = false
-    enum ManualOperation: Equatable { case connection(String, Bool); case powerOn }
+    enum ManualOperation: Equatable {
+        case connection(String, Bool), powerOn
+        static func == (lhs: ManualOperation, rhs: ManualOperation) -> Bool {
+            switch (lhs, rhs) {
+            case (.powerOn, .powerOn): return true
+            case (.connection(let left, let leftState), .connection(let right, let rightState)):
+                return leftState == rightState && BluetoothIdentity.matches(left, right)
+            default: return false
+            }
+        }
+    }
     private var pendingManual: ManualOperation?
     private var manualAddress: String?
     private var cycleCancellation: BluetoothCycleCancellation?
@@ -294,7 +304,9 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     private var activity: String?
     private(set) var radioPoweredOn: Bool?
     private(set) var readback: BluetoothReadback?
+    private var controlVerificationInvalidated = false
     var controlsAvailable: Bool {
+        if backend?.observationService != nil && (controlVerificationInvalidated || observationStale || permissionRequired) { return false }
         if let readback { return !readback.controlsBlocked }
         // Production comparison must complete before non-UI callers can mutate.
         return backend?.observationService == nil
@@ -634,14 +646,13 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
 
     private func startPendingManual() {
         guard !stopped, !busy, var backend, let request = pendingManual else { return }
-        guard controlsAvailable else {
+        guard controlsAvailable, !permissionRequired else {
             pendingManual = nil
             if let activityPendingManual { activityJournal?.finish(activityPendingManual, result: .blocked) }
             activityPendingManual = nil
             onChange?()
             return
         }
-        let observed = observingDiscovery(backend)
         pendingDiscoveryRead = nil
         pendingManual = nil
         backend.observationService?.invalidate()
@@ -655,6 +666,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
                 self.onChange?()
             }
         }
+        let observed = observingDiscovery(backend)
         cancelActivityConnections()
         activityManual = activityPendingManual
         activityPendingManual = nil
@@ -802,6 +814,11 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
             if reportError { onError?(error) }
         }
         manualAddress = nil
+        // A canceled comparison cannot renew admission using an older readback.
+        // Keep cached presentation, but require a new uncanceled verification.
+        if backend?.observationService != nil, !reportError, cycleCancellation?.isCanceled == true {
+            controlVerificationInvalidated = true
+        }
         if let manualOperation { onManualOperationCompleted?(manualOperation, result.map { _ in () }) }
         onChange?()
         publishDiscoveryDiagnostic()
@@ -816,6 +833,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     private func applyReadback(_ observation: BluetoothReadback) {
+        controlVerificationInvalidated = false
         readback = observation
         if let power = observation.helperPower { radioPoweredOn = power }
         if observation.native == nil, !observation.controlsBlocked, let updated = observation.helperDevices {
