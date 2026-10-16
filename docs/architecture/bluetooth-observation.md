@@ -7,6 +7,11 @@ of the live helper/native disagreement or qualify Bluetooth control on macOS 26.
 No permission reset, helper replacement, automatic power action or control API
 fallback is introduced. Independent review remains required before merge.
 
+The parent has since supplied final independent **CLEAN** review of the source
+series through `bf10ccf`. Historical review blockers below remain preserved;
+see [merged main evidence](#main-integration--2026-10-16) for integration review
+and actual combined validation, distinct from those source-series results.
+
 The reported live evidence was controller on / six known devices in
 `system_profiler`, while the GUI's blueutil queries reported off / empty. Parent
 authorization was allowed. That is contradictory observation, not proof of a TCC
@@ -315,3 +320,189 @@ subprocess fixture flake has a strengthened protocol and deterministic ordering
 coverage, but no proven historical root cause. Independent follow-up is mandatory;
 neither the native first-click blocker nor underlying live Bluetooth control has
 been claimed fixed.
+
+## Main integration · 2026-10-16
+
+The parent supplied CLEAN source reviews for the native-coordinate fixture and
+observation series. The native review independently passed 43 checks twice and
+retained the original first-action negative control. The observation review passed
+109 focused checks, 341 process-ordering checks, 32 permission-context checks and
+nine original mixed-outcome cases. Its totals are source-review evidence, not
+substitutes for the integrated-main results. The process-repeat coverage overlaps
+the focused suite and is never an extra independent suite total.
+
+Integration started at `7e276bc`, preserving existing untracked `.worktrees/`:
+
+| Reviewed source | Main commit |
+| --- | --- |
+| `90bb3cc` — native WindowServer coordinate fixture | `b1ab073` |
+| `3370518` — fixture cause/negative-control evidence | `90f72ec` |
+| `c1c424e` — typed observation/parser | `ed51976` |
+| `cfafb0c` — bounded profiler worker | `2fe4021` |
+| `ed98dfb` — owner/host/UI read-only presentation | `8c5b4a0` |
+| `e7230a5` — compiler fixture inputs | `346ebfe` |
+| `6c59dc9` — initial owner admission | `a894f70` |
+| `27ff7dc` — historical frozen evidence | `0cf377b` |
+| `60c7c3b` — fresh helper presentation after auto mutations | `258c728` |
+| `c96e987` — canonical current-helper ID resolver | `fd59d49` |
+| `bf676f3` — independent child status/pipe collection | `0bd2624` |
+| `bf10ccf` — review-fix evidence | `f23814c` |
+
+All listed commits were unique and integrated in order. Meaningful conflict
+resolutions remain in their scoped cherry-pick commits:
+
+- `8c5b4a0`: `BluetoothModule.swift` retains visibility's `onDiscoveryRead`, injected
+  CommandRunner logger and pending-read bookkeeping alongside the observation
+  service, initial/queued control guard and readback. `UISurfaces.swift` retains
+  unavailable-saved-target copy with canonical selected/missing-target helpers,
+  source/conflict copy and disabled fallback controls. The recovery test file keeps
+  both its process-local AX popup helper and the native host projection fixture.
+- `258c728`: both typed discovery and control-observation failure models survive;
+  the reviewed post-automatic-command helper-refresh behavior is retained.
+- `fd59d49`: `devices()` reports command/decode/parsed evidence while still validating
+  canonical helper identity before returning inventory. Parsed count means decoded
+  count, not authorization or a control-safe inventory guarantee.
+
+No conflict replaced earlier diagnostic, C safety or permission-context test inputs.
+AppDelegate's automatic merge retains injected diagnostics and both source/control
+model projections; Dashboard/SetupWizard keep owner control readiness separate
+from presentation. Existing visibility source `61548f1`/`5feb438` remains integrated.
+
+Focused merge follow-up **`49a6fad`** routes the live observation factory through
+the injected diagnostic sink and counts helper matches canonically, without
+rewriting stored IDs or using native counts. Six new injected host assertions cover
+helper-only discovery evidence during native conflict, observation/discovery sink
+delivery and coherent helper recovery with saved aliases. This new merged code
+requires its own independent review; source-series CLEAN alone is insufficient.
+
+### Independent merged review and regression fixes
+
+The independent read-only CLI review of `49a6fad` returned **BLOCK**, separate
+from the CLEAN source-series reviews. It found stale queued admission after a
+canceled comparison, a backend copy made before manual readback callback binding,
+and raw-string manual-operation equality across canonical helper ID changes.
+Record: `build/bluetooth-observation-integration-independent-review.{md,log}`.
+No reviewer tests or live operations were run.
+
+Correction **`7795868`**:
+
+- Canceled comparison completion invalidates control verification while retaining
+  cached presentation; a fresh uncanceled readback is needed to renew admission.
+  Stale observations and parent denial block production controls. Queue drain
+  rechecks permission, including injected backends.
+- Manual observation callbacks bind before the diagnostic-wrapped backend copy;
+  known post-failure helper state updates presentation, while unknown state blocks
+  controls. Operation failure is still reported even if helper state changed.
+- Manual-operation equality compares canonical identity and requested direction;
+  host UUID ownership still decides whether a verified retry may clear a banner.
+  Commands continue using the current raw helper ID, never saved/native IDs.
+
+The gated expired-comparison/queued-power fixture and manual changed-state failure
+fixture both fail before these corrections and pass afterward. Focused follow-ups
+pass 10 admission and eight manual checks. Actual host tests include a helper
+address-format change across failure/retry and newer independent UUID preservation.
+An initial local combined run at `49a6fad` failed compiling new test record-field
+decoding after app/build/packaging, 109 observation, 39 permission, 81 diagnostic,
+114 C and 10 policy checks passed. Log:
+`build/bluetooth-observation-integration-clt-test-decode-failure.log`. That partial
+run is not full-suite success. The new assertions now read typed scalar values
+from the diagnostic record's `fields` dictionary; an intermediate focused outer-
+record lookup failure is also retained in this record, not claimed as a pass.
+Red/green logs: `build/bluetooth-observation-integration-{admission,manual}-{red,green}.log`.
+The compiled merged host/visibility path then passed 197 checks before the frozen
+full rerun. Source was not edited during any active compilation.
+
+At `7795868`, the complete sequential CLT run passed **4,798 legacy**, **127
+observation**, **39 permission-context**, **81 diagnostic**, **114 C**, **10 policy
+tests/3 suites**, and **13 installer** checks; separate sequential runs passed 341
+process-ordering, 43 presentation and 197 host/visibility checks. These are
+intermediate results, not the final source revision. Logs:
+`build/bluetooth-observation-integration-7795868-{clt,repeat,presentation,visibility}.log`.
+
+Independent follow-up confirmed those three source fixes but returned **BLOCK**
+for inherited idle expiry admission: a previously fresh native comparison could
+age past its TTL before an explicit request, while stored `nativeStale` remained
+false. It also required authorization-only and successful recovery tests because
+the first cancellation test could mask those paths. Record:
+`build/bluetooth-observation-integration-followup-review.{md,log}`.
+
+Correction **`f0d8cf1`** keeps admission freshness beside the observation service's
+original monotonic clock/TTL. Request, queued drain and summary use a freshness-
+refreshed readback; stale native inventory remains viewable but never authorizes
+power or connection actions. No duplicate timer, helper command or persisted
+identity rewrite was introduced. The new idle-before-next-poll regression fails
+at `7795868`, then passes with this correction. Separate tests prove parent-denial
+refusal without native invalidation and cancellation → fresh verification →
+successful explicit helper retry. The extended admission fixture passes 29 checks.
+Logs: `build/bluetooth-observation-integration-idle-expiry-{red,green}.log`.
+
+### Final integrated evidence · `f0d8cf1`
+
+The final independent read-only follow-up returned **CLEAN**, with no actionable
+findings, at **`f0d8cf1dada45d1c711783e3e45605a97f5acc22`**. It independently
+inspected the merged source and all four prior findings, not just the supplied
+branch reviews or passing logs. Saboteur, New Hire, Security Auditor and DRY
+passes all returned CLEAN. Record:
+`build/bluetooth-observation-integration-final-review.{md,log}`. The reviewer ran
+no tests, compiler/native fixtures or live operations. Parser-schema completeness
+and event-driven UI refresh remain fragile assumptions; owner admission still
+rechecks freshness even before UI projection updates. This is code acceptance,
+not native Bluetooth/hardware acceptance.
+
+One complete, frozen, sequential standalone CLT `bash test.sh` run at that same
+revision passed:
+
+| Check | Final main result |
+| --- | --- |
+| Legacy isolated | **4,798**, including 43 corrected native presentation, 27 Activity scrolling and actual merged host/control/UUID assertions |
+| Focused observation/control | **146**, retaining all original 109 cases plus merged admission/manual/expiry regressions |
+| Focused permission-context | **39**, retaining the source branch's 32 plus existing visibility evidence checks |
+| Diagnostics | **81**, plus production no-flush/no-sync-wait guard |
+| Instant gesture C safety | **114 assertions**, zero failures |
+| Swift Testing policy | **10 tests / 3 suites** |
+| Mocked installer | **13 scenarios** |
+| App/compiler/real and relocated bundle | Passed, including complete notices/provenance, explicit fresh C objects, static package-only ClipboardPolicy and strict configured-certificate signature |
+
+After the full run, strictly **sequential** additional commands passed **341
+process-ordering checks** (30 rounds), **43 presentation checks**, and **197 merged
+visibility/recovery checks**. They overlap normal focused/legacy coverage and are
+not additional independent totals. No native/process fixture execution overlapped
+another run in this integration; independent reviews were source-read-only.
+The prior one-off process flake's historical root cause remains unproven; these
+passes strengthen evidence without rewriting that unresolved original event.
+
+Final logs under ignored `build/`:
+`bluetooth-observation-integration-final-clt.log`,
+`bluetooth-observation-integration-{repeat,presentation,visibility}.log`, and
+`bluetooth-observation-integration-final-{lint,format,tools,ci}.log`.
+Unmodified normal-path lint/format passed all **67 Swift files**, with no baseline,
+rule or configuration changes. Offline tooling/CI whitespace fixtures passed.
+The CLT log records source HEAD, command-scoped compiler/SDK paths, Swift 6.4 /
+SDK 27.0, arm64 and explicit unset `SDKROOT`, with timestamped top-level commands.
+Plist/signature/metadata checks passed: version `0.4`, build `4`, arm64/macOS 15+,
+SDK 27.0 and embedded revision equal the exact tested source above. Bundle rebuild
+did not execute the app or change the running process's loaded image. The later
+evidence-only commit is not claimed as a rebuilt artifact revision.
+
+Auditable merge seams at this source: `BluetoothModule.swift:104–134` preserves
+read evidence plus canonical validation, `:288–318` covers canonical operation
+identity/current freshness, `:651–673` covers guarded manual callback/copy ordering,
+and `:893` counts canonical helper matches. Freshness stays in
+`BluetoothObservation.swift:190`; saved-target copy/canonical selection stays in
+`UISurfaces.swift:626`. Core diagnostics, CommandRunner timeout behavior, vendor C
+safety/ABI/notices, typed login, HostTransactions, shared display authority and
+Keep awake/Clipboard contracts compare unchanged to pre-integration main.
+
+Final ancillary checks passed: **18 shell inputs**, **278 local documentation links
+and 61 fragments across 37 tracked Markdown files**, explicit compiler-input and
+auxiliary-suite ownership, frozen-source/fixture comparisons and `git diff --check`.
+The concise root README, lint baseline and tooling/CI configurations are unchanged.
+
+No production app launch/quit/relaunch/install, real blueutil/system_profiler query,
+radio toggle, permission/TCC/login-service registration, device/live-preference
+action, push/tag or publication is authorized by this integration. The parent's
+reported running PID 2065 remains untouched; a newly built bundle does not change
+its loaded image. Isolated fixtures mount only their own native windows and use
+injected data or disposable executable helpers. Existing read-only capability/file
+checks remain. Live radio/control, helper-source/authorization causality, whole-input
+freeze, supported-OS and hosted-CI acceptance remain open.

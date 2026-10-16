@@ -14,6 +14,7 @@ to the current documentation. Native/hardware acceptance remains open.
 - [Bluetooth stale-banner recovery; power-on cause remains unknown](bluetooth-error-recovery.md#main-integration--2026-10-15)
 - [Bluetooth permission-revocation investigation and secondary stale-status presentation correction](bluetooth-disable-responsiveness.md#main-integration--2026-10-16)
 - [Saved Bluetooth targets and discovery visibility](bluetooth-discovery-visibility.md#main-integration--2026-10-16)
+- [Merged Bluetooth read-only observation/control boundary and independent review](../architecture/bluetooth-observation.md#final-integrated-evidence--f0d8cf1)
 - [Login registration-intent UI; real autostart unverified](login-diagnosis.md#main-integration--2026-10-15)
 - [Bounded diagnostics and typed Bluetooth/login hooks](../diagnostics.md#main-integration--2026-10-15)
 - [Session Activity integration and native row anchoring](../activity.md#main-integration--2026-10-15)
@@ -29,6 +30,7 @@ Latest integrated check · 2026-10-16:
 
 | Tested code | Result |
 | --- | --- |
+| `f0d8cf1` · [native fixture + Bluetooth observation](../architecture/bluetooth-observation.md#final-integrated-evidence--f0d8cf1) | CLEAN independent merged review; 4,798 legacy (includes 43 native presentation + 27 Activity), 146 observation, 39 permission, 81 diagnostics, 114 C, 10 policy/3 suites, 13 installer. Sequential 341 process and 197 visibility reruns overlap existing coverage. Unmodified lint/format across 67 files passed. No hardware acceptance. |
 | `5feb438` · [discovery visibility](bluetooth-discovery-visibility.md#main-integration--2026-10-16) | Full legacy run **failed** at native first-display-click assertion, also reproduced with pre-integration `52ae53e` inputs. Separately 170 focused Bluetooth, 39 permission, 81 diagnostics, 114 C, 10 policy/3 suites and 13 installer passed; unmodified lint/format across 63 files passed. No 4,765-pass claim. |
 | `bccb92f` · [Bluetooth stale observations](bluetooth-disable-responsiveness.md#main-integration--2026-10-16) | 4,731 legacy, 32 separate focused Bluetooth, 81 diagnostics, 114 C, 10 policy/3 suites, 13 installer; unmodified lint/format across 63 files passed. Whole-desktop freeze cause remains unknown. |
 | `cd811ea` · [gesture terminal attempt](gesture-terminal-failures.md#main-integration--2026-10-16) | 4,633 legacy, 81 separate diagnostics, 114 separate C assertions, 10 policy/3 suites, 13 installer; unmodified lint/format across 61 files passed. Swift failure characterization remains opt-in; no live incident-fix claim. |

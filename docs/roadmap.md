@@ -21,6 +21,11 @@ Keep the concise README and its install command. This plan promises no release d
 | Later | Measured performance/storage work | Compare idle resource baselines; consider SQLite only if clipboard measurements justify migration. |
 
 Priority 0 remains open for native/physical acceptance and final release gates.
+The [Bluetooth observation/control split](architecture/bluetooth-observation.md)
+adds bounded read-only comparison and conservative helper-control admission;
+it does not qualify live radio control, explain the helper/native disagreement,
+or close the whole-desktop freeze incident. Native fixture coordinate correction
+is isolated test evidence, not physical interaction acceptance.
 Display-recovery ownership, setup awake-assertion removal, watchdog authorization
 and corrupt-journal preservation fixes are independently reviewed CLEAN and integrated. Use
 [release evidence](releases/checklist.md#current-evidence) and

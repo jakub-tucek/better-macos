@@ -87,6 +87,13 @@ claim that the baseline's release blockers are fixed.
   a typed read-only native snapshot; [BluetoothProfilerProcess.swift](../Sources/Features/Bluetooth/BluetoothProfilerProcess.swift)
   bounds that subprocess. Native presentation is separate from control/audio policy;
   see the [observation contract](architecture/bluetooth-observation.md).
+- **Control boundary:** native inventory is display-only. Contradictory, stale or
+  incomplete comparisons block owner-level control, including queued/non-UI calls;
+  native-on never triggers automatic power-on. Mutations resolve canonical saved
+  IDs against the current helper's raw ID, preserve stored choices and reject
+  collisions. Fresh helper reads, not native fallback, verify mutations and update
+  automatic-action presentation. Typed discovery diagnostics retain helper-only
+  counts/state and unknown helper authorization/source; they never grant admission.
 - **UI:** Sound & connections settings, Bluetooth widget; contextual Bluetooth access.
 - **Resources/cleanup:** polling timer, connection-cycle cancellation, pending manual
   and audio intents, authorization manager. `stop(completion:)` cancels work and waits

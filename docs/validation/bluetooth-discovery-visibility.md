@@ -8,6 +8,11 @@ The parent supplied independent **CLEAN** review of this visibility series; see
 [main integration](#main-integration--2026-10-16). Earlier review-pending statements
 below retain their historical revision scope.
 
+Later integration of the reviewed native-coordinate fixture and read-only
+Bluetooth observation boundary passed at `f0d8cf1`; see
+[final combined evidence](../architecture/bluetooth-observation.md#final-integrated-evidence--f0d8cf1).
+The failed `5feb438` main result below remains revision-bound historical evidence.
+
 ## Confirmed presentation defect
 
 The reported popup displayed both “Choose targets” and “2 chosen devices

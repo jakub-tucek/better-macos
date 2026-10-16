@@ -297,3 +297,22 @@ acceptance. No production launch/quit/relaunch/install, session unlock, display
 helper/device action, Bluetooth operation, TCC grant, live preference change or push
 was performed. Production PID 2065 was left running. No concurrent native test
 process was observed before the sequential focused/full runs.
+
+### Main fixture integration and corrected gate
+
+The parent supplied independent **CLEAN** review of `90bb3cc`/`3370518`, including
+two 43-check native runs and the original first-action negative control. They
+integrated as `b1ab073`/`90f72ec`, before the Bluetooth observation series. The
+fixture file remains byte-identical to reviewed `3370518`; no production display
+or host admission change was needed to correct the coordinate fixture.
+
+Combined main source **`f0d8cf1dada45d1c711783e3e45605a97f5acc22`** passed one full
+sequential standalone CLT suite with **4,798 legacy checks**, including **43 native
+presentation** and **27 Activity scrolling** checks already inside that count.
+The 43-check presentation mode also passed afterward, sequentially. Exact logs,
+separate suite totals and independent merged Bluetooth review are in
+[final integration evidence](../architecture/bluetooth-observation.md#final-integrated-evidence--f0d8cf1).
+The old `5feb438` failure and tool deadlines remain historical failures, not
+rewritten as passes. The corrected synthetic gate closes that fixture blocker;
+live activation/focus, session-state and physical-device acceptance remain open.
+PID 2065 was not quit, relaunched or probed for a new loaded-image claim.

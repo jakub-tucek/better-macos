@@ -7,6 +7,7 @@
 - [Host coordination glossary](glossary.md)
 - [Partial built-in registration](architecture/builtin-registration.md)
 - [Keep awake owned-feature boundary](architecture/keep-awake-feature.md)
+- [Bluetooth observation versus helper control](architecture/bluetooth-observation.md)
 - [SwiftPM ownership and named policy suites](swiftpm.md)
 - [Roadmap](roadmap.md)
 - [Validation and open acceptance](validation/README.md)
