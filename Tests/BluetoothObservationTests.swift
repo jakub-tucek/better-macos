@@ -14,12 +14,14 @@ private final class ObservationRunner: CommandRunning {
     var power = "0"
     var paired = "[]"
     var fail = false
+    var allowFixturePowerOn = false
     func run(_ executable: String, _ arguments: [String]) throws -> String {
         lock.lock(); defer { lock.unlock() }
         recorded.append(arguments)
         if fail { throw ToggleError(message: "fixture read failed") }
         switch arguments {
         case ["--power"]: return power
+        case ["--power", "1"] where allowFixturePowerOn: power = "1"; return ""
         case ["--paired", "--format", "json"]: return paired
         default: throw ToggleError(message: "Mutation forbidden in observation fixture")
         }
@@ -156,6 +158,8 @@ private func runBluetoothObservationModuleFixture(_ nativeData: Data, logger: Di
         while module.isBusy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
         expect(!module.isBusy, "injected observation completes")
     }
+    module.requestConnection(true, address: saved.first!); module.turnBluetoothOn()
+    expect(runner.calls.isEmpty && !module.controlsAvailable, "non-UI controls cannot bypass the initial production comparison")
     module.poll(); wait()
     expect(module.radioPoweredOn == false && module.displayedRadioPoweredOn == true && !module.controlsAvailable,
            "module separates original control evidence from native presentation")
@@ -168,6 +172,21 @@ private func runBluetoothObservationModuleFixture(_ nativeData: Data, logger: Di
            "manual and automatic conflict paths execute zero mutation commands")
     expect(!module.audioProtection.ready, "fallback never grants audio policy readiness")
     module.stop()
+    let normalRunner = ObservationRunner(); normalRunner.allowFixturePowerOn = true
+    let offReport = try JSONSerialization.data(withJSONObject: profilerFixture(power: "attrib_off"))
+    let normal = BluetoothModule(defaults: defaults,
+        backend: BluetoothBackend(runner: normalRunner, blueutil: "/fixture/blueutil", audioTool: nil,
+                                  observationService: BluetoothObservationService(diagnostics: logger) { _ in offReport }),
+        importLegacyConfiguration: false, authorizationProvider: { .allowedAlways })
+    normal.poll()
+    let normalDeadline = Date().addingTimeInterval(2)
+    while normal.isBusy && Date() < normalDeadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
+    expect(normal.controlsAvailable && normal.displayedRadioPoweredOn == false, "coherent off observation retains explicit power-on admission")
+    normal.turnBluetoothOn()
+    while normal.isBusy && Date() < normalDeadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
+    expect(!normal.isBusy && normal.controlsAvailable && normal.displayedRadioPoweredOn == true && normalRunner.calls.contains(["--power", "1"]),
+           "original fake helper verification, not old native cache, completes an admitted manual operation")
+    normal.stop()
     let entered = DispatchSemaphore(value: 0)
     let cancelService = BluetoothObservationService(diagnostics: logger) { shouldContinue in
         entered.signal()

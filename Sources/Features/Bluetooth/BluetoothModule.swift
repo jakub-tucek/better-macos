@@ -243,7 +243,11 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     private var activity: String?
     private(set) var radioPoweredOn: Bool?
     private(set) var readback: BluetoothReadback?
-    var controlsAvailable: Bool { readback?.controlsBlocked != true }
+    var controlsAvailable: Bool {
+        if let readback { return !readback.controlsBlocked }
+        // Production comparison must complete before non-UI callers can mutate.
+        return backend?.observationService == nil
+    }
     var displayedRadioPoweredOn: Bool? {
         if let readback { return readback.displayedPower }
         return radioPoweredOn
@@ -684,6 +688,11 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         activity = nil
         switch result {
         case .success(let updated):
+            if manualOperation != nil, backend?.observationService != nil {
+                // Only the original control path verifies manual operations.
+                readback = BluetoothReadback(helperPower: radioPoweredOn, helperDevices: updated,
+                                             native: nil, nativeIssue: nil, nativeStale: false)
+            }
             lastObservation = Date()
             observationStale = false
             if devices.contains(where: { old in old.connected && !updated.contains { $0.address == old.address && $0.connected } }) {
