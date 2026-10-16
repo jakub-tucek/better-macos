@@ -12,7 +12,7 @@ to the current documentation. Native/hardware acceptance remains open.
 - [Mechanical source organization and byte-preservation checks](source-organization.md)
 - [Core recovery regressions](release-core.md) · [Host transactions](host-transactions.md)
 - [Bluetooth stale-banner recovery; power-on cause remains unknown](bluetooth-error-recovery.md#main-integration--2026-10-15)
-- [Bluetooth permission-revocation investigation and secondary stale-status presentation correction](bluetooth-disable-responsiveness.md#secondary-presentation-correction-not-a-desktop-freeze-fix)
+- [Bluetooth permission-revocation investigation and secondary stale-status presentation correction](bluetooth-disable-responsiveness.md#main-integration--2026-10-16)
 - [Login registration-intent UI; real autostart unverified](login-diagnosis.md#main-integration--2026-10-15)
 - [Bounded diagnostics and typed Bluetooth/login hooks](../diagnostics.md#main-integration--2026-10-15)
 - [Session Activity integration and native row anchoring](../activity.md#main-integration--2026-10-15)
@@ -28,6 +28,7 @@ Latest integrated check · 2026-10-16:
 
 | Tested code | Result |
 | --- | --- |
+| `bccb92f` · [Bluetooth stale observations](bluetooth-disable-responsiveness.md#main-integration--2026-10-16) | 4,731 legacy, 32 separate focused Bluetooth, 81 diagnostics, 114 C, 10 policy/3 suites, 13 installer; unmodified lint/format across 63 files passed. Whole-desktop freeze cause remains unknown. |
 | `cd811ea` · [gesture terminal attempt](gesture-terminal-failures.md#main-integration--2026-10-16) | 4,633 legacy, 81 separate diagnostics, 114 separate C assertions, 10 policy/3 suites, 13 installer; unmodified lint/format across 61 files passed. Swift failure characterization remains opt-in; no live incident-fix claim. |
 | `0c596f8` · [display presentation](presentation-display-refresh.md#main-integration--2026-10-16) | 4,633 legacy (includes 37 presentation + 27 Activity), 81 separate diagnostics, 10 policy/3 suites, 13 installer; unmodified normal-path lint/format across 60 files passed. Live acceptance remains open. |
 

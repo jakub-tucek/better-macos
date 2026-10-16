@@ -6,6 +6,10 @@ whole-input scope. The later clarification below supersedes that initial scope.
 **Incident root cause remains unconfirmed.** A later, separately authorized
 secondary presentation correction is recorded below; it is not a desktop-freeze fix.
 
+Current status: independently reviewed **CLEAN** and integrated; see
+[main evidence](#main-integration--2026-10-16). Earlier review-pending statements
+below belong to their historical revisions, not the current integration.
+
 ## Clarified trigger: revoke blueutil Bluetooth permission
 
 The user subsequently clarified: blueutil's permission was disabled in macOS
@@ -292,3 +296,75 @@ whether a built-in/USB pointer or keyboard still worked were unknown. An action-
 sample would distinguish an actual run-loop stall from lost Bluetooth input.
 
 Independent review required before merge. No changes were merged or published.
+
+## Main integration · 2026-10-16
+
+The parent supplied final independent **CLEAN** review, including the isolated
+legacy-takeover flags. These remove ambient legacy-file influence on the affected
+fixture outcomes; **the existing production file-existence read still occurs**.
+No claim of zero OS reads, simulated TCC revocation or real hardware recovery is made.
+
+All seven unique commits integrated in order on main `a21dd40`:
+
+| Reviewed source | Main commit |
+| --- | --- |
+| `70027d6` — blocked-disable responsiveness proofs | `7869682` |
+| `af0517f` — offline permission-context proofs | `37d8362` |
+| `3d77b0c` — observation failures before cached guidance | `9c6bed9` |
+| `c8a44b4` — typed discovery classification and fixture wiring | `b6e9aba` |
+| `10cc20f` — frozen source evidence | `b0f1dda` |
+| `09283e6` — legacy-service fixture independence | `4d3aa15` |
+| `28bd60a` — review-correction evidence | `bccb92f` |
+
+Two conflicts were limited to auxiliary test wiring: `test.sh` retains both the
+gesture `--instant-safety` and Bluetooth permission suites; `Tests/build.sh` retains
+both names in its nested mock-compiler stub list. Production sources applied
+without conflict and exactly match the reviewed Bluetooth branch. Existing
+untracked `.worktrees/` user work was preserved.
+
+At **`bccb92fb7a2ab0682c5b0bfea64304aef5577262`**, one full standalone CLT
+`bash test.sh` run passed these separate totals:
+
+| Check | Integrated result |
+| --- | --- |
+| Legacy isolated | **4,731**, including actual-host observation/manual-UUID recovery, blocked disable/takeover, 37 presentation and 27 Activity checks |
+| Focused Bluetooth permission context | **32** |
+| Diagnostics | **81**, plus no-flush/no-sync-wait safety source guard |
+| Offline C terminal safety | **114 assertions**, zero failures |
+| Swift Testing policy | **10 tests / 3 suites** |
+| Mocked installer | **13 scenarios** |
+| Build/compiler and real/relocated bundle | Passed, including explicit fresh C objects, package-only ClipboardPolicy, complete licenses/provenance, metadata/dependencies and strict configured-certificate signature |
+
+Focused Bluetooth, diagnostic and C counts are separate from the legacy count.
+Log: `build/bluetooth-presentation-integration-clt.log`; it records HEAD, scoped
+standalone CLT compiler/SDK paths, Swift 6.4 / SDK 27.0, arm64 and explicit unset
+`SDKROOT`. Source/built plist lint and metadata passed: version `0.4`, build `4`,
+arm64/macOS 15+, SDK 27.0 and embedded revision equal the exact tested source above.
+
+Unmodified normal-path pinned lint/format passed across **63 files**, without
+baseline/config changes or rewrites. Offline tooling and CI whitespace fixtures
+passed. Logs: `build/bluetooth-presentation-integration-{lint,format,tools,ci}.log`.
+All **17 shell inputs**, **260 local links and 51 fragments across 35 tracked
+Markdown documents**, compiler-input/merged-suite/UUID-binding assertions and
+`git diff --check` passed. README, lint baseline and tooling/CI configs are unchanged.
+Vendored gesture code and all its proofs, bounded asynchronous diagnostics,
+CommandRunner timeouts, typed login service, HostTransactions and display/Keep
+awake/Clipboard contracts remain unchanged from prior main.
+
+Fresh helper observation failures override stale cached radio-off/empty-inventory
+guidance without discarding cached devices or targets. Successful fresh snapshots
+restore truthful guidance; manual-action error clearing retains UUID ownership.
+Discovery and later connection/routing failures remain distinct. Parent permission
+state is authoritative; helper exit 75/134 is not guessed to mean permission denial.
+Exit-75 timeout behavior, radio actions, polling and pipe-drain ownership are unchanged.
+The first two commits add responsiveness/permission-context proofs, not an incident
+cause fix. **Whole-desktop/keyboard freeze cause remains UNKNOWN**; no live/hardware
+acceptance or external runtime-plugin claim follows from these isolated results.
+
+No production app launch/quit/relaunch/install, Bluetooth power toggle/device action,
+TCC/permission or live preference change, login-service registration, push/tag or
+publication occurred. The existing running app was preserved; rebuilding its bundle
+does not update its loaded image. Existing read-only capability/file checks still
+occur in the isolated suite. The separate docs-only evidence commit does not claim
+an artifact rebuilt at its own revision. Hosted CI and native/hardware acceptance
+remain open; historical failures and revision-bound evidence above are retained.
