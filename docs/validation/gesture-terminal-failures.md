@@ -1,6 +1,165 @@
 # Offline gesture terminal failures · 2026-10-16
 
-Status: **three source-level holes reproduced; production fix not authorized**.
+Status: **C instant terminal-attempt fix implemented; independent review pending**.
+Swift drain reporting and stale physical tracking remain unchanged and unsafe in
+the isolated proofs. Whole-desktop freeze cause remains unresolved.
+
+## Approved narrow C fix
+
+After a successful began, `strafe_post_switch_gesture` attempts changed and ended
+separately, then returns `changed && ended`. Failed began returns false without
+continuation. Failed changed no longer skips ended. Failed ended still returns
+false; no retry or delivery acknowledgment is introduced. Public Bool signature,
+direction constants, successful phase order and event properties are unchanged.
+Vendor provenance is updated; vendor and project license contents are unchanged.
+
+`GestureSwitchEngine.post` already returns this C Bool on the instant path.
+Both topology branches of `switchSpace` throw `postFailed` when it is false;
+predictions are not advanced. `SwipeInterceptor.fire` catches that error, leaves
+`swipePosted=false` and logs it. This narrow fix adds no retained uncertainty or
+host failure result: instant partial failures still are not conveyed by later
+Void drain completion. Animated posting still ignores phase Bool results.
+
+Current commands:
+
+```sh
+bash Tests/gesture-terminal-proof.sh --instant-safety # default; exits 0
+bash Tests/gesture-terminal-proof.sh --characterize   # C green; known Swift holes reproduced, exits 0
+bash Tests/gesture-terminal-proof.sh --require-safety # explicitly red for remaining Swift holes, exits 1
+```
+
+`test.sh` runs only `--instant-safety`. It checks **114 assertions** across both
+directions: successful order/properties, failed began without continuation,
+failed changed followed by ended with a false overall result, and failed ended
+with no retry. C production/fixture units compile with `-Wall -Wextra -Werror`;
+the no-live-post object-symbol guard remains active. Pre-27 allocation-path
+coverage only; the fixture refuses the augmented macOS 27 path.
+
+New regression against the original C source from `21ec11a`, compiled in an
+invocation-owned temporary directory with the same fake poster, exits 1:
+**114 checks / 4 failures** (missing terminal continuation and phase order, both
+directions). Against the patched source: **114 checks / 0 failures**. Remaining
+Swift characterization is unchanged; explicit `--require-safety` still exits 1.
+No deliberate-red mode is included in the default suite.
+
+### Narrow-fix validation
+
+Tests ran in this isolated worktree, based on `21ec11a` with the C/fixture changes
+uncommitted; the build therefore records that base revision and modified source
+state, not a falsely clean loaded/frozen revision. No production or test inputs
+changed during the final full run. Evidence logs remain ignored under `build/`.
+
+- Original source plus new C regression: 114 checks, four failures (red).
+- Patched focused C regression: 114 checks, zero failures (green).
+- Remaining Swift/interceptor safety mode: still exits 1 by explicit request.
+- Pinned SwiftLint: zero violations across 61 files. Pinned SwiftFormat: 0/61
+  require formatting. Offline developer-tool regressions passed.
+- Shell syntax and `git diff --check` passed. Production C and fixture C compile
+  with `-Wall -Wextra -Werror`; public C headers and license contents are unchanged.
+
+Initial full run failed after successful app compilation, bundle signing,
+signature/notices/relocation checks and several compiler fixtures: adding the C
+regression to `test.sh` required adding its name to `Tests/build.sh`'s subprocess
+stub list. That fixture intentionally has fake compiler outputs, not real vendor
+C sources. The scoped stub-list correction preserves the real default C check
+while keeping the compiler-input fixture isolated. Original failed evidence is
+`build/gesture-terminal-full.log`; the subsequent complete-run evidence is
+`build/gesture-terminal-full-rerun.log`. This failure is not hidden or counted as
+a passing full run.
+
+The corrected final full run completed successfully (exit 0; existing process
+exit event and harness completion received). Command:
+
+```sh
+MAC_UTILS_SIGNING_IDENTITY=- DEVELOPER_DIR=/Library/Developer/CommandLineTools \
+  GESTURE_PROOF_TMPDIR=/private/var/folders/01/q8lbfsh16d9bjtl88bpwtr840000gn/T/opencode \
+  bash test.sh
+```
+
+Separate totals, not combined or substituted:
+
+| Check | Result |
+| --- | --- |
+| Legacy isolated checks | 4,633 passed |
+| Diagnostics review regressions | 81 passed, plus safety-entry source guard |
+| New C instant-terminal regression | 114 assertions passed |
+| Swift Testing policy | 10 tests in 3 suites passed |
+| Mocked installer scenarios | 13 passed |
+| Build/compiler fixtures | Passed, including app/legacy archive and fresh-object input checks |
+| Real/relocated built bundle | Complete notices/provenance, metadata/dependencies and strict ad-hoc signature verification passed; not launched |
+
+The compiled artifact identifies base `21ec11a` with modified source inputs.
+The later commit captures the tested implementation/fixture tree, with evidence
+prose added after execution; this is not a claim that artifact embeds that later
+commit. The initial failure remains preserved in its separate log.
+
+Lint/format/tooling evidence: `build/gesture-terminal-{lint,format,tools}.log`.
+No app was launched, installed, quit or relaunched. No live event post, tap
+installation, Bluetooth action, Dock/watchdog signal or TCC modification occurred.
+Independent review and native/hardware acceptance remain pending.
+
+## Next design, not approved for implementation
+
+The earlier normal-quit-veto proposal below is superseded. Missing OS
+acknowledgment is inherent to every `CGEventPost` and is **not** a failure state
+or reason to trap normal quit. A concrete false posting result is distinguishable
+from that universal lack of acknowledgment.
+
+Narrow options for a later change:
+
+1. **Owner-only reporting:** record concrete phase failure and expose a typed
+   drain result without changing quit approval. Keep interception paused on a
+   concrete terminal failure; retain normal quit and display recovery. Smallest
+   host-policy change, but quit does not require explicit acknowledgment of the
+   warning. Existing Mouse/Clipboard/display restoration checks still apply.
+2. **Explicit quit choice, preferred for planning:** after queue quiescence, show
+   the concrete post-failure warning once per quit attempt with **Cancel** and
+   **Quit anyway**. Cancel reopens host admission but does not rearm interception.
+   Quit anyway bypasses only the gesture warning, never other restoration/veto
+   contracts. No permanent gesture veto or automatic restart. Existing asynchronous
+   quit reply must still complete exactly once, including cancellation/reentrancy.
+
+Both options require a typed result distinguishing no gesture started, terminal
+attempt accepted, and concrete terminal attempt failed, plus phase failure
+counts. No status means delivered or Dock repaired. Keep ordinary supervised
+display/animation mutations blocked on a known terminal failure, but allow
+display recovery after queue quiescence regardless of that failure or watchdog
+readiness. Do not wait for an OS acknowledgment that does not exist.
+
+The current instant C Bool does not identify the failed phase: false can mean
+failed began, failed changed with an accepted terminal, or failed terminal. A
+later Swift result must label that `instantPhaseFailureUnknown`, not invent a
+known terminal failure. Initially scope precise terminal accounting to the ramp,
+or separately approve an internal C detailed-result seam while preserving the
+existing public Bool adapter. The current patch adds neither API nor phase status.
+
+Lifecycle proposal: the host retains a session-scoped gesture failure owner
+outside optional `SpacesModule`, keyed by attempt/generation, so unload cannot
+erase it. Disable/unload removes the tap and drains work, preserving the failure
+and saved feature choice. Re-enable is refused while a concrete terminal failure
+remains unresolved. Do not clear it on another empty drain, watchdog heartbeat,
+timeout, successful display restore or an accepted retry. A bounded terminal
+retry may report a newer attempt but cannot certify OS recovery. User escape is
+normal quit (option 1) or explicit Quit anyway (option 2), with no automatic
+relaunch. Ending the process is not proof that Dock state recovered. For a later
+patch, prefer a durable activation-inhibit marker so even a new process cannot
+silently rearm the saved interception choice. An explicit user acknowledgment
+could authorize a new attempt/generation while retaining the failure record;
+it acknowledges risk, not OS recovery. The precise reset UI and persistence
+contract need approval before implementation. No new persistent marker,
+automatic live retry or restart is part of this narrow patch.
+
+Before implementing either option, approve warning/escape semantics and test
+real owner retention across unload/reload, both quit branches (including display
+recovery first), callback-once behavior, admission reopening, no automatic
+reactivation, and recovery availability. The interceptor timeout policy remains
+separate and unapproved; late real-terminal forwarding must be preserved.
+
+## Historical initial proof and proposal · `21ec11a`
+
+The following records the original red baseline and earlier proposal, not the
+current runner modes or approved quit policy.
+
 Production base: `d7c8da9`. The dedicated `investigate/gesture-terminal-proof`
 branch adds only opt-in fixtures and this draft. No vendor production source,
 host API or default test-suite input changes. Independent review remains pending.
@@ -78,7 +237,7 @@ The fixture advances event timestamps, not wall time or a new production clock.
 This proves that elapsed event time does not clear tracking; it does not prove
 that macOS would emit this exact sequence after Bluetooth disconnection.
 
-## Proposed fix contract, approval required
+## Historical proposed fix contract, superseded where noted above
 
 ### C: always attempt termination after a successful begin
 

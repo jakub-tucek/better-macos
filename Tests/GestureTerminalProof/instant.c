@@ -1,38 +1,68 @@
 #include "CStrafe.h"
+#include <float.h>
 #include <stdio.h>
-#include <string.h>
 
 void offline_reset(int);
 int offline_allocations(void);
 int offline_posts(void);
 int64_t offline_phase(int);
+int64_t offline_type(int);
+int64_t offline_hid_type(int);
+int64_t offline_motion(int);
+double offline_progress(int);
+double offline_velocity_x(int);
+double offline_velocity_y(int);
 
-int main(int argc, char **argv) {
-    const bool require_safety = argc == 2 && strcmp(argv[1], "--require-safety") == 0;
+static int checks;
+static int failures;
+
+static void expect(bool condition, const char *name) {
+    checks++;
+    if (!condition) { failures++; fprintf(stderr, "FAIL instant: %s\n", name); }
+}
+
+static void expect_properties(int index, int64_t phase, double sign) {
+    expect(offline_phase(index) == phase, "phase order");
+    expect(offline_type(index) == 30, "DockControl type");
+    expect(offline_hid_type(index) == 23, "DockSwipe HID type");
+    expect(offline_motion(index) == 1, "horizontal motion");
+    expect(offline_progress(index) == sign * (double)FLT_TRUE_MIN, "signed progress");
+    expect(offline_velocity_x(index) == sign * 2000, "X velocity");
+    expect(offline_velocity_y(index) == sign * 2000, "Y velocity");
+}
+
+int main(void) {
     if (strafe_uses_iohid_payload()) {
         fprintf(stderr, "Fixture requires pre-27 allocation order; refusing different payload path.\n");
         return 2;
     }
-    offline_reset(0);
-    bool success = strafe_post_switch_gesture(StrafeDirectionRight, 2000);
-    if (!success || offline_posts() != 3 || offline_phase(0) != 1 ||
-        offline_phase(1) != 2 || offline_phase(2) != 4) { return 2; }
-    printf("CONTROL instant: began/changed/ended posted to fake sink\n");
+    for (int right = 0; right <= 1; right++) {
+        StrafeDirection direction = right ? StrafeDirectionRight : StrafeDirectionLeft;
+        double sign = right ? 1.0 : -1.0;
+        offline_reset(0);
+        expect(strafe_post_switch_gesture(direction, 2000), "complete sequence succeeds");
+        expect(offline_allocations() == 3 && offline_posts() == 3, "three complete posts");
+        expect_properties(0, 1, sign);
+        expect_properties(1, 2, sign);
+        expect_properties(2, 4, sign);
 
-    offline_reset(2); // began allocated and fake-posted; changed allocation fails.
-    success = strafe_post_switch_gesture(StrafeDirectionRight, 2000);
-    const bool reproduced = !success && offline_allocations() == 2 &&
-        offline_posts() == 1 && offline_phase(0) == 1;
-    printf("%s instant: allocations=%d posts=%d terminal_attempted=%s result=%s\n",
-           reproduced ? "REPRODUCED" : "CHANGED", offline_allocations(), offline_posts(),
-           offline_allocations() >= 3 ? "true" : "false", success ? "success" : "failure");
-    const bool safe_changed_failure = offline_allocations() >= 3 && !success;
+        offline_reset(1);
+        expect(!strafe_post_switch_gesture(direction, 2000), "began failure returns false");
+        expect(offline_allocations() == 1 && offline_posts() == 0, "no continuation after failed began");
 
-    offline_reset(3); // Terminal allocation fails after began and changed fake-posts.
-    success = strafe_post_switch_gesture(StrafeDirectionRight, 2000);
-    const bool terminal_failure = !success && offline_allocations() == 3 && offline_posts() == 2;
-    printf("%s instant-ended-failure: allocations=%d posts=%d terminal_attempted=true result=%s\n",
-           terminal_failure ? "REPRODUCED" : "CHANGED", offline_allocations(), offline_posts(), success ? "success" : "failure");
-    // Characterization passes only for the observed holes. Opt-in safety assertion is red.
-    return require_safety ? (safe_changed_failure ? 0 : 1) : (reproduced && terminal_failure ? 0 : 2);
+        offline_reset(2);
+        expect(!strafe_post_switch_gesture(direction, 2000), "changed failure remains false after terminal attempt");
+        expect(offline_allocations() == 3 && offline_posts() == 2, "terminal attempted after failed changed");
+        expect_properties(0, 1, sign);
+        expect_properties(1, 4, sign);
+
+        offline_reset(3);
+        expect(!strafe_post_switch_gesture(direction, 2000), "ended failure returns false");
+        expect(offline_allocations() == 3 && offline_posts() == 2, "failed ended is not retried");
+        expect_properties(0, 1, sign);
+        expect_properties(1, 2, sign);
+    }
+    printf("%s instant-terminal-safety: %d checks, %d failures (both directions; phase failures and payload properties)\n",
+           failures ? "FAIL" : "PASS", checks, failures);
+    return failures ? 1 : 0;
 }

@@ -127,9 +127,12 @@ static bool post_dock_swipe(CGSGesturePhase phase, StrafeDirection direction, do
 bool strafe_post_switch_gesture(StrafeDirection direction, double velocity) {
     // Send three gesture events--began, changed, and ended.
     // If we only send two then mission control doesn't work.
-    return post_dock_swipe(kCGSGesturePhaseBegan,   direction, velocity)
-        && post_dock_swipe(kCGSGesturePhaseChanged, direction, velocity)
-        && post_dock_swipe(kCGSGesturePhaseEnded,   direction, velocity);
+    if (!post_dock_swipe(kCGSGesturePhaseBegan, direction, velocity)) { return false; }
+    const bool changed = post_dock_swipe(kCGSGesturePhaseChanged, direction, velocity);
+    // Once began was posted, attempt the terminal phase even if changed failed.
+    // An accepted post is not an acknowledgment of delivery or Dock recovery.
+    const bool ended = post_dock_swipe(kCGSGesturePhaseEnded, direction, velocity);
+    return changed && ended;
 }
 
 // One phase with caller-chosen progress and velocity, for the animated

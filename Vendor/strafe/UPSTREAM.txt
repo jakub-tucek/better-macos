@@ -3,4 +3,8 @@ Commit: 37ec57e0dd7ae91c22225bc36bf5cd210ff9cba7
 Only the gesture engine/interceptor and their dependencies are included.
 Local patch: Swift/SwitchEngine.swift supports canceling queued ramps and asynchronously
 draining an active gesture before display changes/module shutdown. Its phase-posting
-closure is injectable for tests. Gesture payloads and the interceptor remain upstream.
+closure is injectable for tests.
+Local patch: CStrafe/CStrafe.c always attempts the instant gesture's ended phase
+after a successful began, including when changed fails. Any phase failure still
+returns false; this does not acknowledge OS delivery. Public ABI and payload
+properties are unchanged. The interceptor remains upstream.
