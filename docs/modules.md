@@ -83,6 +83,10 @@ claim that the baseline's release blockers are fixed.
 
 - **Owner:** [BluetoothModule.swift](../Sources/Features/Bluetooth/BluetoothModule.swift), including backend/policy;
   [CommandRunner.swift](../Sources/Core/CommandRunner.swift) runs external tools such as `blueutil`.
+- **Observation:** [BluetoothObservation.swift](../Sources/Features/Bluetooth/BluetoothObservation.swift) compares suspicious helper reads with
+  a typed read-only native snapshot; [BluetoothProfilerProcess.swift](../Sources/Features/Bluetooth/BluetoothProfilerProcess.swift)
+  bounds that subprocess. Native presentation is separate from control/audio policy;
+  see the [observation contract](architecture/bluetooth-observation.md).
 - **UI:** Sound & connections settings, Bluetooth widget; contextual Bluetooth access.
 - **Resources/cleanup:** polling timer, connection-cycle cancellation, pending manual
   and audio intents, authorization manager. `stop(completion:)` cancels work and waits

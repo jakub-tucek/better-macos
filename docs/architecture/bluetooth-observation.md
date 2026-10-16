@@ -27,7 +27,8 @@ denial, stale preferences, pairing failure or a physically off controller.
   `displayedDevices` / `displayedRadioPoweredOn` are presentation only. Native
   devices never enter reconnect, audio protection, output routing, or mutation
   verification. The owner rejects manual requests and queued requests while
-  controls are unavailable, even from non-UI callers. Host admission remains
+  controls are unavailable, even from non-UI callers. Production controls also
+  remain blocked before the initial comparison completes. Host admission remains
   unchanged.
 - Settings and both widget sizes show source and conflict. The reported case
   reads: “macOS reports Bluetooth on; helper reports off. Device controls
@@ -95,6 +96,13 @@ addresses, raw JSON, stderr or localized errors are logged. Native display
 metadata does not enter the existing persisted helper snapshot device rows.
 An observation never resolves the host's UUID-owned manual-action error.
 
+Parallel copy/diagnostic UI work should consume the typed `readback` and retain
+both helper and native provenance, not reinterpret the existing persisted
+snapshot's `radioOn` field as native power. That legacy field and its device rows
+remain helper evidence; added source/conflict/control-availability fields explain
+the comparison. Preserve both branches' `AppDelegate` model projections and
+Settings/widget controls when integrating. No competing copy action is added here.
+
 `Tests/bluetooth-observation-regressions.sh` uses injected JSON, clocks,
 read/control backends, diagnostic sinks and temporary executable fixtures. It
 tests the exact off/empty versus on/six/two-saved-target case with zero mutation
@@ -116,3 +124,86 @@ live control, permission-context cause, or hardware acceptance.
   are documented alternatives, not live-validated replacements in this change.
 - [Diagnostic policy](../diagnostics.md), [module ownership](../modules.md),
   [historical Bluetooth evidence](../validation/bluetooth-disable-responsiveness.md).
+
+## Validation record · 2026-10-16
+
+Implementation/test revision: `6c59dc915c076e6ff464ff5f594275a60e75ad03`,
+based on `52ae53e`. Documentation recorded afterward is not a claim that the app
+was rebuilt at the documentation revision. Tests use command-scoped standalone
+CLT and ad-hoc signing; no global developer-tool selection changes.
+
+Preserved intermediate failures:
+
+- The first parser fixture still expected a missing-controller issue after adapter
+  errors gained their own conservative rejection. The expectation was corrected;
+  no live payload was involved.
+- Full run at `ed98dfb` passed the real app build/signature, packaging and 63 then-current
+  focused observation checks, then stopped with exit 32: `Tests/build.sh` had not
+  stubbed the new focused script at its mock-compiler boundary. `e7230a5` adds that
+  stub and checks both new production Swift inputs appear exactly once.
+- The next run was invalidated by a source edit during compilation. Its compiler
+  reported “input file ... was modified during the build”; it is not accepted
+  full-suite evidence. Production source was then frozen at `6c59dc9` for the final
+  run. Its new owner-boundary test prevents a non-UI caller from bypassing the
+  initial comparison; an injected coherent-off case retains the existing explicit
+  power-on action and verifies it through the original fake helper only.
+
+Focused observation checks, permission-context checks, diagnostics, C assertions,
+policy tests and legacy checks are separate totals, never added into one count.
+Fixture executables exercise cancellation, TERM resistance, inherited pipe
+holders and output limits without invoking installed blueutil or system_profiler.
+There was no app launch/quit/install, live Bluetooth query/control or permission
+change, device mutation, system-preference reset, control-path replacement, push
+or merge. Existing default tests retain their read-only runtime capability probes.
+
+### Frozen-revision results
+
+At **`6c59dc915c076e6ff464ff5f594275a60e75ad03`**:
+
+```sh
+MAC_UTILS_SIGNING_IDENTITY=- DEVELOPER_DIR=/Library/Developer/CommandLineTools bash test.sh
+DEVELOPER_DIR=/Library/Developer/CommandLineTools bash scripts/dev lint
+DEVELOPER_DIR=/Library/Developer/CommandLineTools bash scripts/dev format-check
+```
+
+All passed. Separate results:
+
+| Runner | Result |
+| --- | --- |
+| Legacy app/host/feature runner | **4,737 checks**; includes six new actual-host native observation/projection/error-ownership assertions |
+| Focused Bluetooth observation | **66 checks**, including zero mutation commands in the contradictory off/empty versus on/six/two-saved-target case |
+| Focused permission-context characterization | **32 checks**, unchanged installed-helper/TCC isolation |
+| Diagnostic review regressions | **81 checks**, plus production no-flush/no-sync-wait safety guard |
+| Gesture terminal safety | **114 C assertions**, zero failures |
+| Clipboard policy | **10 Swift Testing tests in 3 suites** |
+| Installer fixtures | **13 mocked scenarios** |
+| Lint / format | **67 Swift files**, zero lint violations / zero formatting changes required |
+
+The full run also passed real app compilation/ad-hoc signing, exact bundle
+notices, strict signature and relocated-bundle checks, staged replacement/rollback
+fixtures, compiler-input ownership and SwiftUI compatibility. The built plist's
+`FixMacOSRevision` was read back as the exact frozen revision above, without
+executing the app. Compiler: standalone CLT, Apple Swift 6.4
+(`swiftlang-6.4.0.34.1`), Swift 5 language mode, arm64/macOS 15 deployment target.
+This is isolated build/test evidence, not native Bluetooth/hardware acceptance.
+
+Ignored local logs under this worktree's `build/`:
+`bluetooth-observation-6c59dc9-{full,lint,format}.log`;
+`bluetooth-observation-admission.log` retains the standalone 66-check run.
+Offline developer-tool fixtures passed in `bluetooth-observation-tools.log`;
+touched shell syntax and whitespace checks passed. Local link checks resolved
+87 relative documentation paths. Earlier failed logs remain alongside these;
+they are not substituted for the final passing revision.
+
+Independent review is required before merge. The implementation does not prove
+why the running helper returned contradictory data, that blueutil can control
+those devices, or that a real user's installed app loaded this new code.
+
+### Independent review blocked `6c59dc9`
+
+The passing checks above missed two confirmed regressions: pre-reconnect helper
+inventory remained in presentation after automatic connection, and saved/native
+address spelling could fail exact helper target lookup and manual toggling.
+The reviewer also saw one unexplained exit-75 subprocess fixture failure before
+eight subsequent passes. Those passing reruns do not resolve the flake. Fixes,
+targeted red/green evidence and independent follow-up are required before merge.
