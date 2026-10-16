@@ -206,6 +206,7 @@ func runUITests() throws {
     runSetupActivationOrderingTests()
     runSetupOutcomeTests()
     runNativeUIInteractionTests()
+    runPresentationDisplayRefreshTests()
     runSetupDesktopIntentTests()
     runSetupDesktopPermissionTests()
 }

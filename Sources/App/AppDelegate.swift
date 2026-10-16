@@ -57,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var arrangementWindow: NSWindow?
     private var openArrangementWhenReady = CommandLine.arguments.contains("--arrange")
     private var screenObserver: NSObjectProtocol?
+    private var displayWakeObserver: NSObjectProtocol?
     private var guiTestTarget: String?
     private var guiTestStarted = false
     private var guiTestFinished = false
@@ -85,7 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let restartAnimationClients: () -> Void
     private let controlStateSnapshot: (() -> SystemControlLifecycle.State)?
     private let displayRecoveryPending: () -> Bool
-    private let displaySnapshotRefresh: (() -> Void)?
+    private let displaySnapshotRefresh: (() throws -> Void)?
     // UI counts and controller snapshots can lag a committed helper journal by
     // the gate's quiet period. They must never decide recovery ownership.
     private var needsDisplayRecovery: Bool { displayRecoveryPending() || rollbackUUID != nil }
@@ -100,7 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
           restartAnimationClients: @escaping () -> Void = { _ = try? CommandRunner().run("/usr/bin/killall", ["Dock", "Finder"]) },
           controlStateSnapshot: (() -> SystemControlLifecycle.State)? = nil,
           displayRecoveryPending: (() -> Bool)? = nil,
-          displaySnapshotRefresh: (() -> Void)? = nil,
+          displaySnapshotRefresh: (() throws -> Void)? = nil,
           transactions: HostTransactions = HostTransactions(),
           loginService: LoginServicing = SystemLoginService(),
           diagnostics: Diagnostics = .shared,
@@ -192,30 +193,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         do { try safety.start() }
         catch { showError(ToggleError(message: "Could not start the recovery watchdog: \(error.localizedDescription)")) }
-        displayRefresh.onSettlingChanged = { [weak self] settling in
-            guard let self else { return }
-            logger.notice("Display refresh settling: \(settling, privacy: .public)")
-            model.displaySettling = settling
-            if settling { layoutFresh = false }
-            refreshPreferences()
-        }
+        configureDisplayRefresh()
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "Fix macOS")
         item.button?.target = self
         item.button?.action = #selector(toggleDashboard)
-        popover.behavior = .transient
-        popover.animates = false
-        popover.contentSize = NSSize(width: PopupSizing.width, height: 160)
-        popover.contentViewController = NSHostingController(rootView: QuickActionsView(model: model, onResize: { [weak self] size in
-            // Defer native resizing out of the SwiftUI geometry update. The
-            // document measurement is independent of this viewport's height.
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                let bounded = NSSize(width: PopupSizing.width, height: min(size.height, model.popupHeight, 650))
-                guard popover.contentSize != bounded else { return }
-                popover.contentSize = bounded
-            }
-        }))
+        configurePopover()
         updateModules()
         if animations.recoveryRequired {
             setAnimations(false, recoverOnly: true)
@@ -241,6 +224,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if CommandLine.arguments.contains("--show-dashboard"), !DashboardNavigation.launch(arguments: CommandLine.arguments).isSetup {
             DispatchQueue.main.async { [weak self] in self?.showDashboard() }
         }
+    }
+
+    private func configureDisplayRefresh() {
+        guard displayRefresh.onSettlingChanged == nil else { return }
+        displayRefresh.onSettlingChanged = { [weak self] settling in
+            guard let self else { return }
+            logger.notice("Display refresh settling: \(settling, privacy: .public)")
+            model.displaySettling = settling
+            if settling { layoutFresh = false }
+            refreshPreferences()
+        }
+    }
+
+    private func configurePopover() {
+        configureDisplayRefresh()
+        guard popover.contentViewController == nil else { return }
+        popover.behavior = .transient
+        popover.animates = false
+        popover.contentSize = NSSize(width: PopupSizing.width, height: 160)
+        popover.contentViewController = NSHostingController(rootView: QuickActionsView(model: model, onResize: { [weak self] size in
+            // Defer native resizing out of the SwiftUI geometry update. The
+            // document measurement is independent of this viewport's height.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let bounded = NSSize(width: PopupSizing.width, height: min(size.height, model.popupHeight, 650))
+                guard popover.contentSize != bounded else { return }
+                popover.contentSize = bounded
+            }
+        }))
     }
 
     // Host-side barrier, not a UI-only disable: callbacks retained by views also
@@ -636,19 +648,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             screenObserver = NotificationCenter.default.addObserver(
                 forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
             ) { [weak self] _ in
-                self?.displayRefresh.requestRefresh()
-                DispatchQueue.main.async { [weak self] in
-                    self?.spaces?.suspend()
-                    self?.refreshPreferences()
-                }
+                self?.displayConfigurationChanged()
             }
         } else if !observeScreens, let screenObserver {
             NotificationCenter.default.removeObserver(screenObserver)
             self.screenObserver = nil
         }
+        if observeScreens && displayWakeObserver == nil {
+            displayWakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+            ) { [weak self] _ in self?.displayConfigurationChanged() }
+        } else if !observeScreens, let displayWakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(displayWakeObserver)
+            self.displayWakeObserver = nil
+        }
         if modules.needsDisplays || recoveryNeeded { displayRefresh.requestRefresh() }
         else {
             controller = nil
+            layoutFresh = false
             displayRefresh.cancel()
             model.displaySettling = false
             model.monitors = []
@@ -671,23 +688,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func toggleDashboard() {
         if popover.isShown { popover.performClose(nil) }
-        else { model.launchWidget = nil; refreshPreferences(); showDashboard(); displayRefresh.requestRefresh() }
+        else { model.launchWidget = nil; refreshPreferences(); showDashboard() }
+    }
+
+    private func displayConfigurationChanged() {
+        displayRefresh.requestRefresh()
+        DispatchQueue.main.async { [weak self] in
+            self?.spaces?.suspend()
+            self?.refreshPreferences()
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         refreshPreferences()
         showDashboard()
-        displayRefresh.requestRefresh()
         return true
     }
 
     private func showDashboard() {
+        refreshDisplaysForPresentation()
         if model.navigation.isSetup {
             let group = model.navigation.feature.map(SettingsGroup.forFeature)
             model.navigation = DashboardNavigation()
             showSettings(group); return
         }
         guard let button = item.button, !popover.isShown else { return }
+        presentDashboard(relativeTo: button)
+    }
+
+    /// The same native popup path can use a fixture-owned anchor without starting
+    /// the application, watchdog, feature owners or a real status item.
+    @discardableResult
+    func presentDashboard(relativeTo button: NSView) -> NSView? {
+        guard !popover.isShown else { return popover.contentViewController?.view }
+        configurePopover()
         model.popupHeight = max(1, (button.window?.screen?.visibleFrame.height ?? 700) - 80)
         popover.contentSize.height = min(popover.contentSize.height, model.popupHeight, 650)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
@@ -705,6 +739,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 "left_margin": String(Double(frame.minX - visible.minX)), "right_margin": String(Double(visible.maxX - frame.maxX)),
                 "bottom_margin": String(Double(frame.minY - visible.minY)), "top_margin": String(Double(visible.maxY - frame.maxY))])
         }
+        refreshDisplaysForPresentation()
+        return popover.contentViewController?.view
+    }
+
+    private func refreshDisplaysForPresentation() {
+        guard modules.needsDisplays || needsDisplayRecovery, !recovering else { return }
+        configureDisplayRefresh()
+        displayRefresh.requestRefreshForPresentation(snapshotIsFresh: layoutFresh)
     }
 
     private func showActivity() {
@@ -986,7 +1028,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func refreshDisplaySnapshot() {
-        if let displaySnapshotRefresh { displaySnapshotRefresh(); return }
+        if let displaySnapshotRefresh {
+            layoutFresh = false
+            do { try displaySnapshotRefresh(); layoutFresh = !displayRefresh.isSettling }
+            catch { showError(error) }
+            return
+        }
         guard !recovering, modules.needsDisplays || needsDisplayRecovery else { return }
         if controller == nil {
             do { controller = try DisplayController() }
@@ -995,14 +1042,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let controller else { return }
         do { try controller.refreshDisplays() }
         catch { showError(error); return }
-        item.button?.toolTip = "Fix macOS\n" + controller.status()
+        item?.button?.toolTip = "Fix macOS\n" + controller.status()
         model.monitors = controller.monitors
         model.activeMonitorCount = (try? controller.activeIDs().count) ?? 0
         model.displaySupported = controller.supported && safety.isReady
         model.disabledMonitorCount = controller.disabledUUIDs.count
         model.pendingArrangement = controller.hasPendingArrangement
         model.currentLayout = modules.enabled.contains(.arrangement) ? (try? controller.currentLayout()) ?? [] : []
-        layoutFresh = true
+        layoutFresh = !displayRefresh.isSettling
         reconcileWindows()
         model.layoutPreviews = modules.enabled.contains(.arrangement) && modules.enabled.contains(.monitors) ? (try? controller.layoutPreviews()) ?? [:] : [:]
         updateScreenEdges()
@@ -1476,5 +1523,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         rollbackTimer?.invalidate()
         displayRefresh.cancel()
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
+        if let displayWakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(displayWakeObserver) }
     }
 }

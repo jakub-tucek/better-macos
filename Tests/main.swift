@@ -92,6 +92,12 @@ func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
     print("PASS: \(message)")
 }
 
+if CommandLine.arguments.contains("--presentation-display-refresh-regressions") {
+    runPresentationDisplayRefreshTests()
+    print("\(checks) presentation display refresh regression checks passed")
+    exit(0)
+}
+
 final class FakeWindowBackend: WindowPositionBackend {
     var permitted = true
     var screens = [WindowDisplay(id: "A", bounds: CGRect(x: 0, y: 25, width: 1000, height: 700))]
