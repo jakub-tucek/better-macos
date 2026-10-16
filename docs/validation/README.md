@@ -16,6 +16,7 @@ to the current documentation. Native/hardware acceptance remains open.
 - [Bounded diagnostics and typed Bluetooth/login hooks](../diagnostics.md#main-integration--2026-10-15)
 - [Session Activity integration and native row anchoring](../activity.md#main-integration--2026-10-15)
 - [Presentation-only display refresh and first-click regression](presentation-display-refresh.md#main-integration--2026-10-16)
+- [Gesture terminal-attempt C fix and remaining offline Swift failures](gesture-terminal-failures.md#main-integration--2026-10-16)
 - [Keep awake](awake.md) · [Window positions](window-positions.md)
 - [Clipboard UI](clipboard-ui.md) · [Compact UI](compact-ui.md)
 - [UI replacement](ui-replacement.md) · [Release UI polish](release-ui.md)
@@ -26,6 +27,7 @@ Latest integrated check · 2026-10-16:
 
 | Tested code | Result |
 | --- | --- |
+| `cd811ea` · [gesture terminal attempt](gesture-terminal-failures.md#main-integration--2026-10-16) | 4,633 legacy, 81 separate diagnostics, 114 separate C assertions, 10 policy/3 suites, 13 installer; unmodified lint/format across 61 files passed. Swift failure characterization remains opt-in; no live incident-fix claim. |
 | `0c596f8` · [display presentation](presentation-display-refresh.md#main-integration--2026-10-16) | 4,633 legacy (includes 37 presentation + 27 Activity), 81 separate diagnostics, 10 policy/3 suites, 13 installer; unmodified normal-path lint/format across 60 files passed. Live acceptance remains open. |
 
 ## Acceptance matrix and baseline · 2026-10-15

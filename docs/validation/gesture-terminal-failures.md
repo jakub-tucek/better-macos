@@ -1,6 +1,8 @@
 # Offline gesture terminal failures · 2026-10-16
 
-Status: **C instant terminal-attempt fix implemented; independent review pending**.
+Status: **C instant terminal-attempt fix independently reviewed CLEAN and integrated**;
+see [main evidence](#main-integration--2026-10-16). Source-worktree records below
+retain their historical review status and tested source state.
 Swift drain reporting and stale physical tracking remain unchanged and unsafe in
 the isolated proofs. Whole-desktop freeze cause remains unresolved.
 
@@ -97,6 +99,68 @@ Lint/format/tooling evidence: `build/gesture-terminal-{lint,format,tools}.log`.
 No app was launched, installed, quit or relaunched. No live event post, tap
 installation, Bluetooth action, Dock/watchdog signal or TCC modification occurred.
 Independent review and native/hardware acceptance remain pending.
+
+## Main integration · 2026-10-16
+
+The parent supplied independent **CLEAN** review of the narrow C change and offline
+proofs: **114 C assertions passed**, original-source negative control had **four
+failures**, and allocation/release balance was **14/14**. Those are reviewer results,
+separate from the integrated run below; no live incident recovery was established.
+
+| Reviewed source | Main commit |
+| --- | --- |
+| `21ec11a` — offline terminal-failure proofs | `3569037` |
+| `3d59d3c` — unconditional terminal attempt after successful began | `cd811ea` |
+
+Both unique commits integrated in order, without conflicts, on `d7c8da9`.
+Pre-existing untracked `.worktrees/` work was preserved. Pending Bluetooth branches
+were not integrated. Production app Swift, vendor Swift/interceptor, public C
+headers, payload implementation, license contents and host quit/admission contracts
+are byte-identical to prior main. Only the vendored C sequencing changes production
+behavior; this remains a compiled source dependency, not a runtime plugin.
+
+At **`cd811eabd366e11b60b5322b89c7e72829fff5b3`**, one full standalone CLT
+`bash test.sh` run passed these separate totals:
+
+| Check | Integrated result |
+| --- | --- |
+| Legacy isolated | **4,633**, including 37 presentation and 27 Activity checks |
+| Diagnostics | **81**, plus no-flush/no-sync-wait safety source guard |
+| Offline C terminal regression | **114 assertions**, zero failures |
+| Swift Testing policy | **10 tests / 3 suites** |
+| Mocked installer | **13 scenarios** |
+| Build/compiler and real/relocated bundle | Passed, including explicit C inputs, static Clipboard policy ownership, complete notices/provenance and strict configured-certificate signature |
+
+The 114 C assertions are not included in or added to the legacy count. Log:
+`build/gesture-terminal-integration-clt.log`; it records HEAD, scoped standalone
+CLT compiler/SDK paths, Swift 6.4 / SDK 27.0, arm64 and explicit unset `SDKROOT`.
+Source/built plist lint and metadata passed: version `0.4`, build `4`, arm64/macOS
+15+, SDK 27.0 and embedded revision equal the exact tested source above.
+
+Unmodified pinned lint/format passed across **61 files**, without rule/baseline
+changes or rewrites. Offline tooling and CI whitespace fixtures passed. Logs:
+`build/gesture-terminal-integration-{lint,format,tools,ci}.log`.
+Production/tests/vendor inputs exactly match the reviewed source branch.
+All **16 shell inputs**, **257 local links and 48 fragments across 34 tracked
+Markdown documents**, compiler-input ownership assertions and `git diff --check`
+passed. Tooling, CI, lint baseline and all prior app Swift inputs are unchanged.
+
+Separate offline `--characterize` completed with exit 0 and reproduced ignored
+animated terminal failure (one failure, one Void drain completion, zero reported
+failures) and 100/100 suppressed companion events at one-hour-later timestamps;
+ordinary clicks still pass. Explicit opt-in `--require-safety` exited **1**, as
+expected, with the C regression still green. Logs:
+`build/gesture-terminal-integration-{characterize,require-safety}.log`.
+Only C safety runs in the default suite. Neither these proofs nor a successful
+post attempt establish delivery, Dock repair or the cause/fix of the desktop incident.
+No Swift result contract, interceptor timeout, persistent marker or new quit veto
+was implemented; later design below remains unapproved.
+
+No production app launch/quit/relaunch/install, live input posting/tap, Bluetooth or
+device action, preference/permission/TCC change, Dock signal, push/tag or publication
+occurred. The current running app was preserved; rebuilding the on-disk bundle does
+not update its loaded image. Hardware/live acceptance remains open. The separate
+evidence-only commit does not claim an artifact rebuilt at its own revision.
 
 ## Next design, not approved for implementation
 
