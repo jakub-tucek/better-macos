@@ -101,3 +101,40 @@ Temp-path lint reported the four unchanged WindowPositions force-cast exceptions
 matching the already documented path-dependent baseline limitation. No baseline,
 tooling configuration or CI file was changed. Final lint/tooling checks must use
 the normal-path validation worktree; temp-path failure is not counted as a pass.
+
+### Frozen validation · `5fcc364`
+
+Clean detached normal-path worktree at
+`5fcc36405e404cacfff4fe6641b74ff7a743f513`, command-scoped standalone CLT and
+explicit ad-hoc signing:
+
+```sh
+DEVELOPER_DIR=/Library/Developer/CommandLineTools MAC_UTILS_SIGNING_IDENTITY=- bash test.sh
+bash scripts/dev lint
+bash scripts/dev format-check
+bash scripts/dev-tools-test.sh
+bash scripts/ci-whitespace-test.sh
+git diff --check
+```
+
+Results:
+
+- **4,765 legacy isolated checks**, **81 diagnostics**, **114 instant gesture
+  safety checks**, **39 focused permission-context checks**, **10 policy tests in
+  3 suites**, and **13 mocked installer scenarios** passed.
+- App build, strict ad-hoc signature, complete notices, relocated-bundle and
+  build-input/failure fixtures passed. Embedded bundle revision is exactly
+  `5fcc36405e404cacfff4fe6641b74ff7a743f513`.
+- Unmodified pinned lint/format passed across **63 Swift files**. Offline tooling,
+  CI-whitespace fixtures and whitespace checks passed without baseline changes.
+- The corrected **170-check host/native loop** passed, then passed three
+  consecutive reruns in the implementation worktree. Sentinel identities and
+  raw payloads were absent from the captured production diagnostic records.
+
+Normal-path logs: `build/discovery-visibility-{frozen-full,lint,format,tools,ci-whitespace}.log`.
+Implementation logs: `build/discovery-visibility-{copy-green,focused-repeat,permission-final}.log`.
+Both worktrees were clean at the implementation commit before this evidence-only
+addition. **Independent review is still required before integration.** No merge,
+push, main-build replacement, installation, app relaunch/quit, live helper/device
+operation, live preference change or permission request was performed. The live
+discovery/radio cause and hardware acceptance remain open.
