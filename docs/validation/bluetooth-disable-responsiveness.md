@@ -200,6 +200,42 @@ bundle built at its own revision.
 Independent review remains required before merge. This correction neither
 reproduces nor fixes whole-desktop loss of clicks after permission revocation.
 
+### Independent-review concern: ambient legacy-service state
+
+The review's sole reported concern was valid: `importLegacyConfiguration: false`
+does not bypass `legacyServicePresent`. At `c8a44b4`, the focused test's final
+automatic-connect regression could be suppressed by a real
+`~/Library/LaunchAgents/com.user.bluetooth-autoconnect.plist`. Earlier passing
+results did not establish independence from that ambient file.
+
+Fixture-only correction **`09283e62a579362840cc0631643e73466a1783a1`** sets
+`bluetooth.legacyTakenOver = true` in the unique isolated defaults suite before
+constructing the focused owner, following the existing Audio integration test.
+Audit also found the new host error/recovery fixture uses automatic reconnection;
+it now sets the same isolated flag before construction. The blocked-disable/late
+takeover fixture instead explicitly sets false: automatic reconnection is off,
+and that fixture must verify that late takeover does not commit the choice.
+
+The source predicate is `fileExists(...) && !legacyTakenOver`. The true suite
+flag makes the result false regardless of real file presence. **The getter still
+performs its existing file-existence read first**; no claim is made that this
+fixture skips that read. No injectable legacy path exists, and no production
+abstraction or source change was introduced. No real LaunchAgent file or actual
+user preference was created, edited or deleted. The focused regression additionally
+requires `legacyServicePresent == false` in its existing final assertion.
+
+At the exact fixture correction revision, the targeted executable passed all
+**32 checks** (`build/bluetooth-fixture-isolation-focused.log` in the implementation
+worktree). Unmodified normal-path lint/format passed across **62 files** in the
+validation worktree (`build/bluetooth-fixture-isolation-{lint,format}.log`). Source
+comparison confirmed production `Sources/` is unchanged from `c8a44b4`; flag-order,
+predicate and whitespace checks passed. The full suite was **not rerun** for this
+fixture-only follow-up; the earlier full-suite evidence remains bound to `c8a44b4`.
+No app, TCC, hardware, launchctl or live preference action occurred.
+
+**Independent review follow-up is mandatory before merge.** The concern is fixed
+locally, not claimed independently cleared. Nothing was merged or pushed.
+
 ## Initial host-toggle investigation (superseded incident scope)
 
 `Tests/BluetoothErrorRecoveryTests.swift` now exercises actual `AppDelegate`
