@@ -32,8 +32,11 @@ private final class ObservationRunner: CommandRunning {
 private final class ObservationProcessResult: @unchecked Sendable {
     private let lock = NSLock()
     private var stored: Result<Data, Error>?
+    private var storedTrace: BluetoothProfilerTrace?
     func finish(_ result: Result<Data, Error>) { lock.lock(); stored = result; lock.unlock() }
     var result: Result<Data, Error>? { lock.lock(); defer { lock.unlock() }; return stored }
+    func capture(_ trace: BluetoothProfilerTrace) { lock.lock(); storedTrace = trace; lock.unlock() }
+    var trace: BluetoothProfilerTrace? { lock.lock(); defer { lock.unlock() }; return storedTrace }
 }
 
 private func profilerFixture(power: Any = "attrib_on", connected: [[String: Any]] = [], disconnected: [[String: Any]] = []) -> [String: Any] {
@@ -340,17 +343,21 @@ private func runBluetoothObservationModuleFixture(_ nativeData: Data, logger: Di
     expect(stopped == 1 && heartbeat && cancelModule.readback == nil, "stop cancels native work, drains once and rejects late presentation while main stays responsive")
 }
 
-private func runBluetoothProfilerProcessFixtures() throws {
+func runBluetoothProfilerProcessFixtures(repetitions: Int = 1) throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("profiler-fixture-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
-    let script = root.appendingPathComponent("profiler")
+    var lastTrace: BluetoothProfilerTrace?
     func run(_ body: String, timeout: TimeInterval = 2, limit: Int = 4096, continuing: @escaping () -> Bool = { true }) -> Result<Data, Error> {
+        lastTrace = nil
         do {
+            // Never overwrite a path previously handed to an interpreter.
+            let script = root.appendingPathComponent("profiler-\(UUID().uuidString)")
             try ("#!/bin/sh\n" + body + "\n").write(to: script, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
             let box = ObservationProcessResult()
-            let process = BluetoothProfilerProcess(executable: script.path, arguments: [], timeout: timeout, outputLimit: limit)
+            let process = BluetoothProfilerProcess(executable: script.path, arguments: [], timeout: timeout, outputLimit: limit,
+                                                   trace: { box.capture($0) })
             DispatchQueue.global().async { box.finish(Result { try process.read(shouldContinue: continuing) }) }
             var heartbeat = false
             DispatchQueue.main.async { heartbeat = true }
@@ -358,16 +365,28 @@ private func runBluetoothProfilerProcessFixtures() throws {
             let deadline = Date().addingTimeInterval(4)
             while box.result == nil && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
             expect(heartbeat && box.result != nil, "bounded process runs off main and completes once while main queue advances")
+            lastTrace = box.trace
             return box.result ?? .failure(BluetoothReadIssue.timeout)
         } catch { return .failure(error) }
     }
     func failure(_ result: Result<Data, Error>, _ issue: BluetoothReadIssue) {
-        if case .failure(let error) = result { expect(error as? BluetoothReadIssue == issue, "bounded process reports \(issue)") }
-        else { expect(false, "bounded process reports \(issue)") }
+        let actual: BluetoothReadIssue?
+        if case .failure(let error) = result { actual = error as? BluetoothReadIssue }
+        else { actual = nil }
+        if actual != issue {
+            print("PROCESS expected=\(issue.rawValue) actual=\(actual?.rawValue ?? "success_or_unclassified") wait_status=\(lastTrace?.waitStatus ?? -1) stdout_eof=\(lastTrace?.stdoutEOF ?? false) stderr_eof=\(lastTrace?.stderrEOF ?? false) bytes=\(lastTrace?.outputBytes ?? -1) elapsed_ms=\(lastTrace?.elapsedMS ?? -1)")
+        }
+        expect(actual == issue, "bounded process reports \(issue)")
     }
-    let finite = run("printf '{}' ")
-    expect((try? finite.get()) == Data("{}".utf8), "bounded subprocess captures finite fixture output")
-    failure(run("echo SENSITIVE-ERROR >&2; exit 75"), .exitFailure)
+    for iteration in 1...repetitions {
+        let finite = run("printf '{}' ")
+        expect((try? finite.get()) == Data("{}".utf8), "bounded subprocess captures finite fixture output")
+        for body in ["echo SENSITIVE-ERROR >&2; exit 75", "exec 1>&- 2>&-; /bin/sleep 0.02; exit 75", "/bin/sleep 0.03 &\nprintf '{}'; exit 75"] {
+            failure(run(body), .exitFailure)
+            expect(lastTrace?.waitStatus == 75 << 8 && lastTrace?.stdoutEOF == true && lastTrace?.stderrEOF == true,
+                   "exit-75 protocol collects both pipe EOFs and actual child status, round \(iteration)")
+        }
+    }
     failure(run("while :; do echo SENSITIVE-OUTPUT; done", limit: 128), .outputLimit)
     let start = ProcessInfo.processInfo.systemUptime
     failure(run("trap '' TERM; while :; do /bin/sleep 0.01; done", timeout: 0.2), .timeout)

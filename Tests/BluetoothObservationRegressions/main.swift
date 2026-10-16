@@ -8,5 +8,9 @@ func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
 }
 if CommandLine.arguments.contains("--automatic") { try runBluetoothAutomaticPresentationTests() }
 else if CommandLine.arguments.contains("--identity") { try runBluetoothIdentityTests() }
+else if let index = CommandLine.arguments.firstIndex(of: "--process-repeat"), CommandLine.arguments.count > index + 1,
+        let count = Int(CommandLine.arguments[index + 1]), (1...100).contains(count) {
+    try runBluetoothProfilerProcessFixtures(repetitions: count)
+}
 else { try runBluetoothObservationTests() }
 print("\(checks) isolated Bluetooth observation checks passed; no live Bluetooth or profiler calls.")

@@ -83,10 +83,18 @@ gets 150 ms before SIGKILL of only the still-running owned subprocess. Pipe
 holders cannot leave blocked reader workers. Read handles close on completion;
 stderr contents and subprocess error text never escape this boundary.
 
-Foundation owns asynchronous child reaping. After forced termination, worker
-cleanup has a one-second ceiling; an OS-delayed exit can outlive the observation
-callback while Foundation retains reaping ownership. This is not a guarantee
-against an unkillable kernel-stalled child. No descendant process is killed.
+The dedicated worker owns `posix_spawn`, pipe descriptors and nonblocking
+`waitpid` collection. Pipe EOF and the child's actual collected exit status must
+both be known before successful completion. No asynchronous Foundation
+`isRunning`/`terminationStatus` pair decides success. The owned PID is not reaped
+until this worker collects its status, preventing normal PID reuse before a
+termination signal. Other parent descriptors are close-on-exec by default.
+
+After forced termination, worker cleanup has a one-second ceiling. An OS-delayed
+exit can outlive the observation callback; an exit dispatch source retains
+nonblocking reaping ownership, without a blocked reader or reaper worker. This
+is not a guarantee against an unkillable kernel-stalled child. No descendant
+process is killed.
 
 ## Privacy and validation
 
