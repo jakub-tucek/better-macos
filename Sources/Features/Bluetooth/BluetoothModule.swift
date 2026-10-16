@@ -86,6 +86,12 @@ enum BluetoothDiscoveryRead: Equatable {
     }
 }
 
+private struct BluetoothControlObservationFailure: LocalizedError {
+    let underlying: Error
+    let observedDevices: [BluetoothDevice]?
+    var errorDescription: String? { underlying.localizedDescription }
+}
+
 /// Bluetooth reconnection and audio-race protection, independent of menu UI.
 struct BluetoothBackend {
     let runner: CommandRunning
@@ -133,14 +139,41 @@ struct BluetoothBackend {
     }
 
     func setConnected(_ connected: Bool, address: String) throws -> [BluetoothDevice] {
-        guard try isPoweredOn() else { throw ToggleError(message: "Bluetooth is off. Turn it on before connecting a device.") }
-        _ = try runner.run(blueutil, [connected ? "--connect" : "--disconnect", address])
+        let poweredOn: Bool
+        do { poweredOn = try isPoweredOn() }
+        catch {
+            publishPrimary(power: nil, devices: nil)
+            throw BluetoothControlObservationFailure(underlying: error, observedDevices: nil)
+        }
+        guard poweredOn else {
+            publishPrimary(power: false, devices: nil)
+            throw BluetoothControlObservationFailure(underlying: ToggleError(message: "Bluetooth is off. Turn it on before connecting a device."), observedDevices: nil)
+        }
+        do { _ = try runner.run(blueutil, [connected ? "--connect" : "--disconnect", address]) }
+        catch {
+            // A failed command may still have changed state. Only a fresh helper
+            // read can authorize continuing this cycle, never native inventory.
+            let observed = try? devices()
+            publishPrimary(power: true, devices: observed)
+            throw BluetoothControlObservationFailure(underlying: error, observedDevices: observed)
+        }
         waitForConnection()
-        let updated = try devices()
+        let updated: [BluetoothDevice]
+        do { updated = try devices() }
+        catch {
+            publishPrimary(power: true, devices: nil)
+            throw BluetoothControlObservationFailure(underlying: error, observedDevices: nil)
+        }
+        publishPrimary(power: true, devices: updated)
         guard updated.first(where: { $0.address == address })?.connected == connected else {
-            throw ToggleError(message: "Bluetooth device did not \(connected ? "connect" : "disconnect"). Check its power and range.")
+            throw BluetoothControlObservationFailure(underlying: ToggleError(message: "Bluetooth device did not \(connected ? "connect" : "disconnect"). Check its power and range."), observedDevices: updated)
         }
         return updated
+    }
+
+    private func publishPrimary(power: Bool?, devices: [BluetoothDevice]?) {
+        guard observationService != nil else { return }
+        onObservation?(BluetoothReadback(helperPower: power, helperDevices: devices, native: nil, nativeIssue: nil, nativeStale: false))
     }
 
     func reconcile(_ configuration: BluetoothConfiguration, progress: ((BluetoothProgress) -> Void)? = nil,
@@ -194,6 +227,10 @@ struct BluetoothBackend {
             progress?(.connecting(target))
             do { current = try setConnected(true, address: address) }
             catch {
+                if let failure = error as? BluetoothControlObservationFailure {
+                    guard let observed = failure.observedDevices else { throw error }
+                    current = observed
+                }
                 firstFailure = firstFailure ?? ToggleError(message: "\(target.name): \(error.localizedDescription)")
                 progress?(.failed(target, error.localizedDescription))
                 continue // An unavailable device must not starve later targets.
@@ -515,8 +552,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         backend.onObservation = { [weak self] observation in
             DispatchQueue.main.async {
                 guard !cancellation.isCanceled, let self, !self.stopped else { return }
-                self.readback = observation
-                if let power = observation.helperPower { self.radioPoweredOn = power }
+                self.applyReadback(observation)
                 self.onChange?()
             }
         }
@@ -579,7 +615,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     private func startPendingManual() {
-        guard !stopped, !busy, let backend, let request = pendingManual else { return }
+        guard !stopped, !busy, var backend, let request = pendingManual else { return }
         guard controlsAvailable else {
             pendingManual = nil
             if let activityPendingManual { activityJournal?.finish(activityPendingManual, result: .blocked) }
@@ -592,6 +628,15 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         pendingManual = nil
         backend.observationService?.invalidate()
         readback = nil
+        let cancellation = BluetoothCycleCancellation()
+        cycleCancellation = cancellation
+        backend.onObservation = { [weak self] observation in
+            DispatchQueue.main.async {
+                guard !cancellation.isCanceled, let self, !self.stopped else { return }
+                self.applyReadback(observation)
+                self.onChange?()
+            }
+        }
         cancelActivityConnections()
         activityManual = activityPendingManual
         activityPendingManual = nil
@@ -688,7 +733,8 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         activity = nil
         switch result {
         case .success(let updated):
-            if manualOperation != nil, backend?.observationService != nil {
+            if backend?.observationService != nil, readback?.controlsBlocked != true,
+               manualOperation != nil || readback?.native == nil {
                 // Only the original control path verifies manual operations.
                 readback = BluetoothReadback(helperPower: radioPoweredOn, helperDevices: updated,
                                              native: nil, nativeIssue: nil, nativeStale: false)
@@ -740,6 +786,18 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
             onAudioOutputRequested?(name)
         } else { pendingAudioName = nil }
         startPendingManual()
+    }
+
+    private func applyReadback(_ observation: BluetoothReadback) {
+        readback = observation
+        if let power = observation.helperPower { radioPoweredOn = power }
+        if observation.native == nil, !observation.controlsBlocked, let updated = observation.helperDevices {
+            if devices.contains(where: { old in old.connected && !updated.contains { $0.address == old.address && $0.connected } }) {
+                audioPolicyGeneration = UUID()
+            }
+            devices = updated
+        }
+        if observation.controlsBlocked, observation.helperDevices == nil { observationStale = true }
     }
 
     private func finishStoppedOperation() -> Bool {

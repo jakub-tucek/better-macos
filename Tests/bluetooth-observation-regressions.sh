@@ -9,8 +9,8 @@ xcrun swiftc -swift-version 5 -warnings-as-errors -target arm64-apple-macos15.0 
     Sources/Features/Bluetooth/BluetoothObservation.swift Sources/Features/Bluetooth/BluetoothProfilerProcess.swift \
     Tests/BluetoothPermissionRegressions/Support.swift Tests/BluetoothObservationTests.swift Tests/BluetoothObservationRegressions/main.swift \
     -framework AppKit -framework CoreBluetooth -framework CoreAudio -o "$ROOT/tests"
-python3 - "$ROOT/tests" <<'PY'
+python3 - "$ROOT/tests" "$@" <<'PY'
 import subprocess
 import sys
-subprocess.run([sys.argv[1]], check=True, timeout=30)
+subprocess.run(sys.argv[1:], check=True, timeout=60)
 PY

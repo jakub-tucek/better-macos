@@ -6,5 +6,6 @@ func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
     guard condition() else { print("FAIL: \(message)"); exit(1) }
     print("PASS: \(message)")
 }
-try runBluetoothObservationTests()
+if CommandLine.arguments.contains("--automatic") { try runBluetoothAutomaticPresentationTests() }
+else { try runBluetoothObservationTests() }
 print("\(checks) isolated Bluetooth observation checks passed; no live Bluetooth or profiler calls.")

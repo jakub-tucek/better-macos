@@ -135,9 +135,85 @@ func runBluetoothObservationTests() throws {
     expect(waiting.controlsBlocked && ProcessInfo.processInfo.systemUptime - before < 0.1, "overlapping reads coalesce without blocking caller")
     release.signal(); expect(done.wait(timeout: .now() + 2) == .success && coalescedFetches == 1, "coalesced request launches once")
     try runBluetoothObservationModuleFixture(nativeData, logger: logger)
+    try runBluetoothAutomaticPresentationTests()
     try runBluetoothProfilerProcessFixtures()
     expect(logger.flushForTesting(timeout: 2), "observation diagnostics flush only in tests")
     expect(!sink.text.contains("SENSITIVE") && !sink.text.contains("AA:BB") && !sink.text.contains("aa-bb"), "structured observation logs omit names, IDs, raw reports and errors")
+}
+
+private final class ObservationMutationRunner: CommandRunning {
+    private let lock = NSLock()
+    private var recorded = [[String]]()
+    var inventory: [BluetoothDevice]
+    var failing = Set<String>()
+    var failReadAfterMutation = false
+    private var mutated = false
+    init(_ inventory: [BluetoothDevice]) { self.inventory = inventory }
+    func run(_ executable: String, _ arguments: [String]) throws -> String {
+        lock.lock(); defer { lock.unlock() }
+        recorded.append(arguments)
+        if arguments == ["--power"] { return "1" }
+        if arguments == ["--paired", "--format", "json"] {
+            if mutated && failReadAfterMutation { throw ToggleError(message: "Injected read failure") }
+            let rows = inventory.map { ["address": $0.address, "name": $0.name, "connected": $0.connected] as [String: Any] }
+            return String(decoding: try JSONSerialization.data(withJSONObject: rows), as: UTF8.self)
+        }
+        if arguments.count == 2, ["--connect", "--disconnect"].contains(arguments[0]) {
+            mutated = true
+            let address = arguments[1]
+            inventory = inventory.map { BluetoothDevice(address: $0.address, name: $0.name,
+                connected: $0.address == address ? arguments[0] == "--connect" : $0.connected) }
+            if failing.contains(address) { throw ToggleError(message: "Injected control failure") }
+            return ""
+        }
+        throw ToggleError(message: "Unexpected fixture command")
+    }
+    var calls: [[String]] { lock.lock(); defer { lock.unlock() }; return recorded }
+}
+
+func runBluetoothAutomaticPresentationTests() throws {
+    let first = BluetoothDevice(address: "aa-bb-cc-dd-ee-01", name: "First", connected: false)
+    let second = BluetoothDevice(address: "aa-bb-cc-dd-ee-02", name: "Second", connected: false)
+    for mode in ["success", "known-failure", "unknown-failure"] {
+        let suite = "fix-mac-os.observation-auto.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let registered = defaults.volatileDomain(forName: UserDefaults.registrationDomain)
+        defer { defaults.setVolatileDomain(registered, forName: UserDefaults.registrationDomain); defaults.removePersistentDomain(forName: suite) }
+        defaults.set([first.address, second.address], forKey: "bluetooth.autoAddresses")
+        defaults.set(true, forKey: "bluetooth.autoEnabled")
+        defaults.set(true, forKey: "bluetooth.legacyTakenOver")
+        defaults.set(false, forKey: "bluetooth.protectAudio")
+        defaults.set(false, forKey: "bluetooth.switchAudio")
+        let runner = ObservationMutationRunner([first, second])
+        if mode != "success" { runner.failing = [second.address] }
+        if mode == "unknown-failure" { runner.failReadAfterMutation = true }
+        let module = BluetoothModule(defaults: defaults,
+            backend: BluetoothBackend(runner: runner, blueutil: "/fixture/blueutil", audioTool: nil, waitForConnection: {},
+                                      observationService: BluetoothObservationService { _ in throw BluetoothReadIssue.unavailable }),
+            importLegacyConfiguration: false, authorizationProvider: { .allowedAlways })
+        defer { module.stop() }
+        func wait() {
+            let deadline = Date().addingTimeInterval(2)
+            while module.isBusy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
+            expect(!module.isBusy, "automatic presentation fixture drains")
+        }
+        module.poll(); wait()
+        if mode == "unknown-failure" {
+            expect(!module.controlsAvailable && module.readback?.helperDevices == nil,
+                   "failed post-mutation read marks primary state unknown and blocks controls")
+        } else {
+            expect(module.displayedDevices == module.devices && module.displayedDevices.allSatisfy(\.connected),
+                   "\(mode): presentation reflects latest helper read after automatic mutations")
+            expect(module.readback?.native == nil && module.readback?.helperDevices == module.devices,
+                   "\(mode): fresh primary evidence replaces pre-mutation presentation")
+            let shown = module.displayedDevices.first!
+            expect(shown.connected, "connected presentation offers Disconnect, never Connect")
+            module.autoEnabled = false; wait()
+            module.toggleConnection(shown.address); wait()
+            expect(runner.calls.last(where: { ["--connect", "--disconnect"].contains($0.first ?? "") }) == ["--disconnect", shown.address],
+                   "Disconnect presentation dispatches actual disconnect")
+        }
+    }
 }
 
 private func runBluetoothObservationModuleFixture(_ nativeData: Data, logger: Diagnostics) throws {
