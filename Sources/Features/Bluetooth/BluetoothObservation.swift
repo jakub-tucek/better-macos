@@ -18,6 +18,26 @@ enum BluetoothIdentity {
         guard let left = canonical(lhs), let right = canonical(rhs) else { return false }
         return left == right
     }
+
+    static func validate(_ devices: [BluetoothDevice], allowOpaque: Bool = false) throws {
+        var seen = Set<String>()
+        for device in devices {
+            guard let identity = canonical(device.address) ?? (allowOpaque && !device.address.isEmpty ? "opaque:\(device.address)" : nil) else {
+                throw BluetoothReadIssue.incompleteInventory
+            }
+            guard seen.insert(identity).inserted else { throw BluetoothReadIssue.duplicateIdentity }
+        }
+    }
+
+    /// Resolve against helper inventory, never native display rows. The raw ID
+    /// returned here is the only ID a control command may use.
+    static func resolve(_ address: String, in devices: [BluetoothDevice], allowOpaque: Bool = false) throws -> BluetoothDevice? {
+        try validate(devices, allowOpaque: allowOpaque)
+        guard let identity = canonical(address) else {
+            return allowOpaque ? devices.first { $0.address == address } : nil
+        }
+        return devices.first { canonical($0.address) == identity }
+    }
 }
 
 enum BluetoothReadIssue: String, Error {
@@ -114,7 +134,8 @@ struct BluetoothReadback {
     }
 
     var controlsBlocked: Bool {
-        helperPower == nil || helperDevices == nil || conflicting || nativeStale || nativeIssue != nil || native?.complete == false
+        if let helperDevices, (try? BluetoothIdentity.validate(helperDevices)) == nil { return true }
+        return helperPower == nil || helperDevices == nil || conflicting || nativeStale || nativeIssue != nil || native?.complete == false
     }
 
     var displayedPower: Bool? { native.map { $0.controller.poweredOn } ?? helperPower }

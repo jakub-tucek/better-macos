@@ -24,7 +24,7 @@ enum BluetoothPresentation {
 
     static func summary(enabled: Bool, selected: Set<String>, devices: [BluetoothDevice]) -> String {
         guard !selected.isEmpty else { return "Choose devices to reconnect below" }
-        let names = devices.filter { selected.contains($0.address) }.map(\.name)
+        let names = devices.filter { device in selected.contains { BluetoothIdentity.matches($0, device.address) } }.map(\.name)
         guard !names.isEmpty else { return "Selected devices are unavailable" }
         let selection = names.joined(separator: ", ")
         return enabled ? "Monitoring: \(selection)" : "Paused: \(selection)"
@@ -34,7 +34,7 @@ enum BluetoothPresentation {
 enum BluetoothPolicy {
     static func shouldPause(target: BluetoothDevice, devices: [BluetoothDevice], audioOutputs: Set<String>?, knownAudioAddresses: Set<String> = []) -> Bool {
         devices.contains { device in
-            device.connected && device.address != target.address && (knownAudioAddresses.contains(device.address) || (audioOutputs?.contains(device.name) ?? true))
+            device.connected && !BluetoothIdentity.matches(device.address, target.address) && (knownAudioAddresses.contains { BluetoothIdentity.matches($0, device.address) } || (audioOutputs?.contains(device.name) ?? true))
         }
     }
 }
@@ -129,7 +129,12 @@ struct BluetoothBackend {
         do { devices = try JSONDecoder().decode([BluetoothDevice].self, from: Data(json.utf8)) }
         catch { onDiscoveryRead?(.decodeFailed); throw error }
         onDiscoveryRead?(.parsed(devices.count))
+        try BluetoothIdentity.validate(devices, allowOpaque: observationService == nil)
         return devices.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    private func resolve(_ address: String, in devices: [BluetoothDevice]) throws -> BluetoothDevice? {
+        try BluetoothIdentity.resolve(address, in: devices, allowOpaque: observationService == nil)
     }
 
     private func outputs() throws -> Set<String>? {
@@ -149,7 +154,16 @@ struct BluetoothBackend {
             publishPrimary(power: false, devices: nil)
             throw BluetoothControlObservationFailure(underlying: ToggleError(message: "Bluetooth is off. Turn it on before connecting a device."), observedDevices: nil)
         }
-        do { _ = try runner.run(blueutil, [connected ? "--connect" : "--disconnect", address]) }
+        let target: BluetoothDevice
+        do {
+            let current = try devices()
+            guard let resolved = try resolve(address, in: current) else { throw ToggleError(message: "Bluetooth target is unavailable in the current helper inventory.") }
+            target = resolved
+        } catch {
+            publishPrimary(power: true, devices: nil)
+            throw BluetoothControlObservationFailure(underlying: error, observedDevices: nil)
+        }
+        do { _ = try runner.run(blueutil, [connected ? "--connect" : "--disconnect", target.address]) }
         catch {
             // A failed command may still have changed state. Only a fresh helper
             // read can authorize continuing this cycle, never native inventory.
@@ -165,7 +179,7 @@ struct BluetoothBackend {
             throw BluetoothControlObservationFailure(underlying: error, observedDevices: nil)
         }
         publishPrimary(power: true, devices: updated)
-        guard updated.first(where: { $0.address == address })?.connected == connected else {
+        guard try resolve(target.address, in: updated)?.connected == connected else {
             throw BluetoothControlObservationFailure(underlying: ToggleError(message: "Bluetooth device did not \(connected ? "connect" : "disconnect"). Check its power and range."), observedDevices: updated)
         }
         return updated
@@ -205,27 +219,27 @@ struct BluetoothBackend {
         // that routing intent on fresh observations without reconnecting it.
         for address in pendingAudioAddresses.sorted() where shouldContinue() {
             guard configuration.autoAddresses.contains(address),
-                  let target = current.first(where: { $0.address == address }), target.connected else { continue }
+                  let target = try resolve(address, in: current), target.connected else { continue }
             try requestOutput(target, devices: current, configuration: configuration)
         }
         var firstFailure: Error?
         var successes = 0
         for address in configuration.autoAddresses.sorted() {
             guard shouldContinue() else { break }
-            guard let target = current.first(where: { $0.address == address }), !target.connected else { continue }
+            guard let target = try resolve(address, in: current), !target.connected else { continue }
             // Failed observation aborts this cycle; never steal audio blindly.
             if configuration.protectOtherAudio {
                 let availableOutputs = try outputs()
                 if BluetoothPolicy.shouldPause(target: target, devices: current, audioOutputs: availableOutputs, knownAudioAddresses: configuration.protectedAudioAddresses) {
-                    let names = current.filter {
-                        $0.connected && $0.address != target.address && (configuration.protectedAudioAddresses.contains($0.address) || (availableOutputs?.contains($0.name) ?? true))
+                    let names = current.filter { device in
+                        device.connected && !BluetoothIdentity.matches(device.address, target.address) && (configuration.protectedAudioAddresses.contains(where: { BluetoothIdentity.matches($0, device.address) }) || (availableOutputs?.contains(device.name) ?? true))
                     }.map(\.name)
                     progress?(.waiting(target, "Waiting for \(names.joined(separator: ", ")) to disconnect"))
                     continue
                 }
             }
             progress?(.connecting(target))
-            do { current = try setConnected(true, address: address) }
+            do { current = try setConnected(true, address: target.address) }
             catch {
                 if let failure = error as? BluetoothControlObservationFailure {
                     guard let observed = failure.observedDevices else { throw error }
@@ -238,7 +252,7 @@ struct BluetoothBackend {
             successes += 1
             progress?(.connected(target))
             guard shouldContinue() else { break }
-            guard let refreshed = current.first(where: { $0.address == address }) else { continue }
+            guard let refreshed = try resolve(address, in: current) else { continue }
             try requestOutput(refreshed, devices: current, configuration: configuration)
         }
         if successes == 0, let firstFailure, shouldContinue() { throw firstFailure }
@@ -372,22 +386,22 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         if radioPoweredOn == false { return .pendingHardware("Bluetooth radio is off; turn it on in Settings.") }
         if busy || lastObservation == nil { return .pendingHardware("Device discovery/connection is in progress; see Sound & connections for its result.") }
         if autoEnabled && legacyServicePresent { return .pendingHardware("The existing Bluetooth service owns reconnection; choose explicit takeover in Settings.") }
-        if autoEnabled && autoAddresses.contains(where: { address in !devices.contains { $0.address == address && $0.connected } }) {
+        if autoEnabled && autoAddresses.contains(where: { address in !devices.contains { BluetoothIdentity.matches($0.address, address) && $0.connected } }) {
             return .pendingHardware(reconnectSummary)
         }
         return .applied(reconnectSummary)
     }
     func audioRequestIsCurrent(name: String) -> Bool {
         !stopped && controlsAvailable && autoEnabled && switchAudioOutput && !suspendAutomaticReconnection && !legacyServicePresent &&
-            cycleCancellation?.isCanceled == false && devices.contains {
-                $0.connected && $0.name == name && autoAddresses.contains($0.address)
+            cycleCancellation?.isCanceled == false && devices.contains { device in
+                device.connected && device.name == name && autoAddresses.contains(where: { BluetoothIdentity.matches($0, device.address) })
             }
     }
     var audioProtection: AudioProtectionSnapshot {
         guard !stopped, controlsAvailable, !permissionRequired, !busy, lastError == nil, !legacyServicePresent,
               let lastObservation, Date().timeIntervalSince(lastObservation) < 10 else { return .unavailable }
-        return AudioProtectionSnapshot(ready: true, protectedDeviceNames: Set(devices.filter {
-            $0.connected && protectedAudioAddresses.contains($0.address)
+        return AudioProtectionSnapshot(ready: true, protectedDeviceNames: Set(devices.filter { device in
+            device.connected && protectedAudioAddresses.contains(where: { BluetoothIdentity.matches($0, device.address) })
         }.map(\.name)))
     }
     var authorization: CBManagerAuthorization { authorizationProvider() }
@@ -578,8 +592,8 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     func toggleConnection(_ address: String) {
-        guard let device = devices.first(where: { $0.address == address }) else { return }
-        requestConnection(!device.connected, address: address)
+        guard let device = try? BluetoothIdentity.resolve(address, in: devices, allowOpaque: backend?.observationService == nil) else { return }
+        requestConnection(!device.connected, address: device.address)
     }
 
     func requestConnection(_ connected: Bool, address: String) {
@@ -589,9 +603,13 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
             activityJournal?.record(.bluetoothConnect(connected), trigger: .user, result: .blocked)
             onError?(ToggleError(message: reconnectSummary)); onChange?(); return
         }
+        let device = try? BluetoothIdentity.resolve(address, in: devices, allowOpaque: backend?.observationService == nil)
+        guard device != nil || backend?.observationService == nil else {
+            onError?(ToggleError(message: "Bluetooth target is unavailable in the current helper inventory.")); onChange?(); return
+        }
         if let activityPendingManual { activityJournal?.finish(activityPendingManual, result: .canceled) }
         activityPendingManual = activityJournal?.begin(.bluetoothConnect(connected), trigger: .user, queued: true)
-        pendingManual = .connection(address, connected)
+        pendingManual = .connection(device?.address ?? address, connected)
         clearAudioIntent()
         cycleCancellation?.cancel() // Manual intent takes precedence over later auto targets.
         onChange?()
@@ -648,10 +666,10 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         lastError = nil
         switch request {
         case .connection(let address, let connected):
-            manualAddress = address
-            let name = devices.first(where: { $0.address == address })?.name ?? "device"
+            manualAddress = selectionAddress(address)
+            let name = devices.first(where: { BluetoothIdentity.matches($0.address, address) })?.name ?? "device"
             activity = "\(connected ? "Connecting to" : "Disconnecting") \(name)…"
-            deviceStates[address] = connected ? "Connecting…" : "Disconnecting…"
+            deviceStates[selectionAddress(address)] = connected ? "Connecting…" : "Disconnecting…"
         case .powerOn:
             manualAddress = nil; activity = "Turning Bluetooth on…"
         }
@@ -675,43 +693,51 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         switch progress {
         case .radio(let poweredOn): radioPoweredOn = poweredOn
         case .connecting(let device):
-            activityWaitingNoted.removeValue(forKey: device.address)
-            if let previous = activityRetryNoted[device.address], activityJournal?.contains(previous) != true {
-                activityRetryNoted.removeValue(forKey: device.address)
+            let address = selectionAddress(device.address)
+            activityWaitingNoted.removeValue(forKey: address)
+            if let previous = activityRetryNoted[address], activityJournal?.contains(previous) != true {
+                activityRetryNoted.removeValue(forKey: address)
             }
-            if recordsActivity, activityRetryNoted[device.address] == nil, activityAutomatic.count < 300 {
-                activityAutomatic[device.address] = activityJournal?.begin(.bluetoothConnect(true), trigger: .automatic)
+            if recordsActivity, activityRetryNoted[address] == nil, activityAutomatic.count < 300 {
+                activityAutomatic[address] = activityJournal?.begin(.bluetoothConnect(true), trigger: .automatic)
             }
             activity = "Connecting to \(device.name)…"
-            deviceStates[device.address] = "Connecting…"
+            deviceStates[address] = "Connecting…"
         case .connected(let device):
-            if let operation = activityAutomatic.removeValue(forKey: device.address) {
+            let address = selectionAddress(device.address)
+            if let operation = activityAutomatic.removeValue(forKey: address) {
                 activityJournal?.finish(operation, result: .completed)
-            } else if let previous = activityRetryNoted[device.address], activityJournal?.contains(previous) == true {
+            } else if let previous = activityRetryNoted[address], activityJournal?.contains(previous) == true {
                 activityJournal?.record(.bluetoothConnect(true), trigger: .automatic, result: .completed)
             }
-            activityRetryNoted.removeValue(forKey: device.address); activityWaitingNoted.removeValue(forKey: device.address)
-            deviceStates.removeValue(forKey: device.address); retryAfter.removeValue(forKey: device.address)
-            if autoEnabled && switchAudioOutput { pendingAudioAddresses.insert(device.address) }
+            activityRetryNoted.removeValue(forKey: address); activityWaitingNoted.removeValue(forKey: address)
+            deviceStates.removeValue(forKey: address); retryAfter.removeValue(forKey: address)
+            if autoEnabled && switchAudioOutput { pendingAudioAddresses.insert(address) }
         case .waiting(let device, let reason):
-            if let previous = activityWaitingNoted[device.address], activityJournal?.contains(previous) != true {
-                activityWaitingNoted.removeValue(forKey: device.address)
+            let address = selectionAddress(device.address)
+            if let previous = activityWaitingNoted[address], activityJournal?.contains(previous) != true {
+                activityWaitingNoted.removeValue(forKey: address)
             }
-            if recordsActivity, activityWaitingNoted[device.address] == nil, activityWaitingNoted.count < 300,
+            if recordsActivity, activityWaitingNoted[address] == nil, activityWaitingNoted.count < 300,
                let operation = activityJournal?.begin(.bluetoothWaiting, trigger: .automatic) {
-                activityWaitingNoted[device.address] = operation
+                activityWaitingNoted[address] = operation
                 activityJournal?.finish(operation, result: .completed)
             }
-            deviceStates[device.address] = reason
+            deviceStates[address] = reason
         case .failed(let device, let reason):
-            if let operation = activityAutomatic.removeValue(forKey: device.address) {
+            let address = selectionAddress(device.address)
+            if let operation = activityAutomatic.removeValue(forKey: address) {
                 activityJournal?.finish(operation, result: .retryScheduled)
-                if activityRetryNoted.count < 300 { activityRetryNoted[device.address] = operation }
+                if activityRetryNoted.count < 300 { activityRetryNoted[address] = operation }
             }
-            deviceStates[device.address] = "\(reason) · will retry after 30s"
-            retryAfter[device.address] = Date().addingTimeInterval(30)
+            deviceStates[address] = "\(reason) · will retry after 30s"
+            retryAfter[address] = Date().addingTimeInterval(30)
         }
         onChange?()
+    }
+
+    private func selectionAddress(_ helperAddress: String) -> String {
+        autoAddresses.sorted().first { BluetoothIdentity.matches($0, helperAddress) } ?? helperAddress
     }
 
     private func complete(_ result: Result<[BluetoothDevice], Error>, reportError: Bool, manualOperation: ManualOperation? = nil) {
@@ -741,19 +767,20 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
             }
             lastObservation = Date()
             observationStale = false
-            if devices.contains(where: { old in old.connected && !updated.contains { $0.address == old.address && $0.connected } }) {
+            if devices.contains(where: { old in old.connected && !updated.contains { BluetoothIdentity.matches($0.address, old.address) && $0.connected } }) {
                 audioPolicyGeneration = UUID()
             }
             devices = updated
             pendingAudioAddresses = pendingAudioAddresses.filter { address in
-                updated.contains { $0.address == address && $0.connected } && autoAddresses.contains(address)
+                updated.contains { BluetoothIdentity.matches($0.address, address) && $0.connected } && autoAddresses.contains(address)
             }
             lastError = nil
             lastErrorIsObservation = false
             if let manualAddress { deviceStates.removeValue(forKey: manualAddress); retryAfter.removeValue(forKey: manualAddress) }
             for device in updated where device.connected {
-                deviceStates.removeValue(forKey: device.address); retryAfter.removeValue(forKey: device.address)
-                activityRetryNoted.removeValue(forKey: device.address); activityWaitingNoted.removeValue(forKey: device.address)
+                let address = selectionAddress(device.address)
+                deviceStates.removeValue(forKey: address); retryAfter.removeValue(forKey: address)
+                activityRetryNoted.removeValue(forKey: address); activityWaitingNoted.removeValue(forKey: address)
             }
             if defaults.object(forKey: "bluetooth.autoAddresses") == nil,
                let name = defaults.string(forKey: "bluetooth.legacySpeakerName"),
@@ -781,7 +808,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         if let name = pendingAudioName, cycleCancellation?.isCanceled == false, lastError == nil {
             pendingAudioName = nil
             pendingAudioAddresses = pendingAudioAddresses.filter { address in
-                devices.first(where: { $0.address == address })?.name != name
+                devices.first(where: { BluetoothIdentity.matches($0.address, address) })?.name != name
             }
             onAudioOutputRequested?(name)
         } else { pendingAudioName = nil }
@@ -792,7 +819,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         readback = observation
         if let power = observation.helperPower { radioPoweredOn = power }
         if observation.native == nil, !observation.controlsBlocked, let updated = observation.helperDevices {
-            if devices.contains(where: { old in old.connected && !updated.contains { $0.address == old.address && $0.connected } }) {
+            if devices.contains(where: { old in old.connected && !updated.contains { BluetoothIdentity.matches($0.address, old.address) && $0.connected } }) {
                 audioPolicyGeneration = UUID()
             }
             devices = updated

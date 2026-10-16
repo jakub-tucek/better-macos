@@ -101,7 +101,7 @@ func runBluetoothObservationTests() throws {
     now = 72; failure = nil
     let recovered = service.observe(power: false, devices: [], shouldContinue: { true })
     expect(recovered.native?.observedAt == 72 && !recovered.nativeStale, "cache expiry permits fresh successful snapshot")
-    let coherent = service.observe(power: true, devices: [BluetoothDevice(address: "fixture", name: "Fixture", connected: true)], shouldContinue: { true })
+    let coherent = service.observe(power: true, devices: [BluetoothDevice(address: "aa-bb-cc-dd-ee-01", name: "Fixture", connected: true)], shouldContinue: { true })
     expect(!coherent.controlsBlocked && coherent.native == nil && fetches == 3, "normal nonempty helper observation does not invoke profiler")
     let emptyService = BluetoothObservationService(diagnostics: logger) { _ in try data(profilerFixture(power: "attrib_off")) }
     expect(!emptyService.observe(power: false, devices: [], shouldContinue: { true }).controlsBlocked, "coherent off/empty keeps existing power-on control")
@@ -136,6 +136,7 @@ func runBluetoothObservationTests() throws {
     release.signal(); expect(done.wait(timeout: .now() + 2) == .success && coalescedFetches == 1, "coalesced request launches once")
     try runBluetoothObservationModuleFixture(nativeData, logger: logger)
     try runBluetoothAutomaticPresentationTests()
+    try runBluetoothIdentityTests()
     try runBluetoothProfilerProcessFixtures()
     expect(logger.flushForTesting(timeout: 2), "observation diagnostics flush only in tests")
     expect(!sink.text.contains("SENSITIVE") && !sink.text.contains("AA:BB") && !sink.text.contains("aa-bb"), "structured observation logs omit names, IDs, raw reports and errors")
@@ -147,6 +148,7 @@ private final class ObservationMutationRunner: CommandRunning {
     var inventory: [BluetoothDevice]
     var failing = Set<String>()
     var failReadAfterMutation = false
+    var alternateAddressAfterMutation: [String: String] = [:]
     private var mutated = false
     init(_ inventory: [BluetoothDevice]) { self.inventory = inventory }
     func run(_ executable: String, _ arguments: [String]) throws -> String {
@@ -161,8 +163,10 @@ private final class ObservationMutationRunner: CommandRunning {
         if arguments.count == 2, ["--connect", "--disconnect"].contains(arguments[0]) {
             mutated = true
             let address = arguments[1]
-            inventory = inventory.map { BluetoothDevice(address: $0.address, name: $0.name,
-                connected: $0.address == address ? arguments[0] == "--connect" : $0.connected) }
+            inventory = inventory.map { device in
+                BluetoothDevice(address: device.address == address ? alternateAddressAfterMutation[device.address] ?? device.address : device.address,
+                                name: device.name, connected: device.address == address ? arguments[0] == "--connect" : device.connected)
+            }
             if failing.contains(address) { throw ToggleError(message: "Injected control failure") }
             return ""
         }
@@ -213,6 +217,59 @@ func runBluetoothAutomaticPresentationTests() throws {
             expect(runner.calls.last(where: { ["--connect", "--disconnect"].contains($0.first ?? "") }) == ["--disconnect", shown.address],
                    "Disconnect presentation dispatches actual disconnect")
         }
+    }
+}
+
+func runBluetoothIdentityTests() throws {
+    let raw = "aa-bb-cc-dd-ee-01", saved = "AA:BB:CC:DD:EE:01"
+    for mode in ["automatic", "manual", "duplicate", "invalid"] {
+        let suite = "fix-mac-os.observation-identity.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let registered = defaults.volatileDomain(forName: UserDefaults.registrationDomain)
+        defer { defaults.setVolatileDomain(registered, forName: UserDefaults.registrationDomain); defaults.removePersistentDomain(forName: suite) }
+        let target = mode == "invalid" ? "not-a-device" : saved
+        defaults.set([target], forKey: "bluetooth.autoAddresses")
+        defaults.set(mode == "automatic", forKey: "bluetooth.autoEnabled")
+        defaults.set(true, forKey: "bluetooth.legacyTakenOver")
+        defaults.set(false, forKey: "bluetooth.protectAudio")
+        defaults.set(false, forKey: "bluetooth.switchAudio")
+        var inventory = [BluetoothDevice(address: raw, name: "Identity fixture", connected: mode == "manual")]
+        if mode == "duplicate" { inventory.append(BluetoothDevice(address: saved, name: "Duplicate fixture", connected: true)) }
+        let runner = ObservationMutationRunner(inventory)
+        if mode == "automatic" || mode == "manual" { runner.alternateAddressAfterMutation[raw] = "AABBCCDDEE01" }
+        let module = BluetoothModule(defaults: defaults,
+            backend: BluetoothBackend(runner: runner, blueutil: "/fixture/blueutil", audioTool: nil, waitForConnection: {},
+                                      observationService: BluetoothObservationService { _ in throw BluetoothReadIssue.unavailable }),
+            importLegacyConfiguration: false, authorizationProvider: { .allowedAlways })
+        defer { module.stop() }
+        func wait() {
+            let deadline = Date().addingTimeInterval(2)
+            while module.isBusy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
+            expect(!module.isBusy, "canonical identity fixture drains")
+        }
+        module.poll(); wait()
+        if mode == "automatic" {
+            expect(module.devices.first?.connected == true && runner.calls.contains(["--connect", raw]),
+                   "saved colon-uppercase target reconnects using current helper hyphen-lowercase identity")
+        } else if mode == "manual" {
+            let shown = module.displayedDevices.first!
+            expect(shown.address == saved && shown.connected, "presentation preserves saved target spelling")
+            module.toggleConnection(shown.address); wait()
+            expect(runner.calls.contains(["--disconnect", raw]) && module.devices.first?.connected == false,
+                   "presentation toggle resolves current helper raw identity and verifies disconnect canonically")
+            module.requestConnection(true, address: "AABBCCDDEE01"); wait()
+            expect(runner.calls.contains(["--connect", "AABBCCDDEE01"]) && module.displayedDevices.first?.connected == true,
+                   "manual compact identity resolves helper raw address and verifies connect")
+        } else {
+            let before = runner.calls.count
+            module.requestConnection(true, address: target); module.toggleConnection(target); wait()
+            expect(!runner.calls.dropFirst(before).contains(where: { ["--connect", "--disconnect"].contains($0.first ?? "") }),
+                   "\(mode): ambiguous or invalid identity cannot authorize a mutation")
+            if mode == "duplicate" { expect(!module.controlsAvailable, "duplicate canonical helper identity fails closed") }
+            else { expect(!module.displayedDevices.contains { BluetoothIdentity.matches(target, $0.address) }, "invalid saved identity remains unavailable") }
+        }
+        expect(module.autoAddresses == [target] && defaults.stringArray(forKey: "bluetooth.autoAddresses") == [target],
+               "\(mode): canonical resolution does not migrate stored target IDs")
     }
 }
 
