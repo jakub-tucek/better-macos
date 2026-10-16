@@ -146,7 +146,7 @@ struct BluetoothProfilerProcess {
 }
 
 extension BluetoothObservationService {
-    static func live() -> BluetoothObservationService {
-        BluetoothObservationService { try BluetoothProfilerProcess().read(shouldContinue: $0) }
+    static func live(diagnostics: Diagnostics = .shared) -> BluetoothObservationService {
+        BluetoothObservationService(diagnostics: diagnostics) { try BluetoothProfilerProcess().read(shouldContinue: $0) }
     }
 }

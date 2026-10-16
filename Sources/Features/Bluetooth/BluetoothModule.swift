@@ -357,7 +357,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         self.backend = backend ?? CommandRunner.find("blueutil").map {
             BluetoothBackend(runner: CommandRunner(diagnostics: diagnostics), blueutil: $0, audioTool: nil,
                              audioOutputs: { Set(try CoreAudioBackend().devices().filter { $0.directions.contains(.output) }.map(\.name)) },
-                              observationService: .live())
+                              observationService: .live(diagnostics: diagnostics))
         }
         super.init()
         defaults.register(defaults: ["bluetooth.protectAudio": true, "bluetooth.switchAudio": true])
@@ -868,7 +868,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         fields.merge([
             "inventory_device_count": String(devices.count),
             "saved_target_count": String(selected.count),
-            "matched_target_count": String(selected.intersection(Set(devices.map(\.address))).count),
+            "matched_target_count": String(selected.filter { saved in devices.contains { BluetoothIdentity.matches(saved, $0.address) } }.count),
             "radio_state": radioPoweredOn.map { $0 ? "on" : "off" } ?? "unknown",
             "inventory_stale": String(observationStale),
             "parent_authorization": parentAuthorization,

@@ -306,13 +306,16 @@ private func runBluetoothNativePresentationTests() throws {
                                                          "device_connected": connected, "device_not_connected": disconnected]]]
     let data = try JSONSerialization.data(withJSONObject: report)
     let runner = FakeRunner(); runner.powerOn = false; runner.current = []
+    let sink = MemoryDiagnosticSink()
+    let diagnosticLogger = Diagnostics(sink: sink)
+    let observation = BluetoothObservationService(diagnostics: diagnosticLogger) { _ in data }
     let module = BluetoothModule(defaults: defaults,
         backend: BluetoothBackend(runner: runner, blueutil: "/fixture/blueutil", audioTool: nil,
-                                  observationService: BluetoothObservationService { _ in data }),
-        importLegacyConfiguration: false, authorizationProvider: { .allowedAlways })
+                                  observationService: observation),
+        importLegacyConfiguration: false, authorizationProvider: { .allowedAlways }, diagnostics: diagnosticLogger)
     let model = DashboardModel(), audio = AudioModule(backend: Exit75AudioBackend(), defaults: defaults)
     model.enabledModules = []
-    let host = AppDelegate(model: model, preferences: defaults, makeAudio: { audio }, makeBluetooth: { module })
+    let host = AppDelegate(model: model, preferences: defaults, makeAudio: { audio }, makeBluetooth: { module }, diagnostics: diagnosticLogger)
     defer { module.stop(); audio.stop(); withExtendedLifetime(host) {} }
     model.errorMessage = "Independent manual-action failure"
     let publication = model.errorGeneration
@@ -331,6 +334,24 @@ private func runBluetoothNativePresentationTests() throws {
            "native observation never clears or replaces independent manual error UUID")
     expect(runner.commands.allSatisfy { $0.dropFirst() == ["--power"] || $0.dropFirst() == ["--paired", "--format", "json"] },
            "actual host native fallback performs no automatic mutations")
+    expect(diagnosticLogger.flushForTesting(), "merged native and discovery diagnostics drain through the injected sink")
+    let fields = sink.records.last { $0["event"] as? String == "discovery_state_changed" }
+    expect(fields?["parsed_device_count"] == "0" && fields?["inventory_device_count"] == "0" && fields?["radio_state"] == "off" &&
+           fields?["helper_authorization"] == "unknown" && fields?["helper_discovery_source"] == "unknown",
+           "native presentation never relabels primary discovery counts, power or helper authorization")
+    expect(sink.records.contains { $0["event"] as? String == "observation" }, "merged observation and discovery events share the injected sink")
+    runner.powerOn = true
+    runner.current = [BluetoothDevice(address: "AA:BB:CC:DD:EE:01", name: "Fixture 1", connected: true),
+                      BluetoothDevice(address: "AA:BB:CC:DD:EE:02", name: "Fixture 2", connected: true)]
+    module.poll()
+    let refreshed = Date().addingTimeInterval(3)
+    while module.isBusy && Date() < refreshed { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
+    expect(!module.isBusy && model.bluetoothControlsAvailable && model.selectedAddresses == saved,
+           "fresh coherent helper inventory restores control without rewriting saved canonical aliases")
+    expect(diagnosticLogger.flushForTesting(), "canonical helper recovery diagnostics drain through the injected sink")
+    let recovered = sink.records.last { $0["event"] as? String == "discovery_state_changed" }
+    expect(recovered?["matched_target_count"] == "2" && recovered?["inventory_device_count"] == "2" && recovered?["radio_state"] == "on",
+           "merged helper discovery counts use canonical matches after native conflict recovery")
 }
 
 /// Real host callbacks and subprocess runner while a fixture helper is blocked.
