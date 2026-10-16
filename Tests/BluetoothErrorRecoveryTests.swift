@@ -10,6 +10,7 @@ private struct Exit75AudioBackend: AudioRoutingBackend {
 // Production host callbacks/module/CommandRunner regression coverage,
 // isolated defaults and an executable fixture; never invokes installed blueutil.
 func runBluetoothErrorRecoveryTests() throws {
+    try runBluetoothBlockedDisableTests()
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("bluetooth-exit75-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -132,4 +133,95 @@ func runBluetoothErrorRecoveryTests() throws {
     let encoded = memory.lines.map { String(decoding: $0, as: UTF8.self) }.joined()
     expect(!encoded.contains(exact) && !encoded.contains("Fixture speaker") && !encoded.contains("--connect fixture") && !encoded.contains(root.path),
            "host and command Bluetooth hooks omit raw error, device name/address and executable path")
+}
+
+/// Real host callbacks and subprocess runner while a fixture helper is blocked.
+/// The helper self-expires; no installed helper, radio or launch agent is touched.
+private func runBluetoothBlockedDisableTests() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("bluetooth-drain-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let executable = root.appendingPathComponent("blueutil")
+    try """
+    #!/bin/sh
+    cd "$(dirname "$0")" || exit 70
+    echo "$*" >> calls
+    if [ -f gate ]; then
+      touch entered
+      count=0
+      while [ -f gate ] && [ "$count" -lt 200 ]; do
+        /bin/sleep 0.01
+        count=$((count + 1))
+      done
+    fi
+    case "$*" in
+      '--power') echo 1 ;;
+      '--paired --format json') echo '[{"address":"fixture","name":"Fixture","connected":false}]' ;;
+      *) exit 64 ;;
+    esac
+    """.write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+    let suite = "fix-mac-os.bluetooth-drain.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let registered = defaults.volatileDomain(forName: UserDefaults.registrationDomain)
+    defer { defaults.setVolatileDomain(registered, forName: UserDefaults.registrationDomain); defaults.removePersistentDomain(forName: suite) }
+    for feature in AppModule.allCases { ModuleSettings(defaults: defaults).set(feature, enabled: false) }
+    defaults.set(false, forKey: "bluetooth.autoEnabled")
+    defaults.set([], forKey: "bluetooth.autoAddresses")
+    let logger = Diagnostics(sink: MemoryDiagnosticSink())
+    let runner = CommandRunner(diagnostics: logger)
+    let module = BluetoothModule(defaults: defaults,
+        backend: BluetoothBackend(runner: CommandRunner(diagnostics: logger), blueutil: executable.path, audioTool: nil, waitForConnection: {}),
+        importLegacyConfiguration: false, authorizationProvider: { .allowedAlways },
+        legacyServiceTakeover: { _ = try runner.run(executable.path, ["--power"]) })
+    let model = DashboardModel()
+    let audio = AudioModule(backend: Exit75AudioBackend(), defaults: defaults)
+    let host = AppDelegate(model: model, preferences: defaults, makeAudio: { audio }, makeBluetooth: { module }, diagnostics: logger)
+    defer { module.stop(); audio.stop(); withExtendedLifetime(host) {} }
+    func pump(until condition: () -> Bool) {
+        let deadline = Date().addingTimeInterval(5)
+        while !condition() && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
+        expect(condition(), "blocked Bluetooth fixture reaches bounded main-loop condition")
+    }
+    func heartbeat(_ label: String, action: () -> Void) {
+        let started = ProcessInfo.processInfo.systemUptime
+        action()
+        var beat = false
+        DispatchQueue.main.async { beat = true }
+        pump { beat }
+        expect(ProcessInfo.processInfo.systemUptime - started < 0.25, "\(label) keeps the main queue responsive with helper blocked")
+        expect(module.isBusy, "\(label) retains worker ownership until actual drain")
+    }
+    for _ in 0..<3 {
+        try Data().write(to: root.appendingPathComponent("gate"))
+        try? FileManager.default.removeItem(at: root.appendingPathComponent("entered"))
+        model.onModuleChanged(.bluetooth, true)
+        pump { FileManager.default.fileExists(atPath: root.appendingPathComponent("entered").path) }
+        heartbeat("automatic reconnection off") { model.onAutomaticReconnectChanged(false) }
+        heartbeat("target uncheck") { model.onAutoDeviceChanged("fixture", false) }
+        heartbeat("feature disable") { model.onModuleChanged(.bluetooth, false) }
+        expect(model.stoppingModules.contains(.bluetooth), "host reports asynchronous Bluetooth drain")
+        heartbeat("rapid re-enable refusal") { model.onModuleChanged(.bluetooth, true) }
+        expect(!model.enabledModules.contains(.bluetooth), "host refuses re-enable until old owner drains")
+        heartbeat("quit during feature drain") {
+            expect(host.applicationShouldTerminate(NSApplication.shared) == .terminateCancel, "quit veto remains truthful during Bluetooth drain")
+        }
+        try FileManager.default.removeItem(at: root.appendingPathComponent("gate"))
+        pump { !module.isBusy && !model.stoppingModules.contains(.bluetooth) }
+        expect(!model.enabledModules.contains(.bluetooth), "late completion does not revive disabled Bluetooth")
+    }
+    // Explicit legacy-service takeover uses the same serial worker/drain path.
+    // Inject a slow command instead of invoking launchctl or a real service.
+    model.onModuleChanged(.bluetooth, true)
+    pump { !module.isBusy }
+    try Data().write(to: root.appendingPathComponent("gate"))
+    try? FileManager.default.removeItem(at: root.appendingPathComponent("entered"))
+    model.onTakeOverLegacy()
+    pump { FileManager.default.fileExists(atPath: root.appendingPathComponent("entered").path) }
+    heartbeat("disable during legacy takeover") { model.onModuleChanged(.bluetooth, false) }
+    try FileManager.default.removeItem(at: root.appendingPathComponent("gate"))
+    pump { !module.isBusy && !model.stoppingModules.contains(.bluetooth) }
+    expect(!defaults.bool(forKey: "bluetooth.legacyTakenOver") && !defaults.bool(forKey: "bluetooth.autoEnabled"), "late takeover completion cannot commit ownership or enable reconnection after disable")
+    let calls = try String(contentsOf: root.appendingPathComponent("calls"), encoding: .utf8)
+    expect(!calls.contains("--connect") && !calls.contains("--disconnect") && !calls.contains("--power 1"), "disable fixtures never issue radio or connection mutations")
 }
