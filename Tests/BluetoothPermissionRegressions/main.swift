@@ -55,6 +55,8 @@ let registered = defaults.volatileDomain(forName: UserDefaults.registrationDomai
 defer { defaults.setVolatileDomain(registered, forName: UserDefaults.registrationDomain); defaults.removePersistentDomain(forName: suite) }
 defaults.set(true, forKey: "bluetooth.autoEnabled")
 defaults.set([], forKey: "bluetooth.autoAddresses")
+// Neutralize ambient legacy-service presence for this isolated reconnect policy.
+defaults.set(true, forKey: "bluetooth.legacyTakenOver")
 let logger = Diagnostics(sink: DiscardPermissionDiagnostics())
 var authorization = CBManagerAuthorization.allowedAlways
 let module = BluetoothModule(defaults: defaults,
@@ -151,7 +153,7 @@ defaults.set(false, forKey: "bluetooth.protectAudio")
 defaults.set(false, forKey: "bluetooth.switchAudio")
 try mode("connect-failure")
 module.start(); wait()
-check(module.lastError != nil && !module.reconnectSummary.contains("Could not read Bluetooth status") && !module.observationStale,
+check(!module.legacyServicePresent && module.lastError != nil && !module.reconnectSummary.contains("Could not read Bluetooth status") && !module.observationStale,
       "automatic connection failure is not mislabeled as failed initial discovery")
 module.stop()
 print("\(checks) focused permission-context checks passed; no live TCC or Bluetooth access.")

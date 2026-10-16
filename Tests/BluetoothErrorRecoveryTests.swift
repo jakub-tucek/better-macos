@@ -51,6 +51,7 @@ func runBluetoothErrorRecoveryTests() throws {
     defer { defaults.removePersistentDomain(forName: suite) }
     for feature in AppModule.allCases { ModuleSettings(defaults: defaults).set(feature, enabled: false) }
     defaults.set(true, forKey: "bluetooth.autoEnabled")
+    defaults.set(true, forKey: "bluetooth.legacyTakenOver")
     let memory = MemoryDiagnosticSink()
     let logger = Diagnostics(sink: memory)
     let module = BluetoothModule(defaults: defaults,
@@ -200,6 +201,9 @@ private func runBluetoothBlockedDisableTests() throws {
     defer { defaults.setVolatileDomain(registered, forName: UserDefaults.registrationDomain); defaults.removePersistentDomain(forName: suite) }
     for feature in AppModule.allCases { ModuleSettings(defaults: defaults).set(feature, enabled: false) }
     defaults.set(false, forKey: "bluetooth.autoEnabled")
+    // This fixture tests that late injected takeover never commits this choice.
+    // Automatic reconnect stays off, independent of ambient legacy-service state.
+    defaults.set(false, forKey: "bluetooth.legacyTakenOver")
     defaults.set([], forKey: "bluetooth.autoAddresses")
     let logger = Diagnostics(sink: MemoryDiagnosticSink())
     let runner = CommandRunner(diagnostics: logger)
