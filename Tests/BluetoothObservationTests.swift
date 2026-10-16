@@ -15,12 +15,17 @@ private final class ObservationRunner: CommandRunning {
     var paired = "[]"
     var fail = false
     var allowFixturePowerOn = false
+    var powerGate: DispatchSemaphore?
+    var powerEntered: DispatchSemaphore?
     func run(_ executable: String, _ arguments: [String]) throws -> String {
         lock.lock(); defer { lock.unlock() }
         recorded.append(arguments)
         if fail { throw ToggleError(message: "fixture read failed") }
         switch arguments {
-        case ["--power"]: return power
+        case ["--power"]:
+            powerEntered?.signal()
+            if let powerGate { _ = powerGate.wait(timeout: .now() + 2) }
+            return power
         case ["--power", "1"] where allowFixturePowerOn: power = "1"; return ""
         case ["--paired", "--format", "json"]: return paired
         default: throw ToggleError(message: "Mutation forbidden in observation fixture")
@@ -292,7 +297,7 @@ func runBluetoothMergedAdmissionTests() throws {
         let entered = DispatchSemaphore(value: 0)
         let service = BluetoothObservationService(clock: { now }) { continuing in
             fetches += 1
-            if fetches == 1 { return off }
+            if fetches != 2 { return off }
             entered.signal()
             let deadline = Date().addingTimeInterval(2)
             while continuing() && Date() < deadline { Thread.sleep(forTimeInterval: 0.005) }
@@ -309,14 +314,65 @@ func runBluetoothMergedAdmissionTests() throws {
         }
         module.poll(); wait()
         expect(module.controlsAvailable, "coherent off comparison initially permits explicit power request")
-        now = 31; module.poll()
-        expect(entered.wait(timeout: .now() + 1) == .success, "expired native comparison reaches deterministic gate")
+        service.invalidate(); module.poll()
+        expect(entered.wait(timeout: .now() + 1) == .success, "replacement native comparison reaches deterministic gate")
         module.turnBluetoothOn()
         if revoke { authorization = .denied }
         wait()
         expect(!runner.calls.contains(["--power", "1"]) && !module.controlsAvailable,
                "canceled unknown comparison or revoked access cannot drain queued power using old admission")
+        authorization = .allowedAlways
+        now = 31; module.poll(); wait()
+        expect(module.controlsAvailable, "fresh uncanceled verification restores admission after canceled comparison")
+        module.turnBluetoothOn(); wait()
+        expect(runner.calls.contains(["--power", "1"]) && module.controlsAvailable,
+               "successful explicit retry uses original helper verification after recovery")
     }
+    try runBluetoothIdleExpiryAndAuthorizationTests(off)
+}
+
+private func runBluetoothIdleExpiryAndAuthorizationTests(_ off: Data) throws {
+    let suite = "fix-mac-os.merged-expiry.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(false, forKey: "bluetooth.autoEnabled")
+    defaults.set(true, forKey: "bluetooth.legacyTakenOver")
+    let runner = ObservationRunner(); runner.allowFixturePowerOn = true
+    var now: TimeInterval = 0
+    let service = BluetoothObservationService(clock: { now }) { _ in off }
+    let module = BluetoothModule(defaults: defaults,
+        backend: BluetoothBackend(runner: runner, blueutil: "/fixture/blueutil", audioTool: nil, observationService: service),
+        importLegacyConfiguration: false, authorizationProvider: { .allowedAlways })
+    defer { module.stop() }
+    func wait(_ module: BluetoothModule) {
+        let deadline = Date().addingTimeInterval(3)
+        while module.isBusy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
+        expect(!module.isBusy, "idle expiry/authorization fixture drains")
+    }
+    module.poll(); wait(module)
+    now = 31
+    module.turnBluetoothOn(); wait(module)
+    expect(!module.controlsAvailable && !runner.calls.contains(["--power", "1"]) && module.reconnectSummary.contains("out of date"),
+           "idle expired native evidence cannot authorize power before the next poll")
+    module.poll(); wait(module)
+    expect(module.controlsAvailable, "new complete comparison renews idle-expired admission")
+    module.turnBluetoothOn(); wait(module)
+    expect(runner.calls.contains(["--power", "1"]), "renewed comparison allows only an explicit helper power retry")
+
+    let queuedRunner = ObservationRunner(); queuedRunner.allowFixturePowerOn = true
+    var authorization = CBManagerAuthorization.allowedAlways
+    let queued = BluetoothModule(defaults: defaults,
+        backend: BluetoothBackend(runner: queuedRunner, blueutil: "/fixture/blueutil", audioTool: nil),
+        importLegacyConfiguration: false, authorizationProvider: { authorization })
+    defer { queued.stop() }
+    queued.poll(); wait(queued)
+    let gate = DispatchSemaphore(value: 0), entered = DispatchSemaphore(value: 0)
+    queuedRunner.powerGate = gate; queuedRunner.powerEntered = entered
+    queued.poll()
+    expect(entered.wait(timeout: .now() + 1) == .success, "authorization-only queued request reaches helper gate without native comparison")
+    queued.turnBluetoothOn(); authorization = .denied
+    gate.signal(); wait(queued)
+    expect(!queuedRunner.calls.contains(["--power", "1"]), "permission-only drain guard rejects queued power without relying on canceled native verification")
 }
 
 func runBluetoothMergedManualTests() throws {

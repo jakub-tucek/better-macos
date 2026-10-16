@@ -304,10 +304,14 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     private var activity: String?
     private(set) var radioPoweredOn: Bool?
     private(set) var readback: BluetoothReadback?
+    private var currentReadback: BluetoothReadback? {
+        guard let readback else { return nil }
+        return backend?.observationService?.refreshingFreshness(readback) ?? readback
+    }
     private var controlVerificationInvalidated = false
     var controlsAvailable: Bool {
         if backend?.observationService != nil && (controlVerificationInvalidated || observationStale || permissionRequired) { return false }
-        if let readback { return !readback.controlsBlocked }
+        if let currentReadback { return !currentReadback.controlsBlocked }
         // Production comparison must complete before non-UI callers can mutate.
         return backend?.observationService == nil
     }
@@ -489,7 +493,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         if permissionRequired { return "Bluetooth access required — allow Fix macOS in Privacy & Security → Bluetooth" }
         if pendingManual != nil { return "Manual request queued; waiting for the current attempt" }
         if busy, let activity { return activity }
-        if let summary = readback?.summary { return summary }
+        if let summary = currentReadback?.summary { return summary }
         if let lastError {
             return lastErrorIsObservation ? observationFailureSummary(lastError) : lastError
         }

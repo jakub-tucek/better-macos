@@ -185,6 +185,13 @@ final class BluetoothObservationService: @unchecked Sendable {
         cached = nil; lastAttempt = nil; lastIssue = nil
     }
 
+    /// Re-evaluate admission using the same monotonic clock and TTL as reads.
+    /// The stored snapshot remains available for stale, display-only presentation.
+    func refreshingFreshness(_ observation: BluetoothReadback) -> BluetoothReadback {
+        guard observation.native != nil else { return observation }
+        return readback(observation.helperPower, observation.helperDevices, observation.native, observation.nativeIssue, at: clock())
+    }
+
     func observe(power: Bool?, devices: [BluetoothDevice]?, shouldContinue: @escaping () -> Bool) -> BluetoothReadback {
         guard power != true || devices?.isEmpty != false else {
             return BluetoothReadback(helperPower: power, helperDevices: devices, native: nil, nativeIssue: nil, nativeStale: false)
