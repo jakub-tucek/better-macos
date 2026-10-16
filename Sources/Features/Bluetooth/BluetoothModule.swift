@@ -48,6 +48,13 @@ private final class BluetoothCycleCancellation: @unchecked Sendable {
     var isCanceled: Bool { lock.lock(); defer { lock.unlock() }; return canceled }
 }
 
+/// Distinguish discovery failure from connection/routing failure without
+/// interpreting a subprocess exit code as an authorization decision.
+private struct BluetoothObservationFailure: LocalizedError {
+    let underlying: Error
+    var errorDescription: String? { underlying.localizedDescription }
+}
+
 /// Bluetooth reconnection and audio-race protection, independent of menu UI.
 struct BluetoothBackend {
     let runner: CommandRunning
@@ -94,9 +101,13 @@ struct BluetoothBackend {
 
     func reconcile(_ configuration: BluetoothConfiguration, progress: ((BluetoothProgress) -> Void)? = nil,
                    shouldContinue: () -> Bool = { true }) throws -> [BluetoothDevice] {
-        let poweredOn = try isPoweredOn()
-        progress?(.radio(poweredOn))
-        var current = try devices()
+        let poweredOn: Bool
+        var current: [BluetoothDevice]
+        do {
+            poweredOn = try isPoweredOn()
+            progress?(.radio(poweredOn))
+            current = try devices()
+        } catch { throw BluetoothObservationFailure(underlying: error) }
         guard configuration.enabled, poweredOn else { return current }
         // A connection may succeed before post-connect discovery fails. Retry
         // that routing intent on fresh observations without reconnecting it.
@@ -588,9 +599,9 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
             status = reconnectSummary
         case .failure(let error):
             lastError = error.localizedDescription
-            lastErrorIsObservation = !reportError
-            if !reportError { observationStale = true }
-            status = reportError ? error.localizedDescription : observationFailureSummary(error.localizedDescription)
+            lastErrorIsObservation = !reportError && error is BluetoothObservationFailure
+            if lastErrorIsObservation { observationStale = true }
+            status = lastErrorIsObservation ? observationFailureSummary(error.localizedDescription) : error.localizedDescription
             if let manualAddress { deviceStates[manualAddress] = error.localizedDescription }
             if reportError { onError?(error) }
         }

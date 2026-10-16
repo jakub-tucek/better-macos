@@ -42,7 +42,9 @@ case "$mode" in
 esac
 case "$*" in
   '--power') if [ "$mode" = off ]; then echo 0; else echo 1; fi ;;
-  '--paired --format json') echo '[]' ;;
+  '--paired --format json')
+    if [ "$mode" = connect-failure ]; then echo '[{"address":"fixture","name":"Fixture","connected":false}]'; else echo '[]'; fi ;;
+  '--connect fixture') exit 75 ;;
   *) exit 64 ;;
 esac
 """.write(to: executable, atomically: true, encoding: .utf8)
@@ -140,5 +142,16 @@ authorization = .denied
 let beforeDenied = calls()
 module.start(); pump(0.02)
 check(module.permissionRequired && calls() == beforeDenied, "actual parent denial prevents new helper launches")
+module.stop()
+authorization = .allowedAlways
+try mode("off")
+module.start(); wait(); module.stop()
+defaults.set(["fixture"], forKey: "bluetooth.autoAddresses")
+defaults.set(false, forKey: "bluetooth.protectAudio")
+defaults.set(false, forKey: "bluetooth.switchAudio")
+try mode("connect-failure")
+module.start(); wait()
+check(module.lastError != nil && !module.reconnectSummary.contains("Could not read Bluetooth status") && !module.observationStale,
+      "automatic connection failure is not mislabeled as failed initial discovery")
 module.stop()
 print("\(checks) focused permission-context checks passed; no live TCC or Bluetooth access.")
