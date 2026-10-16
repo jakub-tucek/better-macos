@@ -215,3 +215,103 @@ address spelling could fail exact helper target lookup and manual toggling.
 The reviewer also saw one unexplained exit-75 subprocess fixture failure before
 eight subsequent passes. Those passing reruns do not resolve the flake. Fixes,
 targeted red/green evidence and independent follow-up are required before merge.
+
+### Follow-up implementation
+
+- `60c7c3b`: every post-control helper read updates primary presentation. A failed
+  command performs a fresh helper read because failure does not prove no effect.
+  Known results remain authoritative even after mixed per-target outcomes; failed
+  readback marks state unknown, blocks controls and aborts further cycle actions.
+  No native inventory verifies a mutation. The automatic-presentation regression
+  failed before the correction, then passed for success, known changed-state
+  failure, and unknown post-action state. A displayed Disconnect action now
+  dispatches an actual disconnect after automatic connection.
+- `c96e987`: a shared canonical resolver validates current helper inventory and
+  resolves saved/presentation IDs into its raw helper ID before commands. The
+  post-command read verifies canonical identity even if helper address formatting
+  changes. Automatic selection, manual toggles, audio intent/protection and retry
+  bookkeeping compare identity without rewriting persisted choices. Duplicate
+  canonical helper IDs fail closed; invalid saved targets remain unavailable.
+  The alias-selection regression failed before correction and passed for saved
+  uppercase-colon, helper lowercase-hyphen and post-action compact forms. Existing
+  injected legacy backends without the observation service retain opaque fixture
+  IDs; production observation/control uses validated twelve-hex identities.
+- `bf676f3`: the private profiler runner now owns child-status collection and pipe
+  draining independently. A named fixture matrix forces both child-exit-before-EOF
+  and EOF-before-child-exit orders. Each invocation uses a unique executable path.
+  Failure evidence contains only closed issue values, numeric wait status, EOF
+  flags, byte counts and duration, never command output or device metadata.
+
+The original one-off fixture failure's exact cause remains **unproven**: no original
+numeric failure/status trace was available in the reviewer tree. Replacing the
+asynchronous exit-state protocol and strengthening deterministic ordering tests
+are evidence of a stricter implementation, not proof of that historical cause.
+
+Targeted commands (injected backends/temporary helpers only):
+
+```sh
+DEVELOPER_DIR=/Library/Developer/CommandLineTools bash Tests/bluetooth-observation-regressions.sh --automatic
+DEVELOPER_DIR=/Library/Developer/CommandLineTools bash Tests/bluetooth-observation-regressions.sh --identity
+DEVELOPER_DIR=/Library/Developer/CommandLineTools bash Tests/bluetooth-observation-regressions.sh --process-repeat 30
+```
+
+At `bf676f3`, the process-repeat command passed **341 checks**: 30 rounds, 90
+exit-75 ordering cases, 30 clean exits, plus output-cap, TERM-resistant timeout,
+inherited-pipe timeout and cancellation cases. That is 124 direct fixture child
+invocations; descendants used to hold pipes are self-expiring and never killed.
+The repeat count is separate from the normal focused suite and all legacy totals.
+
+Local red/green logs: `build/bluetooth-review-{auto,identity}-{red,green}.log`;
+repeat evidence: `build/bluetooth-review-bf676f3-repeat.log`. Source was frozen
+before the final full run. Independent follow-up remains mandatory before merge.
+
+### Completed follow-up validation at `bf676f3`
+
+Exact tested implementation/test revision:
+**`bf676f322814270301ec3c067ae24e815782b703`**. The command-scoped CLT/ad-hoc
+full-suite attempt completed with **exit 1**, at the unchanged native display test:
+
+```text
+FAIL: stable popup's first display-control click acts without an activation/loading click
+```
+
+This is the same baseline blocker independently documented by main commit
+`7e276bc` in `docs/validation/bluetooth-discovery-visibility.md`: its focused
+presentation test failed alone, and the same failure reproduced with changed
+Swift inputs restored to pre-integration `52ae53e`. That main evidence is separate
+from this worktree. No display source, native assertion or default-suite path was
+weakened, skipped or replaced here. **There is no completed legacy pass total at
+`bf676f3`**, and the historical 4,737 count above must not be reused for this revision.
+
+| Check | Actual follow-up result |
+| --- | --- |
+| Full legacy run | Failed at the native first-display-click assertion; no completed total |
+| Focused Bluetooth observation/control | **109 passed**, in the full attempt before the unrelated native failure |
+| Process ordering repeat | **341 passed**, separately run; overlaps focused coverage, not an additional independent suite total |
+| Permission-context characterization | **32 passed**, in the full attempt |
+| Diagnostic regressions | **81 passed**, plus production no-flush/no-sync-wait guard |
+| Instant C terminal safety | **114 passed** |
+| Swift Testing policy | **10 tests / 3 suites passed** |
+| Installer fixtures | **13 passed**, separately run after the stopped full attempt |
+| Lint / format | **67 files**, zero lint violations / zero required formatting changes |
+| App/compiler/packaging fixtures | Passed before the native failure, including signing, real/relocated bundle notices and compiler-input ownership |
+
+The actual-host six-device/two-saved-target projection, observed-on/blocked-control
+split, source/conflict copy, manual-error UUID preservation and zero automatic
+mutation assertions also passed before the native failure. These are inside the
+incomplete legacy run, not a new independent count. New automatic state/action
+and canonical control regressions are in the 109-check focused suite.
+
+The built plist reads back exact revision `bf676f322814270301ec3c067ae24e815782b703`.
+Logs under this worktree's ignored `build/` are
+`bluetooth-review-bf676f3-{full,repeat,lint,format,installer}.log`. Touched shell
+syntax, 87 relative documentation paths and whitespace checks passed. No real
+Bluetooth/system-profiler invocation, app lifecycle action, permission/system
+preference mutation, merge, push or tag was performed. Existing suite read-only
+capability probes remain unchanged.
+
+The implementation addresses the two reproduced source bugs. The original
+subprocess fixture flake has a strengthened protocol and deterministic ordering
+coverage, but no proven historical root cause. Independent follow-up is mandatory;
+neither the native first-click blocker nor underlying live Bluetooth control has
+been claimed fixed.
