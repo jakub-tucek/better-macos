@@ -15,12 +15,18 @@ to the current documentation. Native/hardware acceptance remains open.
 - [Login registration-intent UI; real autostart unverified](login-diagnosis.md#main-integration--2026-10-15)
 - [Bounded diagnostics and typed Bluetooth/login hooks](../diagnostics.md#main-integration--2026-10-15)
 - [Session Activity integration and native row anchoring](../activity.md#main-integration--2026-10-15)
-- [Presentation-only display refresh and first-click regression](presentation-display-refresh.md)
+- [Presentation-only display refresh and first-click regression](presentation-display-refresh.md#main-integration--2026-10-16)
 - [Keep awake](awake.md) · [Window positions](window-positions.md)
 - [Clipboard UI](clipboard-ui.md) · [Compact UI](compact-ui.md)
 - [UI replacement](ui-replacement.md) · [Release UI polish](release-ui.md)
 - [Historical UI consolidation and storage-intent cases](ui-consolidation.md)
 - [Packaging](packaging.md) · [Release checklist](../releases/checklist.md)
+
+Latest integrated check · 2026-10-16:
+
+| Tested code | Result |
+| --- | --- |
+| `0c596f8` · [display presentation](presentation-display-refresh.md#main-integration--2026-10-16) | 4,633 legacy (includes 37 presentation + 27 Activity), 81 separate diagnostics, 10 policy/3 suites, 13 installer; unmodified normal-path lint/format across 60 files passed. Live acceptance remains open. |
 
 ## Acceptance matrix and baseline · 2026-10-15
 

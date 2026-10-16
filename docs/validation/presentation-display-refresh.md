@@ -1,7 +1,8 @@
 # Display refresh on presentation · 2026-10-16
 
 Implementation/test revision: **`4e9b8aae181b2a61e7e1ff8fa6f89c2b64f2998d`**,
-based on `7cd708a`. **Independent review is required before integration.**
+based on `7cd708a`. The source-worktree record below predates independent review;
+see the [reviewed main integration](#main-integration--2026-10-16) for current status.
 This fixes a reproduced display-loading delay, not every reported first-click or
 window-activation problem. The production app was not relaunched for this fix.
 
@@ -107,17 +108,23 @@ also passes `--presentation-display-refresh-regressions` (37 checks), and
 `Tests/activity-scroll-regressions.sh` separately passes its unchanged 27 checks.
 Logs: `build/presentation-refresh-4e9b8aa-{focused,scroll}.log`.
 
-**Full lint is not green:** unmodified pinned SwiftLint reports four pre-existing,
-baseline-known `AXValue` casts in untouched `WindowPositions.swift`, now at lines
-365/428 while the checked-in baseline records 338/401. Neither that source nor
-the baseline was changed. All five changed Swift files pass the same pinned
-rules. Logs: `build/presentation-refresh-4e9b8aa-{lint,changed-lint}.log`.
+**Historical temporary-path lint false positives:** the implementation worktree's
+unmodified SwiftLint run reported exactly four baseline-known `AXValue` casts in
+untouched `WindowPositions.swift` (current lines 365/428; baseline locations 338/401).
+Those reports were initially treated as a baseline issue. Independent review's
+byte-compared normal-path snapshot passed all 60 files, and integrated main's
+unmodified wrapper also passes below. No source, baseline reconciliation, rule
+change or suppression is needed; this was temporary-path baseline matching, not
+four new violations. All five changed Swift files also passed. Preserve logs:
+`build/presentation-refresh-4e9b8aa-{lint,changed-lint}.log`.
 
 Unmodified pinned format-check passes across 60 Swift files, and offline tooling
 fixtures pass. In this temporary worktree, SwiftFormat resolves `/private/var` to
 `/var`; supplying the logical `/var/.../window-first-click` path as `PWD` to
 `bash scripts/dev format-check` and `bash scripts/dev-tools-test.sh` keeps their
 configured exclusions effective. No rules or generated sources were rewritten.
+That workaround belongs only to the temporary worktree; normal-path main uses
+the unmodified wrapper without a `PWD` override and passes all files/fixtures.
 Logs: `build/presentation-refresh-4e9b8aa-{format,tools-logical}.log`.
 Shell syntax, CI whitespace fixtures and `git diff --check` passed. CI fixture
 log: `build/presentation-refresh-4e9b8aa-ci.log`.
@@ -132,6 +139,55 @@ to the popup/dashboard route. Only the frozen run above is claimed green.
 
 No production app launch/quit/relaunch/install, permission grant, live preference
 or device changes, push, tag or publication occurred. Native probes exercised
-only their own windows/events and isolated preferences. Live user acceptance,
-macOS-version coverage, lint-baseline reconciliation and independent review remain
-open. This evidence-only document does not claim a rebuild at its own revision.
+only their own windows/events and isolated preferences. Live user acceptance
+and macOS-version coverage remain open. The original record preceded independent
+review; the supplied CLEAN review and normal-path integration checks below supersede
+that review/lint caveat, not the historical reproduction or live acceptance limits.
+This evidence-only document does not claim a rebuild at its own revision.
+
+## Main integration · 2026-10-16
+
+The parent supplied independent review **CLEAN**, including the first-display-action
+negative control, 37 native presentation checks, retained 27 Activity checks and
+normal-path 60-file lint verification. Its separate background full run is not
+claimed here; the actual integrated-main run below completed independently.
+
+| Reviewed source | Main commit |
+| --- | --- |
+| `4e9b8aa` — presentation policy and regressions | `ba2db0e` |
+| `d30a8e3` — frozen source evidence | `0c596f8` |
+
+Both unique commits integrated without conflicts on clean main `7cd708a`.
+At **`0c596f867f1bb981a43ae493e344c091fe9897f1`**, one complete standalone CLT
+run passed **4,633 legacy checks**, including **37 presentation** and **27 native
+Activity scrolling** assertions (both already inside 4,633), **81 separate diagnostic
+regressions** plus safety source guards, **10 policy tests in three suites**, **13
+mocked installer scenarios**, compiler/build fixtures and real/relocated-bundle checks.
+
+Log: `build/presentation-refresh-integration-clt.log`; it records HEAD, scoped
+standalone CLT 27 / Swift 6.4 / SDK 27.0 compiler/SDK paths and versions, arm64 and
+bundle metadata with `SDKROOT` unset. Strict configured-certificate signature,
+complete notices, source/built plist lint and metadata passed: the arm64/macOS 15+
+bundle embeds the tested revision, version `0.4`, build `4`, SDK 27.0.
+
+**Unmodified normal-path main lint and format-check passed across all 60 files**,
+with zero violations/rewrites. Offline tooling and CI whitespace fixtures passed.
+No baseline, exclusions, rules, source casts or tooling scripts were changed.
+Logs: `build/presentation-refresh-integration-{lint,format,tools,ci}.log`.
+
+The correction only avoids presentation-induced settling when a usable fresh
+snapshot exists. Cold/failed retries, genuine display changes, wake and operation
+completion still invalidate/defer appropriately. HostTransactions, watchdog admission,
+helper execution-time authorization and durable recovery authority remain intact.
+This does not establish that every user-reported first-click issue is fixed live.
+
+No production app launch/quit/relaunch/install, live log read, preference/device/
+permission change, version bump, push/tag or publication was performed. The parent's
+previously reported loaded Activity app was `c76acbf`; building this on-disk bundle
+does not replace that process's loaded image. No new process probe or relaunch
+approval was assumed. Native live acceptance and supported-OS coverage remain open;
+the separate evidence commit does not claim a rebuild at its own revision.
+
+All **15 shell inputs**, **254 local links and 45 fragments across 33 Markdown
+documents**, exact-source/guard-preservation assertions and `git diff --check` passed.
+The lint baseline and both tools' configurations/scripts are byte-identical to prior main.
