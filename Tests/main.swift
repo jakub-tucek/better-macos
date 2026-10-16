@@ -98,6 +98,12 @@ if CommandLine.arguments.contains("--presentation-display-refresh-regressions") 
     exit(0)
 }
 
+if CommandLine.arguments.contains("--bluetooth-discovery-visibility-regressions") {
+    try runBluetoothErrorRecoveryTests()
+    print("\(checks) Bluetooth discovery visibility and recovery checks passed")
+    exit(0)
+}
+
 final class FakeWindowBackend: WindowPositionBackend {
     var permitted = true
     var screens = [WindowDisplay(id: "A", bounds: CGRect(x: 0, y: 25, width: 1000, height: 700))]

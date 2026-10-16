@@ -16,6 +16,12 @@ struct BluetoothConfiguration {
 }
 
 enum BluetoothPresentation {
+    static func widgetEmptyMessage(savedCount: Int, matchedCount: Int) -> String? {
+        guard matchedCount == 0 else { return nil }
+        return savedCount == 0 ? "Choose targets in Sound & connections." :
+            "Saved targets unavailable. Check Bluetooth status and access in Sound & connections."
+    }
+
     static func summary(enabled: Bool, selected: Set<String>, devices: [BluetoothDevice]) -> String {
         guard !selected.isEmpty else { return "Choose devices to reconnect below" }
         let names = devices.filter { selected.contains($0.address) }.map(\.name)
@@ -55,6 +61,31 @@ private struct BluetoothObservationFailure: LocalizedError {
     var errorDescription: String? { underlying.localizedDescription }
 }
 
+// Read evidence only. A successful empty parse says nothing about the helper's
+// authorization or which inventory implementation its environment selected.
+enum BluetoothDiscoveryRead: Equatable {
+    case notObserved, parentAccessRequired, backendUnavailable
+    case parsed(Int), commandFailed(power: Bool), decodeFailed, invalidPowerState
+
+    var fields: [String: String] {
+        var fields = ["parsed_device_count": "unknown", "command_outcome": "not_attempted", "decode_outcome": "not_attempted", "read_stage": "none"]
+        switch self {
+        case .notObserved: fields["discovery_outcome"] = "not_observed"
+        case .parentAccessRequired: fields["discovery_outcome"] = "parent_access_required"
+        case .backendUnavailable: fields["discovery_outcome"] = "backend_unavailable"
+        case .parsed(let count):
+            fields.merge(["discovery_outcome": "success", "parsed_device_count": String(count), "command_outcome": "success", "decode_outcome": "success", "read_stage": "paired"]) { _, new in new }
+        case .commandFailed(let power):
+            fields.merge(["discovery_outcome": "command_failure", "command_outcome": "failure", "read_stage": power ? "power" : "paired"]) { _, new in new }
+        case .decodeFailed:
+            fields.merge(["discovery_outcome": "decode_failure", "command_outcome": "success", "decode_outcome": "failure", "read_stage": "paired"]) { _, new in new }
+        case .invalidPowerState:
+            fields.merge(["discovery_outcome": "invalid_power_state", "command_outcome": "success", "read_stage": "power"]) { _, new in new }
+        }
+        return fields
+    }
+}
+
 /// Bluetooth reconnection and audio-race protection, independent of menu UI.
 struct BluetoothBackend {
     let runner: CommandRunning
@@ -64,10 +95,16 @@ struct BluetoothBackend {
     var audioOutputs: (() throws -> Set<String>)?
     var routeOutput: ((String) -> Void)?
     var pendingAudioAddresses = Set<String>()
+    var onDiscoveryRead: ((BluetoothDiscoveryRead) -> Void)?
 
     func isPoweredOn() throws -> Bool {
-        let value = try runner.run(blueutil, ["--power"]).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard value == "0" || value == "1" else { throw ToggleError(message: "Cannot read Bluetooth radio state.") }
+        let value: String
+        do { value = try runner.run(blueutil, ["--power"]).trimmingCharacters(in: .whitespacesAndNewlines) }
+        catch { onDiscoveryRead?(.commandFailed(power: true)); throw error }
+        guard value == "0" || value == "1" else {
+            onDiscoveryRead?(.invalidPowerState)
+            throw ToggleError(message: "Cannot read Bluetooth radio state.")
+        }
         return value == "1"
     }
 
@@ -77,9 +114,14 @@ struct BluetoothBackend {
     }
 
     func devices() throws -> [BluetoothDevice] {
-        let json = try runner.run(blueutil, ["--paired", "--format", "json"])
-        return try JSONDecoder().decode([BluetoothDevice].self, from: Data(json.utf8))
-            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        let json: String
+        do { json = try runner.run(blueutil, ["--paired", "--format", "json"]) }
+        catch { onDiscoveryRead?(.commandFailed(power: false)); throw error }
+        let devices: [BluetoothDevice]
+        do { devices = try JSONDecoder().decode([BluetoothDevice].self, from: Data(json.utf8)) }
+        catch { onDiscoveryRead?(.decodeFailed); throw error }
+        onDiscoveryRead?(.parsed(devices.count))
+        return devices.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     private func outputs() throws -> Set<String>? {
@@ -162,6 +204,11 @@ struct BluetoothBackend {
 
 final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     private let defaults: UserDefaults
+    private let diagnosticsLogger: Diagnostics
+    private var discoveryRead = BluetoothDiscoveryRead.notObserved
+    private var pendingDiscoveryRead: BluetoothDiscoveryRead?
+    // One bounded previous key, never a history of identities or observations.
+    private var lastDiscoveryFields: [String: String]?
     private let queue = DispatchQueue(label: "mac-utils.bluetooth", qos: .utility)
     private var timer: Timer?
     private var stopped = false
@@ -214,12 +261,14 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
 
     init(defaults: UserDefaults = .standard, backend: BluetoothBackend? = nil, importLegacyConfiguration: Bool = true,
          authorizationProvider: @escaping () -> CBManagerAuthorization = { CBCentralManager.authorization },
-         legacyServiceTakeover: @escaping () throws -> Void = BluetoothModule.disableLegacyService) {
+          legacyServiceTakeover: @escaping () throws -> Void = BluetoothModule.disableLegacyService,
+          diagnostics: Diagnostics = .shared) {
         self.defaults = defaults
+        self.diagnosticsLogger = diagnostics
         self.authorizationProvider = authorizationProvider
         self.legacyServiceTakeover = legacyServiceTakeover
         self.backend = backend ?? CommandRunner.find("blueutil").map {
-            BluetoothBackend(runner: CommandRunner(), blueutil: $0, audioTool: nil,
+            BluetoothBackend(runner: CommandRunner(diagnostics: diagnostics), blueutil: $0, audioTool: nil,
                              audioOutputs: { Set(try CoreAudioBackend().devices().filter { $0.directions.contains(.output) }.map(\.name)) })
         }
         super.init()
@@ -300,6 +349,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
             pendingAudioAddresses.formIntersection(newValue)
             pendingAudioName = nil
             defaults.set(newValue.sorted(), forKey: "bluetooth.autoAddresses"); onChange?()
+            publishDiscoveryDiagnostic()
         }
     }
     var protectOtherAudio: Bool {
@@ -399,11 +449,15 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
             status = reconnectSummary
             devices = []
             onChange?()
+            discoveryRead = .parentAccessRequired
+            publishDiscoveryDiagnostic()
             return
         }
         guard var backend else {
             status = "Install blueutil to manage Bluetooth"
             onChange?()
+            discoveryRead = .backendUnavailable
+            publishDiscoveryDiagnostic()
             return
         }
         // Prevent duplicate reconnect loops until the old agent is taken over.
@@ -411,6 +465,8 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
                                             autoAddresses: Set(autoAddresses.filter { retryAfter[$0, default: .distantPast] <= Date() }), protectOtherAudio: protectOtherAudio,
                                             switchAudioOutput: switchAudioOutput, protectedAudioAddresses: protectedAudioAddresses)
         busy = true
+        pendingDiscoveryRead = nil
+        backend = observingDiscovery(backend)
         activity = "Checking Bluetooth devices…"
         let cancellation = BluetoothCycleCancellation()
         cycleCancellation = cancellation
@@ -475,6 +531,8 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
 
     private func startPendingManual() {
         guard !stopped, !busy, let backend, let request = pendingManual else { return }
+        let observed = observingDiscovery(backend)
+        pendingDiscoveryRead = nil
         pendingManual = nil
         cancelActivityConnections()
         activityManual = activityPendingManual
@@ -498,11 +556,11 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         queue.async { [weak self] in
             let result = Result {
                 switch request {
-                case .connection(let address, let connected): return try backend.setConnected(connected, address: address)
+                case .connection(let address, let connected): return try observed.setConnected(connected, address: address)
                 case .powerOn:
-                    try backend.turnPowerOn()
+                    try observed.turnPowerOn()
                     DispatchQueue.main.async { self?.applyProgress(.radio(true)) }
-                    return try backend.devices()
+                    return try observed.devices()
                 }
             }
             DispatchQueue.main.async { self?.complete(result, reportError: true, manualOperation: request) }
@@ -555,6 +613,8 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
 
     private func complete(_ result: Result<[BluetoothDevice], Error>, reportError: Bool, manualOperation: ManualOperation? = nil) {
         if finishStoppedOperation() { return }
+        if let pendingDiscoveryRead { discoveryRead = pendingDiscoveryRead }
+        pendingDiscoveryRead = nil
         // An interrupted cycle cannot leave Started rows behind. Per-target
         // successes/failures above have already finished their own rows.
         cancelActivityConnections()
@@ -608,6 +668,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         manualAddress = nil
         if let manualOperation { onManualOperationCompleted?(manualOperation, result.map { _ in () }) }
         onChange?()
+        publishDiscoveryDiagnostic()
         if let name = pendingAudioName, cycleCancellation?.isCanceled == false, lastError == nil {
             pendingAudioName = nil
             pendingAudioAddresses = pendingAudioAddresses.filter { address in
@@ -622,10 +683,52 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         guard stopped else { return false }
         busy = false
         manualBusy = false
+        pendingDiscoveryRead = nil
         let completion = onStopped
         onStopped = nil
         completion?()
         return true
+    }
+
+    private func observingDiscovery(_ backend: BluetoothBackend) -> BluetoothBackend {
+        var observed = backend
+        let previous = backend.onDiscoveryRead
+        observed.onDiscoveryRead = { [weak self] read in
+            previous?(read)
+            // Same serial-worker/main-queue ordering as progress and completion.
+            // Do not publish intermediate reads against the old inventory.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !stopped else { return }
+                pendingDiscoveryRead = read
+            }
+        }
+        return observed
+    }
+
+    private func publishDiscoveryDiagnostic() {
+        guard !stopped else { return }
+        let parentAuthorization: String
+        switch authorization {
+        case .allowedAlways: parentAuthorization = "allowed"
+        case .denied: parentAuthorization = "denied"
+        case .restricted: parentAuthorization = "restricted"
+        case .notDetermined: parentAuthorization = "not_determined"
+        @unknown default: parentAuthorization = "unknown"
+        }
+        let selected = autoAddresses
+        var fields = discoveryRead.fields
+        fields.merge([
+            "inventory_device_count": String(devices.count),
+            "saved_target_count": String(selected.count),
+            "matched_target_count": String(selected.intersection(Set(devices.map(\.address))).count),
+            "radio_state": radioPoweredOn.map { $0 ? "on" : "off" } ?? "unknown",
+            "inventory_stale": String(observationStale),
+            "parent_authorization": parentAuthorization,
+            "helper_authorization": "unknown", "helper_discovery_source": "unknown"
+        ]) { _, new in new }
+        guard fields != lastDiscoveryFields else { return }
+        lastDiscoveryFields = fields
+        diagnosticsLogger.emit("bluetooth", "discovery_state_changed", fields: fields)
     }
 
     func diagnostics() -> Data? {

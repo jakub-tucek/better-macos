@@ -1,5 +1,6 @@
 import AppKit
 import CoreBluetooth
+import SwiftUI
 
 private struct Exit75AudioBackend: AudioRoutingBackend {
     func devices() throws -> [AudioDevice] { [] }
@@ -29,6 +30,15 @@ func runBluetoothErrorRecoveryTests() throws {
         fi
         if [ -f powered ]; then echo 1; else echo 0; fi ;;
       '--paired --format json')
+        if [ -f bad-inventory ]; then printf 'SENTINEL_RAW_INVALID_JSON'; exit 0; fi
+        if [ -f failed-inventory ]; then echo 'SENTINEL_HELPER_ERROR' >&2; exit 75; fi
+        if [ -f empty-inventory ]; then printf '[]'; exit 0; fi
+        if [ -f unmatched-inventory ]; then
+          printf '[{"address":"f1-e2-d3-c4-b5-a6","name":"SENTINEL_OTHER_NAME","connected":true}]'; exit 0
+        fi
+        if [ -f full-inventory ]; then
+          printf '[{"address":"fixture","name":"Fixture speaker","connected":true},{"address":"a1-b2-c3-d4-e5-f6","name":"SENTINEL_DISCOVERY_NAME","connected":true}]'; exit 0
+        fi
         if [ -f connected ]; then state=true; else state=false; fi
         printf '[{"address":"fixture","name":"Fixture speaker","connected":%s}]\n' "$state" ;;
       '--connect fixture')
@@ -56,7 +66,7 @@ func runBluetoothErrorRecoveryTests() throws {
     let logger = Diagnostics(sink: memory)
     let module = BluetoothModule(defaults: defaults,
         backend: BluetoothBackend(runner: CommandRunner(diagnostics: logger), blueutil: executable.path, audioTool: nil, waitForConnection: {}),
-        importLegacyConfiguration: false, authorizationProvider: { .allowedAlways })
+        importLegacyConfiguration: false, authorizationProvider: { .allowedAlways }, diagnostics: logger)
     let model = DashboardModel()
     model.enabledModules = []
     model.errorMessage = "Unrelated preexisting error"
@@ -157,6 +167,77 @@ func runBluetoothErrorRecoveryTests() throws {
     try FileManager.default.removeItem(at: root.appendingPathComponent("fail-connect"))
     model.onManualConnection("fixture"); wait()
     expect(module.devices.first?.connected == true && model.errorMessage == nil, "verified retry of the same device connection clears its owned failure")
+    // Successful [] is a real discovery result, not a permission verdict or an
+    // observation failure. Exercise production parsing, host projection and popup.
+    model.onAutoDeviceChanged("fixture", true)
+    model.onAutoDeviceChanged("a1-b2-c3-d4-e5-f6", true)
+    let retained = model.selectedAddresses
+    try Data().write(to: root.appendingPathComponent("empty-inventory"))
+    module.poll(); wait()
+    expect(model.bluetoothRadioOn == true && model.devices.isEmpty && model.selectedAddresses == retained && retained.count == 2,
+           "radio-on exact empty JSON preserves both saved targets through actual host discovery")
+    expect(module.lastError == nil && !model.bluetoothObservationStale && !model.bluetoothPermissionRequired,
+           "successful empty discovery invents neither observation failure nor denied parent access")
+    let unavailable = "Saved targets unavailable. Check Bluetooth status and access in Sound & connections."
+    var labels = bluetoothPopupLabels(model)
+    expect(labels.contains(unavailable) && labels.contains("2 chosen devices unavailable; targets are preserved.") && !labels.contains(where: { $0.contains("Choose targets") }),
+           "native popup shows preserved unavailable targets without asking to choose them again")
+    func discoveryEvents() -> [[String: String]] {
+        expect(logger.flushForTesting(), "discovery state diagnostics drain through injected sink")
+        return memory.records.filter { $0["event"] as? String == "discovery_state_changed" }.compactMap { $0["fields"] as? [String: String] }
+    }
+    var events = discoveryEvents()
+    expect(events.last?["parsed_device_count"] == "0" && events.last?["saved_target_count"] == "2" && events.last?["matched_target_count"] == "0" && events.last?["radio_state"] == "on",
+           "parsed empty state logs scalar counts and observed radio rather than device identities")
+    expect(events.last?["parent_authorization"] == "allowed" && events.last?["helper_authorization"] == "unknown" && events.last?["helper_discovery_source"] == "unknown" && events.last?["command_outcome"] == "success" && events.last?["decode_outcome"] == "success",
+           "empty success preserves explicit unknown helper authorization and discovery source")
+    let unchanged = events.count
+    for _ in 0..<3 { module.poll(); wait() }
+    expect(discoveryEvents().count == unchanged, "unchanged successful empty polls do not spam discovery state events")
+    try Data().write(to: root.appendingPathComponent("bad-inventory"))
+    module.poll(); wait()
+    events = discoveryEvents()
+    expect(model.bluetoothObservationStale && model.bluetoothSummary.contains("Could not read Bluetooth status") && model.selectedAddresses == retained,
+           "decode failure keeps existing observation-error precedence and saved choices")
+    expect(events.last?["command_outcome"] == "success" && events.last?["decode_outcome"] == "failure" && events.last?["parsed_device_count"] == "unknown",
+           "successful command with malformed JSON is logged as decode failure without raw output")
+    let failed = events.count
+    module.poll(); wait()
+    expect(discoveryEvents().count == failed, "unchanged decode failure is deduplicated")
+    try FileManager.default.removeItem(at: root.appendingPathComponent("bad-inventory"))
+    try Data().write(to: root.appendingPathComponent("failed-inventory"))
+    module.poll(); wait()
+    events = discoveryEvents()
+    expect(events.last?["command_outcome"] == "failure" && events.last?["decode_outcome"] == "not_attempted" && events.last?["read_stage"] == "paired",
+           "paired command failure is distinct from JSON decode failure")
+    try FileManager.default.removeItem(at: root.appendingPathComponent("failed-inventory"))
+    module.poll(); wait()
+    expect(discoveryEvents().count > failed && !model.bluetoothObservationStale && module.lastError == nil,
+           "empty success after failure emits recovery without labeling the inventory denied or stale")
+    model.onAutoDeviceChanged("fixture", false); model.onAutoDeviceChanged("a1-b2-c3-d4-e5-f6", false)
+    labels = bluetoothPopupLabels(model)
+    expect(labels.contains("Choose targets in Sound & connections.") && !labels.contains(unavailable),
+           "native popup asks for targets only when none are saved")
+    model.onAutoDeviceChanged("fixture", true); model.onAutoDeviceChanged("a1-b2-c3-d4-e5-f6", true)
+    try FileManager.default.removeItem(at: root.appendingPathComponent("empty-inventory"))
+    module.poll(); wait()
+    labels = bluetoothPopupLabels(model)
+    expect(labels.contains("Disconnect") && labels.contains("1 chosen devices unavailable; targets are preserved.") && !labels.contains(unavailable),
+           "partial native discovery keeps matching-device actions and the truthful missing count")
+    try Data().write(to: root.appendingPathComponent("unmatched-inventory"))
+    module.poll(); wait()
+    labels = bluetoothPopupLabels(model)
+    expect(labels.contains(unavailable) && labels.contains("2 chosen devices unavailable; targets are preserved.") && !labels.contains("Disconnect"),
+           "nonempty unmatched inventory does not masquerade as matching saved targets")
+    try FileManager.default.removeItem(at: root.appendingPathComponent("unmatched-inventory"))
+    try Data().write(to: root.appendingPathComponent("full-inventory"))
+    module.poll(); wait()
+    labels = bluetoothPopupLabels(model)
+    events = discoveryEvents()
+    expect(labels.contains("Disconnect") && !labels.contains(unavailable) && !labels.contains(where: { $0.contains("targets are preserved") }),
+           "fully matching native inventory exposes actions without missing-target guidance")
+    expect(events.last?["parsed_device_count"] == "2" && events.last?["matched_target_count"] == "2" && model.selectedAddresses == retained,
+           "changed matching inventory emits updated counts without rewriting saved IDs")
     model.errorMessage = "Unrelated storage cleanup failure"
     let beforeDisable = try calls()
     model.onModuleChanged(.bluetooth, false)
@@ -165,8 +246,47 @@ func runBluetoothErrorRecoveryTests() throws {
     expect(model.errorMessage == "Unrelated storage cleanup failure" && afterDisable == beforeDisable, "feature disable neither clears unrelated errors nor mutates Bluetooth")
     expect(logger.flushForTesting(), "final Bluetooth diagnostic records drain in test")
     let encoded = memory.lines.map { String(decoding: $0, as: UTF8.self) }.joined()
-    expect(!encoded.contains(exact) && !encoded.contains("Fixture speaker") && !encoded.contains("--connect fixture") && !encoded.contains(root.path),
+    expect(!encoded.contains(exact) && !encoded.contains("Fixture speaker") && !encoded.contains("--connect fixture") && !encoded.contains(root.path) &&
+           !encoded.contains("a1-b2-c3-d4-e5-f6") && !encoded.contains("f1-e2-d3-c4-b5-a6") && !encoded.contains("SENTINEL"),
            "host and command Bluetooth hooks omit raw error, device name/address and executable path")
+}
+
+// Native AX inspection of this fixture's production popup row only. SwiftUI
+// nodes implement selectors without declaring NSAccessibilityProtocol adoption.
+private func bluetoothPopupLabels(_ model: DashboardModel) -> [String] {
+    _ = NSApplication.shared
+    let attribute = "AXEnhancedUserInterface" as NSString
+    let old = NSApp.perform(NSSelectorFromString("accessibilityAttributeValue:"), with: attribute)?.takeUnretainedValue()
+    _ = NSApp.perform(NSSelectorFromString("accessibilitySetValue:forAttribute:"), with: NSNumber(value: true), with: attribute)
+    defer { _ = NSApp.perform(NSSelectorFromString("accessibilitySetValue:forAttribute:"), with: old ?? NSNumber(value: false), with: attribute) }
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 380, height: 360), styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false; window.alphaValue = 0
+    let view = NSHostingView(rootView: QuickWidget(model: model, entry: WidgetEntry(.bluetooth)))
+    window.contentView = view; window.orderFront(nil)
+    defer { window.close() }
+    func labels() -> [String] {
+        var visited = Set<ObjectIdentifier>()
+        func walk(_ value: Any) -> [String] {
+            guard let node = value as? NSObject, visited.insert(ObjectIdentifier(node)).inserted else { return [] }
+            var result = [String]()
+            for key in ["accessibilityLabel", "accessibilityValue"] where node.responds(to: NSSelectorFromString(key)) {
+                if let text = node.value(forKey: key) as? String { result.append(text) }
+            }
+            if node.responds(to: NSSelectorFromString("accessibilityChildren")) {
+                result += (node.value(forKey: "accessibilityChildren") as? [Any] ?? []).flatMap(walk)
+            }
+            return result
+        }
+        return walk(view)
+    }
+    let deadline = Date().addingTimeInterval(1)
+    repeat {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        view.layoutSubtreeIfNeeded(); window.display()
+        let result = labels()
+        if result.contains("Bluetooth") { return result }
+    } while Date() < deadline
+    return labels()
 }
 
 /// Real host callbacks and subprocess runner while a fixture helper is blocked.

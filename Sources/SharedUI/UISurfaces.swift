@@ -626,7 +626,9 @@ struct QuickWidget: View {
     private var bluetooth: some View {
         VStack(alignment: .leading, spacing: 8) {
             let selected = model.devices.filter { model.selectedAddresses.contains($0.address) }
-            if selected.isEmpty { Text("No chosen devices available. Choose targets in Sound & connections.").font(.caption) }
+            if let message = BluetoothPresentation.widgetEmptyMessage(savedCount: model.selectedAddresses.count, matchedCount: selected.count) {
+                Text(message).font(.caption)
+            }
             ForEach(selected, id: \.address) { device in
                 HStack {
                     Text(device.name).lineLimit(2)

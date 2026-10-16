@@ -124,7 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
              acceptsActions: { transactions.acceptsActions },
              publish: { [weak awakePresentation] in awakePresentation?.publish($0) },
              reportError: { [weak model] in model?.errorMessage = $0.localizedDescription })
-         self.makeBluetooth = makeBluetooth ?? { BluetoothModule(defaults: preferences) }
+          self.makeBluetooth = makeBluetooth ?? { BluetoothModule(defaults: preferences, diagnostics: diagnostics) }
          self.makeMenuBar = makeMenuBar ?? { MenuBarModule(defaults: preferences) }
          self.menuBarSpacing = menuBarSpacing ?? MenuBarSpacing(defaults: preferences)
          self.animations = animations ?? AnimationPreferences(defaults: preferences)

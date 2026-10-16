@@ -41,7 +41,9 @@ case "$mode" in
     exit 0 ;;
 esac
 case "$*" in
-  '--power') if [ "$mode" = off ]; then echo 0; else echo 1; fi ;;
+  '--power')
+    if [ "$mode" = invalid-power ]; then printf 'SENTINEL_INVALID_POWER';
+    elif [ "$mode" = off ]; then echo 0; else echo 1; fi ;;
   '--paired --format json')
     if [ "$mode" = connect-failure ]; then echo '[{"address":"fixture","name":"Fixture","connected":false}]'; else echo '[]'; fi ;;
   '--connect fixture') exit 75 ;;
@@ -57,11 +59,12 @@ defaults.set(true, forKey: "bluetooth.autoEnabled")
 defaults.set([], forKey: "bluetooth.autoAddresses")
 // Neutralize ambient legacy-service presence for this isolated reconnect policy.
 defaults.set(true, forKey: "bluetooth.legacyTakenOver")
-let logger = Diagnostics(sink: DiscardPermissionDiagnostics())
+let diagnosticSink = PermissionDiscoveryDiagnostics()
+let logger = Diagnostics(sink: diagnosticSink)
 var authorization = CBManagerAuthorization.allowedAlways
 let module = BluetoothModule(defaults: defaults,
     backend: BluetoothBackend(runner: CommandRunner(diagnostics: logger), blueutil: executable.path, audioTool: nil, waitForConnection: {}),
-    importLegacyConfiguration: false, authorizationProvider: { authorization })
+    importLegacyConfiguration: false, authorizationProvider: { authorization }, diagnostics: logger)
 defer { module.stop() }
 func mode(_ name: String) throws { try name.write(to: root.appendingPathComponent("mode"), atomically: true, encoding: .utf8) }
 func pump(_ seconds: TimeInterval) { RunLoop.main.run(until: Date().addingTimeInterval(seconds)) }
@@ -77,10 +80,16 @@ func calls() -> Int {
 try mode("off")
 module.poll(); wait()
 check(module.radioPoweredOn == false && !module.permissionRequired, "parent allowed plus successful zero power is represented as radio off")
+check(logger.flushForTesting() && diagnosticSink.latestDiscovery?["radio_state"] == "off" && diagnosticSink.latestDiscovery?["parsed_device_count"] == "0",
+      "successful exact radio-off/empty reads log observed scalar values")
 try mode("abort")
 module.poll(); wait()
 check(module.lastError?.contains("134") == true && !module.permissionRequired, "child exit 134 does not falsely set parent authorization denied")
 check(module.reconnectSummary.contains("Could not read Bluetooth status") && module.reconnectSummary.contains("134"), "new helper failure replaces stale radio-off guidance with observation error")
+check(logger.flushForTesting() && diagnosticSink.latestDiscovery?["discovery_outcome"] == "command_failure" && diagnosticSink.latestDiscovery?["read_stage"] == "power" && diagnosticSink.latestDiscovery?["decode_outcome"] == "not_attempted",
+      "power command failure is distinct from an unattempted paired decode")
+check(diagnosticSink.latestDiscovery?["parent_authorization"] == "allowed" && diagnosticSink.latestDiscovery?["helper_authorization"] == "unknown",
+      "helper exit 134 never becomes a diagnostic authorization verdict")
 print("OBSERVED status=\(module.status); summary=\(module.reconnectSummary)")
 
 for failure in ["signal", "timeout"] {
@@ -144,6 +153,8 @@ authorization = .denied
 let beforeDenied = calls()
 module.start(); pump(0.02)
 check(module.permissionRequired && calls() == beforeDenied, "actual parent denial prevents new helper launches")
+check(logger.flushForTesting() && diagnosticSink.latestDiscovery?["parent_authorization"] == "denied" && diagnosticSink.latestDiscovery?["discovery_outcome"] == "parent_access_required" && diagnosticSink.latestDiscovery?["helper_authorization"] == "unknown",
+      "known parent denial is logged separately from unqueried helper authorization")
 module.stop()
 authorization = .allowedAlways
 try mode("off")
@@ -155,5 +166,12 @@ try mode("connect-failure")
 module.start(); wait()
 check(!module.legacyServicePresent && module.lastError != nil && !module.reconnectSummary.contains("Could not read Bluetooth status") && !module.observationStale,
       "automatic connection failure is not mislabeled as failed initial discovery")
+module.stop()
+defaults.set([], forKey: "bluetooth.autoAddresses")
+try mode("invalid-power")
+module.start(); wait()
+check(logger.flushForTesting() && diagnosticSink.latestDiscovery?["discovery_outcome"] == "invalid_power_state" && diagnosticSink.latestDiscovery?["command_outcome"] == "success" && diagnosticSink.latestDiscovery?["decode_outcome"] == "not_attempted",
+      "invalid power readback is not mislabeled as a command exit or paired JSON failure")
+check(module.observationStale && !module.permissionRequired, "invalid power observation preserves error precedence without inventing parent denial")
 module.stop()
 print("\(checks) focused permission-context checks passed; no live TCC or Bluetooth access.")
