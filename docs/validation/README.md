@@ -12,6 +12,7 @@ to the current documentation. Native/hardware acceptance remains open.
 - [Mechanical source organization and byte-preservation checks](source-organization.md)
 - [Core recovery regressions](release-core.md) · [Host transactions](host-transactions.md)
 - [Bluetooth stale-banner recovery; power-on cause remains unknown](bluetooth-error-recovery.md#main-integration--2026-10-15)
+- [Bluetooth permission-revocation investigation and secondary stale-status presentation correction](bluetooth-disable-responsiveness.md#secondary-presentation-correction-not-a-desktop-freeze-fix)
 - [Login registration-intent UI; real autostart unverified](login-diagnosis.md#main-integration--2026-10-15)
 - [Bounded diagnostics and typed Bluetooth/login hooks](../diagnostics.md#main-integration--2026-10-15)
 - [Session Activity integration and native row anchoring](../activity.md#main-integration--2026-10-15)

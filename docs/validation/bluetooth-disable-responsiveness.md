@@ -3,7 +3,8 @@
 Base: `d7c8da9`. Report: disabling “blueutil” froze UI and required restart.
 Initial investigation did not know the exact control or app-only versus
 whole-input scope. The later clarification below supersedes that initial scope.
-**Incident root cause remains unconfirmed. No production fix was made.**
+**Incident root cause remains unconfirmed.** A later, separately authorized
+secondary presentation correction is recorded below; it is not a desktop-freeze fix.
 
 ## Clarified trigger: revoke blueutil Bluetooth permission
 
@@ -71,11 +72,11 @@ Observed:
    The cached radio-off branch precedes the newer error branch. This is a stale
    summary, not a demonstrated permission-denial classifier or desktop-freeze cause.
 
-Narrow proposal, **not implemented**: prioritize the latest observation error
+Initial narrow proposal, **not implemented at `af0517f`**: prioritize the latest observation error
 over cached radio-off guidance. Keep `permissionRequired` tied to actual parent
 authorization; do not relabel 75/134 as confirmed denial, automatically power on,
 grant permission, reset TCC, or abandon active-command ownership. The diagnostic
-fixture currently asserts the reproduced stale summary; flip that assertion to
+fixture at that revision asserts the reproduced stale summary; flip that assertion to
 the desired behavior only when implementing the independently reviewed fix.
 
 ### Remaining incident hypotheses and safe diagnostic plan
@@ -107,8 +108,97 @@ at that moment, not proof of healthy global input. Only if separately authorized
 capture a future naturally occurring incident's read-only process stacks and
 system diagnostics. Do not inspect private TCC databases or reset permissions.
 
-No broader suite, app build/relaunch, hardware acceptance or independent review
-was performed for this clarified scope. Incident causality remains open.
+At `af0517f`, no broader suite, app build/relaunch, hardware acceptance or independent
+review was performed for this clarified scope. Incident causality remains open.
+
+## Secondary presentation correction (not a desktop-freeze fix)
+
+The user separately authorized correcting the reproduced stale summary.
+`3d77b0c` introduces explicit stale-observation presentation in the owner and
+projects it through the actual host/model into Settings. A failed initial
+discovery now says “Could not read Bluetooth status” with the existing error
+detail and warns that cached device information may be out of date. Cached
+devices, targets, preferences and last known radio state remain intact. Stale
+state suppresses the radio-off power-on instruction and the empty-inventory
+instruction. Actual parent authorization still owns permission-required UI.
+
+`c8a44b4` distinguishes initial radio/inventory discovery failures from later
+automatic connection/routing errors. The latter retain their existing error
+meaning instead of acquiring a misleading status-read label. Error classification
+uses a typed discovery wrapper, not exit code or error-text comparison. The
+underlying localized detail is preserved. Operational diagnostic event fields and
+redaction are unchanged; the existing local UI snapshot carries the corrected summary.
+
+A successful fresh device snapshot clears stale-observation state. Existing
+manual-error publication UUIDs remain host-owned: observation success never clears
+the global manual-action banner; verified retry of the same manual action still
+uses the existing ownership rules. No subprocess timeout/drain, inherited-pipe
+handling, automatic radio action, authorization policy, poll cadence or vendor
+gesture code changed.
+
+The focused test was first changed to require the corrected summary and failed
+before the fix (`build/permission-presentation-red.log`). A follow-up regression
+then reproduced mislabeling of automatic connection failure before the typed
+discovery correction (`build/permission-classification-red.log`). Both pass after
+the corrections. `test.sh` now runs the focused executable by default, with no
+deliberately failing assertion. Its compiler-only nested build fixture mocks this
+auxiliary suite exactly as it mocks the other auxiliary suites; the real top-level
+suite remains enabled.
+
+The first complete run at `3d77b0c` stopped with exit 32 in `Tests/build.sh`:
+its mock compiler was inadvertently given the new focused-suite input list.
+All prior focused checks, app build and real/relocated packaging had passed;
+that partial run is **not** full-suite success. The explicit mock-list addition
+in `c8a44b4` corrects that fixture integration.
+
+Unmodified normal-path lint/format/tooling passed at both implementation commits
+in `/Users/jakubtucek/Projects/others/fix-mac-os-bluetooth-validation`, a detached
+validation worktree. Temp-path lint initially reported the four unchanged
+WindowPositions forced casts despite their baseline; temp-path tooling also
+failed path-based exclusion fixtures. Neither baseline nor config was changed.
+These historical failures remain in `build/bluetooth-presentation-{lint,tools}.log`
+in the implementation worktree.
+
+### Frozen secondary-fix validation
+
+At **`c8a44b450e58f61b1c65dfcb065186d82a74eab9`**, the complete command
+`MAC_UTILS_SIGNING_IDENTITY=- DEVELOPER_DIR=/Library/Developer/CommandLineTools bash test.sh`
+passed:
+
+- **4,731 legacy isolated checks**, including the actual-host failure/recovery
+  regressions and the earlier blocked-disable/takeover checks.
+- **32 separate focused permission-context checks** and **81 separate diagnostic
+  review checks**, plus the safety-entry source guard. These are not added to
+  the legacy count.
+- **10 Swift Testing policy tests in three suites**, **13 mocked installer
+  scenarios**, state compiler checks, build/publication failure fixtures and
+  real/relocated signed-bundle notices/dependency/metadata checks.
+
+Log: `build/bluetooth-presentation-c8a44b4-full.log` in the implementation
+worktree. The built plist embeds the exact revision above; an additional strict
+`codesign --verify --deep --strict` passed without launching the bundle.
+Standalone CLT used Apple Swift 6.4 (`swiftlang-6.4.0.34.1`) / SDK 27.0, Swift 5
+language mode, arm64/macOS 15 target.
+
+Unmodified normal-path lint and format passed across **62 Swift files** at the
+same revision. Offline tooling and CI whitespace fixtures, committed-range
+whitespace from `d7c8da9` to that revision, shell syntax and `git diff --check`
+passed. Normal-path logs:
+`build/bluetooth-presentation-c8a44b4-{lint,format,tools}.log` in the detached
+validation worktree above. CI/range logs are
+`build/bluetooth-presentation-c8a44b4-{ci,range}.log` in the implementation worktree.
+Hosted CI was not run. No lint baseline/config or CI workflow was altered.
+
+No production app was launched, installed or quit; no live permission, device,
+input, audio, clipboard, system-preference or launchctl mutation was performed.
+The isolated suite mounts fixture-owned native windows and retains its existing
+read-only capability checks. Tests use isolated defaults, injected backends and
+temporary helper executables. No real permission was revoked again. Nothing was
+merged, pushed or published. This documentation commit does not claim a fresh
+bundle built at its own revision.
+
+Independent review remains required before merge. This correction neither
+reproduces nor fixes whole-desktop loss of clicks after permission revocation.
 
 ## Initial host-toggle investigation (superseded incident scope)
 
