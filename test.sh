@@ -6,6 +6,7 @@ bash Tests/swiftui-compatibility.sh
 bash Tests/diagnostics-regressions.sh
 bash Tests/gesture-terminal-proof.sh --instant-safety
 bash Tests/bluetooth-permission-regressions.sh
+bash Tests/bluetooth-observation-regressions.sh
 bash build.sh
 bash Tests/packaging.sh
 bash Tests/build.sh
@@ -15,6 +16,7 @@ clipboard_package_build release
 xcrun swiftc -swift-version 5 -warnings-as-errors -target arm64-apple-macos15.0 \
     Sources/Core/ActivityJournal.swift Sources/SharedUI/ActivityView.swift Tests/ActivityTests.swift Tests/ActivityScrollTests.swift Tests/PresentationDisplayRefreshTests.swift \
     Sources/Core/Diagnostics.swift Sources/Core/LoginDiagnostics.swift Tests/DiagnosticsTests.swift \
+    Sources/Features/Bluetooth/BluetoothObservation.swift Sources/Features/Bluetooth/BluetoothProfilerProcess.swift Tests/BluetoothObservationTests.swift \
     Sources/App/LoginService.swift Tests/LoginServiceTests.swift Sources/Features/KeepAwake/KeepAwakeFeature.swift Sources/Features/KeepAwake/KeepAwakePresentation.swift Tests/KeepAwakeFeatureTests.swift \
     -I "$CLIPBOARD_PACKAGE_MODULES" "$CLIPBOARD_PACKAGE_ARCHIVE" \
     -I Vendor/strafe/CStrafe/include -I MouseHID Sources/Features/Clipboard/ClipboardModule.swift Tests/ClipboardTests.swift Tests/ClipboardPresentationTests.swift Sources/Features/Windows/WindowPositions.swift Sources/Features/Windows/WindowPositionsView.swift \

@@ -142,13 +142,21 @@ final class DashboardModel: ObservableObject {
     @Published var bluetoothRadioOn: Bool?
     @Published var bluetoothPermissionRequired = false
     @Published var bluetoothObservationStale = false
+    @Published var bluetoothControlsAvailable = true
+    @Published var bluetoothObservationSource: String?
     @Published var bluetoothDeviceStates: [String: String] = [:]
     @Published var bluetoothSummary = "Loading devices…"
     @Published var protectOtherAudio = true
     @Published var switchAudioOutput = true
     @Published var protectedAudioAddresses = Set<String>()
     @Published var legacyServicePresent = false
-    var bluetoothCanOfferPowerOn: Bool { !bluetoothPermissionRequired && !bluetoothObservationStale && bluetoothRadioOn == false }
+    var bluetoothCanOfferPowerOn: Bool { bluetoothControlsAvailable && !bluetoothPermissionRequired && !bluetoothObservationStale && bluetoothRadioOn == false }
+    var bluetoothSelectedDevices: [BluetoothDevice] {
+        devices.filter { device in selectedAddresses.contains { BluetoothIdentity.matches($0, device.address) } }
+    }
+    var bluetoothMissingTargets: Set<String> {
+        Set(selectedAddresses.filter { address in !devices.contains { BluetoothIdentity.matches(address, $0.address) } })
+    }
     var bluetoothEmptyMessage: String {
         if bluetoothPermissionRequired { return "Grant Bluetooth access to show your paired devices." }
         if bluetoothObservationStale { return "Paired devices could not be refreshed." }
@@ -876,6 +884,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 14) {
             card {
                 Label("Bluetooth", systemImage: DashboardTab.bluetooth.symbol).font(.headline)
+                if let source = model.bluetoothObservationSource { Text(source).font(.caption).foregroundStyle(.secondary) }
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Automatic reconnection").font(.headline)
@@ -910,7 +919,7 @@ struct DashboardView: View {
                     }
                 }
                 if model.devices.isEmpty { Text(model.bluetoothEmptyMessage).font(.caption).foregroundStyle(.secondary) }
-                ForEach(model.selectedAddresses.subtracting(Set(model.devices.map(\.address))).sorted(), id: \.self) { address in
+                ForEach(model.bluetoothMissingTargets.sorted(), id: \.self) { address in
                     HStack {
                         Text("Unavailable target · \(address)").font(.caption)
                         Spacer()
@@ -972,7 +981,7 @@ struct DashboardView: View {
                         disconnectWarning = device
                         showDisconnectWarning = true
                     } else { model.onManualConnection(device.address) }
-                }.controlSize(.small).frame(width: 78).disabled(model.bluetoothPermissionRequired || model.bluetoothManualBusy || model.bluetoothRadioOn == false) }
+                }.controlSize(.small).frame(width: 78).disabled(!model.bluetoothControlsAvailable || model.bluetoothPermissionRequired || model.bluetoothManualBusy || model.bluetoothRadioOn == false) }
                 BlueSwitch(label: "Automatically reconnect \(device.name)", isOn: model.autoReconnectBinding(for: device.address))
                     .disabled(!model.bluetoothAvailable || model.bluetoothPermissionRequired)
             }

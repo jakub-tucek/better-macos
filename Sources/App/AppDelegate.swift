@@ -1074,17 +1074,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             model.bluetoothPermissionRequired = false
             model.bluetoothObservationStale = false
             model.bluetoothRadioOn = nil
+            model.bluetoothControlsAvailable = false
+            model.bluetoothObservationSource = nil
             model.bluetoothSummary = "Bluetooth module is off"
             return
         }
         // Bluetooth's five-second poll must never enter graphics queries.
-        model.devices = bluetooth.devices
+        model.devices = bluetooth.displayedDevices
         model.selectedAddresses = bluetooth.autoAddresses
         model.automaticReconnectEnabled = bluetooth.autoEnabled
         model.bluetoothAvailable = bluetooth.available
         model.bluetoothBusy = bluetooth.isBusy
         model.bluetoothManualBusy = bluetooth.isManualBusy
-        model.bluetoothRadioOn = bluetooth.radioPoweredOn
+        model.bluetoothRadioOn = bluetooth.displayedRadioPoweredOn
+        model.bluetoothControlsAvailable = bluetooth.controlsAvailable
+        model.bluetoothObservationSource = bluetooth.observationSource
         model.bluetoothPermissionRequired = bluetooth.permissionRequired
         model.bluetoothObservationStale = bluetooth.observationStale
         model.bluetoothDeviceStates = bluetooth.deviceStates
@@ -1111,7 +1115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func checkGUIBluetoothTest() {
         guard let bluetooth, modules.enabled.contains(.bluetooth), let name = guiTestTarget, !guiTestFinished, !bluetooth.permissionRequired,
-              bluetooth.radioPoweredOn == true, let device = bluetooth.devices.first(where: { $0.name == name }) else { return }
+              bluetooth.controlsAvailable, bluetooth.radioPoweredOn == true, let device = bluetooth.devices.first(where: { $0.name == name }) else { return }
         if !guiTestStarted {
             guiTestStarted = true
             // Runs under the GUI's actual TCC identity, not Terminal's access.

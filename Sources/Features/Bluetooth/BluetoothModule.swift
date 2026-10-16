@@ -96,6 +96,8 @@ struct BluetoothBackend {
     var routeOutput: ((String) -> Void)?
     var pendingAudioAddresses = Set<String>()
     var onDiscoveryRead: ((BluetoothDiscoveryRead) -> Void)?
+    var observationService: BluetoothObservationService?
+    var onObservation: ((BluetoothReadback) -> Void)?
 
     func isPoweredOn() throws -> Bool {
         let value: String
@@ -142,14 +144,29 @@ struct BluetoothBackend {
     }
 
     func reconcile(_ configuration: BluetoothConfiguration, progress: ((BluetoothProgress) -> Void)? = nil,
-                   shouldContinue: () -> Bool = { true }) throws -> [BluetoothDevice] {
+                    shouldContinue: @escaping () -> Bool = { true }) throws -> [BluetoothDevice] {
         let poweredOn: Bool
+        var observedPower: Bool?
         var current: [BluetoothDevice]
         do {
             poweredOn = try isPoweredOn()
-            progress?(.radio(poweredOn))
+            observedPower = poweredOn
+            if observationService == nil { progress?(.radio(poweredOn)) }
             current = try devices()
-        } catch { throw BluetoothObservationFailure(underlying: error) }
+        } catch {
+            if let observationService {
+                onObservation?(observationService.observe(power: observedPower, devices: nil, shouldContinue: shouldContinue))
+            }
+            throw BluetoothObservationFailure(underlying: error)
+        }
+        if let observationService {
+            let observation = observationService.observe(power: poweredOn, devices: current, shouldContinue: shouldContinue)
+            onObservation?(observation)
+            guard !observation.controlsBlocked else {
+                throw BluetoothObservationFailure(underlying: ToggleError(message: observation.summary ?? "Bluetooth controls unavailable."))
+            }
+            progress?(.radio(poweredOn))
+        }
         guard configuration.enabled, poweredOn else { return current }
         // A connection may succeed before post-connect discovery fails. Retry
         // that routing intent on fresh observations without reconnecting it.
@@ -225,6 +242,21 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     private var retryAfter: [String: Date] = [:]
     private var activity: String?
     private(set) var radioPoweredOn: Bool?
+    private(set) var readback: BluetoothReadback?
+    var controlsAvailable: Bool { readback?.controlsBlocked != true }
+    var displayedRadioPoweredOn: Bool? {
+        if let readback { return readback.displayedPower }
+        return radioPoweredOn
+    }
+    var displayedDevices: [BluetoothDevice] {
+        guard let observed = readback?.displayedDevices else { return devices }
+        // Retain saved spelling at the presentation boundary; never persist native IDs.
+        return observed.map { device in
+            let saved = autoAddresses.sorted().first { BluetoothIdentity.matches($0, device.address) }
+            return BluetoothDevice(address: saved ?? device.address, name: device.name, connected: device.connected)
+        }
+    }
+    var observationSource: String? { readback.map { $0.source == "system_profiler" ? "Sources: macOS System Information (read-only), Bluetooth helper" : "Source: Bluetooth helper" } }
     private(set) var deviceStates: [String: String] = [:]
     private(set) var lastError: String?
     private(set) var observationStale = false
@@ -269,7 +301,8 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         self.legacyServiceTakeover = legacyServiceTakeover
         self.backend = backend ?? CommandRunner.find("blueutil").map {
             BluetoothBackend(runner: CommandRunner(diagnostics: diagnostics), blueutil: $0, audioTool: nil,
-                             audioOutputs: { Set(try CoreAudioBackend().devices().filter { $0.directions.contains(.output) }.map(\.name)) })
+                             audioOutputs: { Set(try CoreAudioBackend().devices().filter { $0.directions.contains(.output) }.map(\.name)) },
+                              observationService: .live())
         }
         super.init()
         defaults.register(defaults: ["bluetooth.protectAudio": true, "bluetooth.switchAudio": true])
@@ -293,6 +326,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     var configurationOutcome: FeatureSetupOutcome {
         if permissionRequired { return .pendingAccess("Bluetooth access required; grant access and retry in Sound & connections.") }
         if !available { return .pendingHardware("Bluetooth backend is unavailable.") }
+        if !controlsAvailable { return .pendingHardware(reconnectSummary) }
         if let lastError { return .failed(lastError) }
         if radioPoweredOn == false { return .pendingHardware("Bluetooth radio is off; turn it on in Settings.") }
         if busy || lastObservation == nil { return .pendingHardware("Device discovery/connection is in progress; see Sound & connections for its result.") }
@@ -303,13 +337,13 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         return .applied(reconnectSummary)
     }
     func audioRequestIsCurrent(name: String) -> Bool {
-        !stopped && autoEnabled && switchAudioOutput && !suspendAutomaticReconnection && !legacyServicePresent &&
+        !stopped && controlsAvailable && autoEnabled && switchAudioOutput && !suspendAutomaticReconnection && !legacyServicePresent &&
             cycleCancellation?.isCanceled == false && devices.contains {
                 $0.connected && $0.name == name && autoAddresses.contains($0.address)
             }
     }
     var audioProtection: AudioProtectionSnapshot {
-        guard !stopped, !permissionRequired, !busy, lastError == nil, !legacyServicePresent,
+        guard !stopped, controlsAvailable, !permissionRequired, !busy, lastError == nil, !legacyServicePresent,
               let lastObservation, Date().timeIntervalSince(lastObservation) < 10 else { return .unavailable }
         return AudioProtectionSnapshot(ready: true, protectedDeviceNames: Set(devices.filter {
             $0.connected && protectedAudioAddresses.contains($0.address)
@@ -388,6 +422,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         if permissionRequired { return "Bluetooth access required — allow Fix macOS in Privacy & Security → Bluetooth" }
         if pendingManual != nil { return "Manual request queued; waiting for the current attempt" }
         if busy, let activity { return activity }
+        if let summary = readback?.summary { return summary }
         if let lastError {
             return lastErrorIsObservation ? observationFailureSummary(lastError) : lastError
         }
@@ -473,6 +508,14 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         if !config.enabled || !config.switchAudioOutput { pendingAudioAddresses.removeAll() }
         pendingAudioAddresses.formIntersection(config.autoAddresses)
         backend.pendingAudioAddresses = pendingAudioAddresses
+        backend.onObservation = { [weak self] observation in
+            DispatchQueue.main.async {
+                guard !cancellation.isCanceled, let self, !self.stopped else { return }
+                self.readback = observation
+                if let power = observation.helperPower { self.radioPoweredOn = power }
+                self.onChange?()
+            }
+        }
         backend.routeOutput = { [weak self] name in
             DispatchQueue.main.async {
                 guard !cancellation.isCanceled else { return }
@@ -501,6 +544,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
 
     func requestConnection(_ connected: Bool, address: String) {
         guard !stopped else { return }
+        guard controlsAvailable else { onError?(ToggleError(message: reconnectSummary)); onChange?(); return }
         guard !permissionRequired else {
             activityJournal?.record(.bluetoothConnect(connected), trigger: .user, result: .blocked)
             onError?(ToggleError(message: reconnectSummary)); onChange?(); return
@@ -516,6 +560,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
 
     func turnBluetoothOn() {
         guard !stopped else { return }
+        guard controlsAvailable else { onError?(ToggleError(message: reconnectSummary)); onChange?(); return }
         guard !permissionRequired else {
             activityJournal?.record(.bluetoothPower, trigger: .user, result: .blocked)
             onError?(ToggleError(message: reconnectSummary)); onChange?(); return
@@ -531,9 +576,18 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
 
     private func startPendingManual() {
         guard !stopped, !busy, let backend, let request = pendingManual else { return }
+        guard controlsAvailable else {
+            pendingManual = nil
+            if let activityPendingManual { activityJournal?.finish(activityPendingManual, result: .blocked) }
+            activityPendingManual = nil
+            onChange?()
+            return
+        }
         let observed = observingDiscovery(backend)
         pendingDiscoveryRead = nil
         pendingManual = nil
+        backend.observationService?.invalidate()
+        readback = nil
         cancelActivityConnections()
         activityManual = activityPendingManual
         activityPendingManual = nil
@@ -740,6 +794,8 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
             "updatedAt": ISO8601DateFormatter().string(from: Date()),
             "permissionRequired": permissionRequired, "authorization": authorization.rawValue,
             "radioOn": radioPoweredOn.map { $0 as Any } ?? NSNull(), "busy": busy, "manualBusy": isManualBusy,
+            "observationSource": readback?.source ?? "blueutil", "observationConflict": readback?.conflicting ?? false,
+            "controlsAvailable": controlsAvailable,
             "summary": reconnectSummary, "lastError": lastError.map { $0 as Any } ?? NSNull(), "devices": rows
         ], options: [.sortedKeys, .prettyPrinted])
     }

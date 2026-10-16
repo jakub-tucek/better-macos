@@ -258,6 +258,8 @@ final class SetupDraft: ObservableObject {
     func copyDiscovery(_ model: DashboardModel) {
         controls.audioDevices = model.audioDevices; controls.audioRoutes = model.audioRoutes
         controls.devices = model.devices; controls.bluetoothRadioOn = model.bluetoothRadioOn
+        controls.bluetoothControlsAvailable = model.bluetoothControlsAvailable
+        controls.bluetoothObservationSource = model.bluetoothObservationSource
         controls.bluetoothAvailable = true; controls.bluetoothPermissionRequired = false
         controls.legacyServicePresent = model.legacyServicePresent
         controls.spacesAvailable = true; controls.spacesPermission = model.spacesPermission

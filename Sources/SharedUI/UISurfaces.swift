@@ -625,7 +625,7 @@ struct QuickWidget: View {
     }
     private var bluetooth: some View {
         VStack(alignment: .leading, spacing: 8) {
-            let selected = model.devices.filter { model.selectedAddresses.contains($0.address) }
+            let selected = model.bluetoothSelectedDevices
             if let message = BluetoothPresentation.widgetEmptyMessage(savedCount: model.selectedAddresses.count, matchedCount: selected.count) {
                 Text(message).font(.caption)
             }
@@ -635,14 +635,15 @@ struct QuickWidget: View {
                     Spacer()
                     Button(device.connected ? "Disconnect" : "Connect") {
                         if device.connected { disconnect = device } else { model.onManualConnection(device.address) }
-                    }.disabled(model.bluetoothPermissionRequired || model.bluetoothManualBusy || model.bluetoothRadioOn != true)
+                    }.disabled(!model.bluetoothControlsAvailable || model.bluetoothPermissionRequired || model.bluetoothManualBusy || model.bluetoothRadioOn != true)
                 }
                 if entry.expanded { Text(model.bluetoothDeviceStates[device.address] ?? (device.connected ? "Connected" : "Disconnected")).font(.caption) }
             }
-            let missing = model.selectedAddresses.subtracting(Set(model.devices.map(\.address)))
+            let missing = model.bluetoothMissingTargets
             if !missing.isEmpty { Text("\(missing.count) chosen devices unavailable; targets are preserved.").font(.caption) }
+            if entry.expanded || !model.bluetoothControlsAvailable { Text(model.bluetoothSummary).font(.caption) }
+            if let source = model.bluetoothObservationSource { Text(source).font(.caption).foregroundStyle(.secondary) }
             if entry.expanded {
-                Text(model.bluetoothSummary).font(.caption)
                 Toggle("Automatic reconnect", isOn: Binding(get: { model.automaticReconnectEnabled }, set: model.onAutomaticReconnectChanged))
                     .disabled(!model.bluetoothAvailable || model.bluetoothPermissionRequired || model.legacyServicePresent)
             }

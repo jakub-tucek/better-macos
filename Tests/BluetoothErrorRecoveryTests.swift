@@ -11,6 +11,7 @@ private struct Exit75AudioBackend: AudioRoutingBackend {
 // Production host callbacks/module/CommandRunner regression coverage,
 // isolated defaults and an executable fixture; never invokes installed blueutil.
 func runBluetoothErrorRecoveryTests() throws {
+    try runBluetoothNativePresentationTests()
     try runBluetoothBlockedDisableTests()
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("bluetooth-exit75-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -287,6 +288,49 @@ private func bluetoothPopupLabels(_ model: DashboardModel) -> [String] {
         if result.contains("Bluetooth") { return result }
     } while Date() < deadline
     return labels()
+}
+
+private func runBluetoothNativePresentationTests() throws {
+    let suite = "fix-mac-os.native-presentation.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    let registered = defaults.volatileDomain(forName: UserDefaults.registrationDomain)
+    defer { defaults.setVolatileDomain(registered, forName: UserDefaults.registrationDomain); defaults.removePersistentDomain(forName: suite) }
+    for feature in AppModule.allCases { ModuleSettings(defaults: defaults).set(feature, enabled: false) }
+    let saved: Set<String> = ["aa-bb-cc-dd-ee-01", "aabbccddee02"]
+    defaults.set(saved.sorted(), forKey: "bluetooth.autoAddresses")
+    defaults.set(true, forKey: "bluetooth.autoEnabled")
+    defaults.set(true, forKey: "bluetooth.legacyTakenOver")
+    let connected = [["Fixture 1": ["device_address": "AA:BB:CC:DD:EE:01"]]]
+    let disconnected = (2...6).map { ["Fixture \($0)": ["device_address": String(format: "AA:BB:CC:DD:EE:%02X", $0)]] }
+    let report: [String: Any] = ["SPBluetoothDataType": [["controller_properties": ["controller_state": "attrib_on"],
+                                                         "device_connected": connected, "device_not_connected": disconnected]]]
+    let data = try JSONSerialization.data(withJSONObject: report)
+    let runner = FakeRunner(); runner.powerOn = false; runner.current = []
+    let module = BluetoothModule(defaults: defaults,
+        backend: BluetoothBackend(runner: runner, blueutil: "/fixture/blueutil", audioTool: nil,
+                                  observationService: BluetoothObservationService { _ in data }),
+        importLegacyConfiguration: false, authorizationProvider: { .allowedAlways })
+    let model = DashboardModel(), audio = AudioModule(backend: Exit75AudioBackend(), defaults: defaults)
+    model.enabledModules = []
+    let host = AppDelegate(model: model, preferences: defaults, makeAudio: { audio }, makeBluetooth: { module })
+    defer { module.stop(); audio.stop(); withExtendedLifetime(host) {} }
+    model.errorMessage = "Independent manual-action failure"
+    let publication = model.errorGeneration
+    model.onModuleChanged(.bluetooth, true)
+    let deadline = Date().addingTimeInterval(3)
+    while module.isBusy && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
+    expect(!module.isBusy && model.devices.count == 6 && model.selectedAddresses == saved,
+           "actual host presents six native devices and preserves two saved targets")
+    expect(model.selectedAddresses.subtracting(Set(model.devices.map(\.address))).isEmpty,
+           "native canonical matches prevent false unavailable-target count")
+    expect(model.bluetoothRadioOn == true && !model.bluetoothControlsAvailable && !model.bluetoothCanOfferPowerOn,
+           "host publishes observed on state separately from blocked helper controls")
+    expect(model.bluetoothSummary.contains("helper reports off") && model.bluetoothObservationSource?.contains("read-only") == true,
+           "Settings and compact widget receive conflict and read-only source")
+    expect(model.errorMessage == "Independent manual-action failure" && model.errorGeneration == publication,
+           "native observation never clears or replaces independent manual error UUID")
+    expect(runner.commands.allSatisfy { $0.dropFirst() == ["--power"] || $0.dropFirst() == ["--paired", "--format", "json"] },
+           "actual host native fallback performs no automatic mutations")
 }
 
 /// Real host callbacks and subprocess runner while a fixture helper is blocked.
