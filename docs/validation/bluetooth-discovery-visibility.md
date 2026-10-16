@@ -252,3 +252,9 @@ publication was performed. The current app process was preserved; rebuilding the
 bundle does not update its loaded image. Existing isolated-suite read-only
 capability/file checks remain. Hardware/native and hosted-CI acceptance remain open.
 The separate docs-only evidence commit does not claim a rebuild at its own revision.
+
+Follow-up: the [native fixture coordinate diagnosis](presentation-display-refresh.md#native-fixture-coordinate-correction--2026-10-16)
+reproduces the first-click failure with a WindowServer-transformed popup and corrects
+only synthetic fixture targeting. It retains the exact production-policy negative
+control. The failed integrated-main run above remains failed; separate branch
+validation is recorded in that follow-up, not retroactively attributed to main.

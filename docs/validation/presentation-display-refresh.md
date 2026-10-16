@@ -191,3 +191,109 @@ the separate evidence commit does not claim a rebuild at its own revision.
 All **15 shell inputs**, **254 local links and 45 fragments across 33 Markdown
 documents**, exact-source/guard-preservation assertions and `git diff --check` passed.
 The lint baseline and both tools' configurations/scripts are byte-identical to prior main.
+
+## Native fixture coordinate correction · 2026-10-16
+
+Implementation: **`90bb3cc`**, based on main `7e276bc`. Only
+`Tests/PresentationDisplayRefreshTests.swift` changes; production sources, suite
+wiring and build inputs remain byte-identical to that main revision.
+
+### Reproduction and cause
+
+The integrated visibility full run at `5feb438` **failed**, as recorded in
+[its evidence](bluetooth-discovery-visibility.md#completed-main-validation-and-native-test-blocker).
+That historical result is not replaced with a pass. Its baseline focused binary
+reproduced the exact first-display-click failure in the stable sibling worktree
+`/Users/jakubtucek/Projects/others/fix-mac-os-native-first-click-20261016`.
+The earlier pre-visibility `52ae53e` reproduction remains valid; this is not evidence
+of a Bluetooth regression.
+
+The new probe observed `com.apple.loginwindow` frontmost, an inactive test process
+and a non-key popup. Model state was `displaySettling=false`, `monitorBusy=false`,
+`displaySupported=true`, two active monitors and one completed snapshot. The fake
+monitor callback replaces host dispatch, so HostTransactions could not reject it.
+Changing activation policy, calling `finishLaunching`, requesting activation,
+pumping events longer, forcing display/layout and changing popup opacity did not
+repair the click. No production app or session lock state was changed.
+
+The decisive discrepancy was between logical and WindowServer geometry:
+
+| Observed value | Probe result |
+| --- | --- |
+| Logical popup frame, AppKit coordinates | `(0, 130, 416, 200)` |
+| Own popup's server bounds, CG coordinates | `(224, 1026, 375, 181)` |
+| Intended first-switch point in the popup window | `(370, 103)` |
+| Dequeued original mouse event | approximately `(161.689, -0.111)` |
+| Dequeued server-mapped mouse event | approximately `(370.060, 103.461)` |
+
+The factory-created event initially had the intended logical location. On
+`nextEvent`, AppKit converted its unchanged CG screen position through the server's
+scale/translation, putting it outside the control. Mapping the fixture's own server
+bounds restored the original first native action, without making the app active or
+key. This identifies the synthetic-coordinate failure. Loginwindow was observed,
+not deliberately locked/unlocked for a causal session-state A/B test.
+
+### Bounded fixture change and negative control
+
+The fixture waits for mounted native scroll content and stable client/server
+geometry across run-loop passes rather than a fixed presentation sleep. It queries
+only its own popup's window number, maps the intended point through its rendered
+server bounds, and posts one local mouse-down/up pair through the unchanged native
+event path. Both dequeued locations must remain within two points of the intended
+point, allowing integral server-bound rounding; a miss fails, with no click retry.
+The first action, genuine-settling suppression and snapshot-count assertions remain.
+No direct action invocation, global event posting, watchdog readiness change or
+admission bypass was added.
+Checking dequeued coordinates prevents a synthetic targeting miss from being
+misdiagnosed as an application action/activation failure.
+
+With the final fixture, **five consecutive focused runs pass 43 checks**: the
+original 37 plus six native event-delivery/coordinate assertions. Restoring only
+the old production `displayRefresh.requestRefresh()` presentation behavior makes
+both mouse-coordinate checks pass and then fails the exact original assertion:
+
+```text
+FAIL: stable popup's first display-control click acts without an activation/loading click
+```
+
+The temporary production-policy edit was restored byte-for-byte before committing.
+An earlier negative-control attempt failed the new coordinate assertion while
+loading text changed popup height; this prompted the explicit geometry-readiness
+condition. It is preserved, not counted as the successful negative control.
+
+Logs under the sibling worktree's ignored `build/`: `baseline.log`,
+`retarget.log`, `server.log`, `server-coordinates.log`, `negative.log`,
+`negative-stable.log`, `final-focused-{1,2,3,4,5}.log` and `compile-final.log`.
+Diagnostic probes are absent from committed code. Main's original full failure
+and two tool-timeout logs remain untouched.
+
+Unmodified pinned lint and format-check pass all 63 Swift files; offline tooling,
+CI whitespace fixtures, production/input byte comparisons and `git diff --check`
+pass. Logs: `build/final-{lint,format,tools,ci}.log`.
+Environment: macOS 26.6.2 (`25G83`) arm64, standalone CLT / Swift 6.4 / SDK 27.0,
+Swift 5 language mode, command-scoped `DEVELOPER_DIR` and unset `SDKROOT`.
+`build/final-shell-environment.log` records the shell/toolchain checks. The new
+bundle embeds `90bb3cc`, version `0.4`, build `4`; strict signature and plist checks
+pass (`build/final-metadata.log`). It was built, not launched.
+One fresh, sequential full run at **`90bb3cc3e88c8ef2188fe2413484683e5af62099`**
+completed successfully:
+
+```sh
+env -u SDKROOT DEVELOPER_DIR=/Library/Developer/CommandLineTools bash test.sh
+```
+
+`build/final-full.log` records **4,771 legacy isolated checks**, including the
+**43 presentation** and unchanged **27 native Activity scrolling** checks, already
+inside that total. Separately, **81 diagnostics**, their safety-entry source guard,
+**114 C safety assertions**, **39 permission-context checks**, **10 policy tests in
+3 suites**, **13 mocked installer scenarios**, compiler/build fixtures and
+real/relocated-bundle packaging checks pass. No interrupted attempt is counted.
+This is branch evidence at the fixture revision, not a new integrated-main result;
+the earlier `5feb438` main full run remains failed. No independent review is claimed
+for this follow-up, and its evidence-only commit does not claim another rebuild.
+
+This is synthetic native-control validation, not live focus/activation or hardware
+acceptance. No production launch/quit/relaunch/install, session unlock, display
+helper/device action, Bluetooth operation, TCC grant, live preference change or push
+was performed. Production PID 2065 was left running. No concurrent native test
+process was observed before the sequential focused/full runs.
