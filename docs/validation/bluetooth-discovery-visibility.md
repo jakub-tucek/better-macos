@@ -4,6 +4,10 @@ Base: `52ae53e`. This corrects popup guidance and adds observation diagnostics.
 It does **not** fix the underlying radio/discovery problem or establish hardware
 acceptance. No real helper, permission change or app relaunch was used.
 
+The parent supplied independent **CLEAN** review of this visibility series; see
+[main integration](#main-integration--2026-10-16). Earlier review-pending statements
+below retain their historical revision scope.
+
 ## Confirmed presentation defect
 
 The reported popup displayed both “Choose targets” and “2 chosen devices
@@ -138,3 +142,113 @@ addition. **Independent review is still required before integration.** No merge,
 push, main-build replacement, installation, app relaunch/quit, live helper/device
 operation, live preference change or permission request was performed. The live
 discovery/radio cause and hardware acceptance remain open.
+
+## Main integration · 2026-10-16
+
+Only the two authorized visibility commits integrated, without conflicts, on main
+`52ae53e`. The separately pending native fallback `6c59dc9` was not integrated.
+Existing untracked `.worktrees/` user work was preserved.
+
+| Reviewed source | Main commit |
+| --- | --- |
+| `5fcc364` — saved-target copy and typed discovery evidence | `61548f1` |
+| `a591220` — frozen source validation | `5feb438` |
+
+The parent supplied independent **CLEAN** review with four 170-check focused runs,
+39 permission-context checks, 81 diagnostic checks and unmodified 63-file lint.
+Its separate full run was pending when integration started; no result from that
+run is claimed here. Production, tests and compiler inputs exactly match the
+reviewed source branch. Gesture C safety, bounded asynchronous diagnostics,
+HostTransactions, typed login and earlier UUID-owned error clearing remain intact.
+
+Two integrated full-run attempts at
+`5feb4386cde7db87e7afba7e0298906b8ec8a989` hit harness deadlines: 600 seconds during
+the app build, then 1,200 seconds after app/packaging/compiler fixtures and policy
+tests, before the legacy compile completed. Both passed the auxiliary 81 diagnostics,
+114 C and 39 permission checks first. Neither partial run is full-suite success.
+Logs: `build/bluetooth-discovery-integration-clt-{timeout,timeout20}.log`.
+The unchanged suite was then rerun in the background with timestamped top-level
+steps and no harness deadline. Its completion notification reported **exit 1**,
+not a timeout: the native first-display-click assertion failed. No full-suite
+pass or 4,765-main-legacy result is claimed.
+
+### Completed main validation and native-test blocker
+
+The timestamped run started at `16:18:06Z`; app build ran `16:18:46Z–16:19:21Z`
+(35 seconds), legacy compilation `16:19:24Z–16:19:45Z` (21 seconds), then the
+legacy executable reached and failed:
+
+```text
+FAIL: stable popup's first display-control click acts without an activation/loading click
+```
+
+Log: `build/bluetooth-discovery-integration-clt.log`, also preserved as
+`build/bluetooth-discovery-integration-clt-first-click-failure.log`. The first two
+attempts were interrupted by foreground **tool deadlines**, not an observed app
+hang. Their logs lack per-step timestamps; no compiler-stall cause is inferred
+from them. The timestamped completion demonstrates that the unchanged compilation
+can finish; it does not explain those earlier delays.
+
+`build/isolated-tests --presentation-display-refresh-regressions` reproduces that
+same failure alone (`build/bluetooth-discovery-integration-presentation-focused.log`),
+before any Bluetooth test runs. A temporary diagnostic test copy shows a fresh
+snapshot (`settling=false`, `snapshots=1`), a non-key popup and zero action callbacks
+after the synthetic click. A separately compiled focused executable with all
+changed Swift inputs restored byte-for-byte from pre-integration `52ae53e` also
+fails at that exact assertion. Logs:
+`build/bluetooth-discovery-integration-first-click-{probe,baseline}.log`.
+Temporary probes are isolated under the named `visibility-first-click-probe.*` /
+`visibility-first-click-baseline.*` debug directories recorded in those logs;
+no production or tracked test source was edited. This isolates a failure that
+does not require the visibility changes; the native event/focus cause remains
+unresolved. No guard, assertion or default-suite path was weakened or skipped.
+
+Completed checks at exact main source
+**`5feb4386cde7db87e7afba7e0298906b8ec8a989`**:
+
+| Check | Actual main result |
+| --- | --- |
+| Full legacy suite | **Failed** at the assertion above; no completed legacy total |
+| Focused Bluetooth visibility/recovery | **170 passed**, separately invoked from the compiled main test executable |
+| Permission-context | **39 passed** in the full attempt |
+| Diagnostics | **81 passed**, plus safety no-flush/no-sync-wait guard |
+| Offline instant C safety | **114 passed** |
+| Swift Testing policy | **10 tests / 3 suites passed** |
+| Mocked installer | **13 passed**, separately invoked after the full attempt stopped |
+| App/compiler/packaging | Passed before the native failure, including complete notices, real/relocated bundle and explicit compiler inputs |
+
+The focused 170 path is normally inside the legacy suite; its separate success
+does not establish or add to a 4,765 legacy pass count. Logs:
+`build/bluetooth-discovery-integration-{focused,installer,metadata}.log` and the full
+attempt above. Metadata checks passed with standalone CLT / Swift 6.4 / SDK 27.0,
+explicit unset `SDKROOT`, arm64/macOS 15+, version `0.4`, build `4`, strict
+configured-certificate signature and exact embedded tested revision. Complete
+project/vendor license and provenance files compare byte-for-byte.
+
+Unmodified normal-path lint and format-check passed across **63 files**; offline
+tooling and CI whitespace fixtures passed. No lint baseline, rules, exclusions,
+build/test scripts or CI configuration changed. Logs:
+`build/bluetooth-discovery-integration-{lint,format,tools,ci}.log`.
+All **17 shell inputs**, compiler-input ownership, unchanged suite wiring,
+manual-UUID/login-binding preservation and fallback-exclusion assertions passed.
+All **263 local links and 54 fragments across 36 tracked Markdown documents** and
+`git diff --check` passed. Probe instrumentation exists only in the isolated debug
+copy, not in committed source.
+The 170-check focused host/native path also runs inside the legacy suite through
+`runUITests` → `runBluetoothErrorRecoveryTests`; it is not an additional legacy
+count or a new set of 170 independent assertions.
+
+Saved choices survive successful empty inventory; copy no longer asks users to
+choose those targets again. Typed scalar discovery diagnostics keep helper
+authorization/source **unknown**, distinguish parsed versus published inventory,
+deduplicate states and exclude identities/raw payloads. They issue no extra helper
+commands and do not authorize actions. This adds no automatic radio power action,
+permission-denial inference or claim that the underlying radio/discovery failure
+is fixed. The full desktop/keyboard freeze cause remains unknown.
+
+No production app launch/quit/relaunch/install, live Bluetooth query/toggle/device
+action, permission/TCC or live preference change, login registration, push/tag or
+publication was performed. The current app process was preserved; rebuilding the
+bundle does not update its loaded image. Existing isolated-suite read-only
+capability/file checks remain. Hardware/native and hosted-CI acceptance remain open.
+The separate docs-only evidence commit does not claim a rebuild at its own revision.
