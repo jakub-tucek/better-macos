@@ -116,6 +116,15 @@ allows less than five seconds of entry delay and otherwise fails conservatively.
 The tool reads at most 24 owned, regular, single-link files of at most 512 KiB,
 using no-follow descriptor-relative opens. It sorts JSON events across rotations,
 skips malformed/partial lines and rejects record/filename PID-session mismatches.
+Modification times never select files or order events. Timestamp ties use numeric
+PID ascending, then the exact filename session UUID string ascending. This is a
+deterministic cross-session display order, not evidence of which process acted
+first. Within one PID/session, ties use generation `2`, `1`, `0` (oldest first),
+then original file line order. Thus `--limit 1` selects the newest equal-timestamp
+event in the selected session even if file modification times were reversed.
+Explicit session/PID filters apply to parsed filenames before the 24-file budget.
+More than 24 matching valid files fails explicitly with a request to narrow the
+selection; the reader never silently truncates a selected session's generations.
 Missing files are skipped; missing directories/sessions fail clearly. It does not
 upload, launch the app, call Bluetooth, read archives or enumerate preferences.
 `--directory PATH` supports isolated fixtures. The wrapper compiles a temporary
@@ -504,6 +513,36 @@ passed. Red/green logs: `diagnostics-reader-tie-{red,green}.log`; final tooling 
 `diagnostics-final-{lint,format}.log`. App sources are unchanged from the full-suite
 revision above. The full suite/app build was not rerun for this reader-only fix;
 do not describe the existing bundle as built from `ed0c742` or this evidence commit.
+
+### Independent follow-up: mtime ordering and rendered filter coverage
+
+Review found `ed0c742` incomplete: mtime still preceded generation order, so a
+`-2` startup with mtime 2000 and a `-0` event with mtime 1000 could appear in reverse
+order when their event timestamps matched. The earlier equal-mtime test did not
+cover this case. A temporary copy of that previous reader and the reversed-mtime
+fixture reproduced the failure; `diagnostics-reader-review-red.log` retains it.
+
+Reader-only correction `11d44f4` parses the exact PID/UUID/generation filename
+grammar and merges by event timestamp with the explicit identity/generation/line
+tie-break above. It removes mtime-based candidate truncation: an explicit selection
+is filtered before the file budget; an over-budget selection fails rather than
+silently hiding its older rotations. Owned-file, no-follow, single-link, 512-KiB
+file and 24-file input limits remain in force. No logger/app source changed.
+
+**31 reader fixture checks** passed: existing unrelated-file/symlink,
+malformed/missing-input and process-birth scenarios plus reversed/equal mtimes,
+three-generation batches, same-timestamp line order, deterministic mixed-session
+ties, newest-event `--limit 1`, over-budget selection and actual rendered-output
+assertions for session/PID/category/level/since/all combinations. The old combined
+filter invocation only checked that it did not throw; its replacement asserts
+exact included/excluded rows and the output count. Pinned lint and format passed
+across 70 Swift files; `git diff --check` passed. Logs:
+`diagnostics-reader-review-{green,lint,format}.log`.
+
+No full suite or app build was repeated for this reader-only change. The frozen
+full-suite/app evidence remains `76aa5e9` above. No live logs, preferences, app,
+permissions or devices were accessed or changed during this follow-up; all inputs
+were isolated fixtures. **Independent re-review remains required before merge.**
 
 The authorized machine-local change was only
 `io.github.jakub-tucek.mac-utils` → `diagnostics.level=all`, verified by reading
