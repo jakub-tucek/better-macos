@@ -199,13 +199,19 @@ final class BluetoothObservationService: @unchecked Sendable {
         let now = clock()
         lock.lock()
         if inFlight || lastAttempt.map({ now - $0 < ttl }) == true {
-            let snapshot = cached, issue = lastIssue
+            let snapshot = cached, issue = lastIssue, coalesced = inFlight
             lock.unlock()
+            diagnostics.emit("bluetooth", "observation_cache", level: .trace,
+                             fields: ["reason": coalesced ? "in_flight" : "backoff_or_ttl",
+                                      "snapshot_age_seconds": snapshot.map { String(max(0, now - $0.observedAt)) } ?? "absent",
+                                      "status": issue?.rawValue ?? (snapshot == nil ? "unavailable" : "complete")])
             return readback(power, devices, snapshot, issue, at: now)
         }
         inFlight = true
         lock.unlock()
         let started = diagnostics.start()
+        let operation = UUID().uuidString
+        diagnostics.emit("bluetooth", "observation_start", operation: operation, level: .debug)
         let result: Result<BluetoothNativeSnapshot, BluetoothReadIssue>
         do {
             guard shouldContinue() else { throw BluetoothReadIssue.canceled }
@@ -229,10 +235,15 @@ final class BluetoothObservationService: @unchecked Sendable {
         let snapshot = cached, issue = lastIssue
         lock.unlock()
         let observation = readback(power, devices, snapshot, issue, at: clock())
-        diagnostics.emit("bluetooth", "observation", since: started, fields: ["source": observation.source,
+        let fetchResult: String
+        switch result {
+        case .success(let snapshot): fetchResult = snapshot.complete ? "complete" : "partial"
+        case .failure(let failure): fetchResult = failure.rawValue
+        }
+        diagnostics.emit("bluetooth", "observation", operation: operation, since: started, fields: ["source": observation.source,
                          "conflict": String(observation.conflicting), "stale": String(observation.nativeStale),
                          "controller": observation.displayedPower.map { $0 ? "on" : "off" } ?? "unknown",
-                         "timed_out": String(issue == .timeout),
+                          "fetch_result": fetchResult, "timed_out": String(issue == .timeout),
                          "status": issue?.rawValue ?? "complete", "device_count": String(observation.displayedDevices?.count ?? 0)])
         return observation
     }

@@ -52,7 +52,7 @@ func runDiagnosticsTests() throws {
     let memory = MemoryDiagnosticSink()
     var tick: TimeInterval = 10
     let logger = Diagnostics(sink: memory, session: "fixed-session", pid: 123,
-                             now: { Date(timeIntervalSince1970: 0) }, uptime: { tick })
+                             now: { Date(timeIntervalSince1970: 0) }, uptime: { tick }, minimumLevel: .trace)
     let start = logger.start(); tick = 10.125
     logger.emit("test", "finished", outcome: "success", operation: "fixed-operation", since: start)
     expect(logger.flushForTesting(), "test-only diagnostic flush completes")
@@ -130,6 +130,13 @@ func runDiagnosticsTests() throws {
     let fields = failure["fields"] as? [String: String]
     expect(fields?["exit_code"] == "75" && fields?["failure_class"] == "exit" && fields?["timed_out"] == "false", "Bluetooth exit 75 is classified with code, not raw output")
     expect(fields?["action"] == "--connect" && failure["outcome"] as? String == "failure", "Bluetooth logs safe operation semantics")
+    expect(fields?["reported_failure"] == "unknown", "generic exit 75 retains unknown reported cause at all verbosity")
+    for (text, classification) in [("connection failed private-headset", "reported_connection_failure"),
+                                   ("timed out AA-BB-CC-DD-EE-FF", "reported_timeout"),
+                                   ("not paired", "reported_not_paired"), ("permission denied", "reported_access_failure"),
+                                   ("exit 1", "unknown"), ("exit 75", "unknown")] {
+        expect(CommandRunner.reportedFailure(text) == classification, "command symptom classification uses closed phrases, not exit-code guesses")
+    }
     expect(memory.records.suffix(2).first?["operation"] as? String == failure["operation"] as? String, "command start and failure correlate")
     do {
         try LoginDiagnostics.change(true, service: DiagnosticLoginService(failure:

@@ -138,6 +138,6 @@ cmp Vendor/strafe/UPSTREAM.txt "$APP/Contents/Resources/Licenses/strafe-UPSTREAM
 echo 'PASS: fresh publication removes stale resources and preserves complete notices'
 echo 'PASS: linking uses only the three freshly compiled owned objects'
 # Exercise the real legacy compiler input list too, without running native UI.
-for fixture in swiftui-compatibility diagnostics-regressions gesture-terminal-proof bluetooth-permission-regressions bluetooth-observation-regressions packaging build install; do printf '#!/bin/bash\nexit 0\n' > "$ROOT/source/Tests/$fixture.sh"; done
+for fixture in swiftui-compatibility diagnostics-regressions diagnostics-reader gesture-terminal-proof bluetooth-permission-regressions bluetooth-observation-regressions packaging build install; do printf '#!/bin/bash\nexit 0\n' > "$ROOT/source/Tests/$fixture.sh"; done
 bash "$ROOT/source/test.sh" > "$ROOT/output" 2>&1
 echo 'PASS: app and legacy tests link the package archive once, exclude its Swift sources and ignore stale C objects'

@@ -89,7 +89,7 @@ func runBluetoothObservationTests() throws {
         expect(BluetoothIdentity.canonical(address) == nil, "invalid identity rejected")
     }
     expect(BluetoothIdentity.matches("aa-bb-cc-dd-ee-01", "AA:BB:CC:DD:EE:01"), "canonical comparison accepts separator and case changes")
-    let sink = ObservationSink(), logger = Diagnostics(sink: sink)
+    let sink = ObservationSink(), logger = Diagnostics(sink: sink, minimumLevel: .trace)
     var now: TimeInterval = 10, fetches = 0, failure: BluetoothReadIssue?
     let service = BluetoothObservationService(clock: { now }, diagnostics: logger) { _ in
         fetches += 1
@@ -150,6 +150,15 @@ func runBluetoothObservationTests() throws {
     try runBluetoothProfilerProcessFixtures()
     expect(logger.flushForTesting(timeout: 2), "observation diagnostics flush only in tests")
     expect(!sink.text.contains("SENSITIVE") && !sink.text.contains("AA:BB") && !sink.text.contains("aa-bb"), "structured observation logs omit names, IDs, raw reports and errors")
+    let records = sink.text.split(separator: "\n").compactMap { (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any] }
+    expect(records.contains { $0["event"] as? String == "observation_cache" && $0["severity"] as? String == "trace" }, "all verbosity records cache/backoff trace context")
+    let queued = records.first { $0["event"] as? String == "manual_queued" }
+    let operation = queued?["operation"] as? String
+    expect(operation != nil && records.contains { $0["event"] as? String == "cycle_finish" && $0["operation"] as? String == operation },
+           "manual queue, cycle and verified completion share one private operation token")
+    expect(records.contains { $0["event"] as? String == "manual_rejected" && ($0["fields"] as? [String: String])?["reason"] == "control_evidence_unavailable" },
+           "non-UI admission rejection records only closed reason")
+    expect(records.contains { $0["event"] as? String == "cycle_finish" && $0["outcome"] as? String == "canceled" }, "stopped cycle records cancellation without claiming verified success")
 }
 
 private final class ObservationMutationRunner: CommandRunning {
@@ -421,7 +430,7 @@ private func runBluetoothObservationModuleFixture(_ nativeData: Data, logger: Di
     defaults.set(true, forKey: "bluetooth.legacyTakenOver")
     let service = BluetoothObservationService(diagnostics: logger) { _ in nativeData }
     let backend = BluetoothBackend(runner: runner, blueutil: "/fixture/blueutil", audioTool: nil, observationService: service)
-    let module = BluetoothModule(defaults: defaults, backend: backend, importLegacyConfiguration: false, authorizationProvider: { .allowedAlways })
+    let module = BluetoothModule(defaults: defaults, backend: backend, importLegacyConfiguration: false, authorizationProvider: { .allowedAlways }, diagnostics: logger)
     defer { module.stop() }
     func wait() {
         let deadline = Date().addingTimeInterval(2)
@@ -447,7 +456,7 @@ private func runBluetoothObservationModuleFixture(_ nativeData: Data, logger: Di
     let normal = BluetoothModule(defaults: defaults,
         backend: BluetoothBackend(runner: normalRunner, blueutil: "/fixture/blueutil", audioTool: nil,
                                   observationService: BluetoothObservationService(diagnostics: logger) { _ in offReport }),
-        importLegacyConfiguration: false, authorizationProvider: { .allowedAlways })
+        importLegacyConfiguration: false, authorizationProvider: { .allowedAlways }, diagnostics: logger)
     normal.poll()
     let normalDeadline = Date().addingTimeInterval(2)
     while normal.isBusy && Date() < normalDeadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
@@ -466,7 +475,7 @@ private func runBluetoothObservationModuleFixture(_ nativeData: Data, logger: Di
     }
     let cancelModule = BluetoothModule(defaults: defaults,
         backend: BluetoothBackend(runner: runner, blueutil: "/fixture/blueutil", audioTool: nil, observationService: cancelService),
-        importLegacyConfiguration: false, authorizationProvider: { .allowedAlways })
+        importLegacyConfiguration: false, authorizationProvider: { .allowedAlways }, diagnostics: logger)
     cancelModule.poll()
     expect(entered.wait(timeout: .now() + 1) == .success, "cancel fixture reaches native read")
     var stopped = 0, heartbeat = false

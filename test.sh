@@ -4,6 +4,7 @@ cd "$(dirname "$0")"
 # Build also checks the vendored C/Swift integration and the app's UI.
 bash Tests/swiftui-compatibility.sh
 bash Tests/diagnostics-regressions.sh
+bash Tests/diagnostics-reader.sh
 bash Tests/gesture-terminal-proof.sh --instant-safety
 bash Tests/bluetooth-permission-regressions.sh
 bash Tests/bluetooth-observation-regressions.sh

@@ -44,6 +44,84 @@ writer. Regular files must be owned by this user and have exactly one hard link.
 
 ## Read locally while reproducing
 
+### Levels and next-launch configuration
+
+Levels, most to least verbose: `trace`, `debug`, `info`, `warning`, `error`.
+`all` aliases `trace`. Normal builds default to `info`; building never embeds a
+machine's local verbosity or changes its preferences. Each process resolves once:
+valid `MAC_UTILS_LOG_LEVEL` environment override, then the app's `diagnostics.level`
+preference, then `info`. Invalid values fall through to the next source. Parsing
+ignores case and surrounding whitespace. There is no redaction bypass or `off` mode.
+
+For **all logs on this Mac on the next launch**, including LaunchServices/login
+launches and same-bundle helpers, write only the logging preference:
+
+```sh
+defaults write io.github.jakub-tucek.mac-utils diagnostics.level -string all
+defaults read io.github.jakub-tucek.mac-utils diagnostics.level
+```
+
+To return to the normal default, delete only that key:
+
+```sh
+defaults delete io.github.jakub-tucek.mac-utils diagnostics.level
+```
+
+These commands do not relaunch an app. Already-running processes retain their
+startup configuration, and an older binary cannot acquire missing instrumentation
+retroactively. Relaunch still needs authorization. For a separately authorized
+direct development launch, use the executable rather than assuming `open` forwards
+the shell environment:
+
+```sh
+MAC_UTILS_LOG_LEVEL=all "build/Fix macOS.app/Contents/MacOS/fix-mac-os"
+```
+
+Child processes inherit the launch environment unless their launcher replaces it;
+the saved preference also applies without inherited environment. This is a local
+logging setting, not a build/distribution default. Do not launch a second GUI over
+an existing instance to change logging.
+
+`process/startup` always bypasses the threshold and reports `effective_log_level`,
+`log_level_source` (`environment`, `preference`, `default`) and sanitized invalid-value
+flags. Raw configuration text is never logged. Preference reads run on the utility
+worker; while resolution is pending, admission still has the same 128-record cap.
+After resolution, below-threshold records never occupy pending slots. The worker
+also filters any already-admitted records. No startup/configuration I/O blocks a
+safety caller. Best-effort delivery can still lose the startup record.
+
+### Compact local timeline (Command Line Tools only)
+
+```sh
+bash scripts/dev logs
+bash scripts/dev logs --all --limit 200 --category bluetooth
+bash scripts/dev logs --level warning --since 2026-10-18T10:00:00Z
+bash scripts/dev logs --session <UUID> --all
+bash scripts/dev logs --pid <PID> --all
+```
+
+The default shows the latest verified live GUI session's recent warnings/errors
+and startup/discovery/observation/manual-result state, at most 60 events. `--all`
+includes debug/trace records already retained on disk; it cannot recover filtered
+or dropped events. `--level` selects that severity and above; category, timestamp,
+session/PID and 1–200 output-limit filters compose. Explicit PID selects its latest
+retained startup, including historical/helper runs; explicit session works even
+when startup has rotated away. See `bash scripts/dev logs --help`.
+
+Automatic selection checks the startup's GUI role, executable basename and OS
+process birth time, rather than taking the newest helper file or trusting PID
+liveness alone. If startup was evicted, birth cannot be verified, or the app is not
+running, it fails explicitly; select a retained session yourself. Birth comparison
+allows less than five seconds of entry delay and otherwise fails conservatively.
+The tool reads at most 24 owned, regular, single-link files of at most 512 KiB,
+using no-follow descriptor-relative opens. It sorts JSON events across rotations,
+skips malformed/partial lines and rejects record/filename PID-session mismatches.
+Missing files are skipped; missing directories/sessions fail clearly. It does not
+upload, launch the app, call Bluetooth, read archives or enumerate preferences.
+`--directory PATH` supports isolated fixtures. The wrapper compiles a temporary
+reader with the selected CLT and removes that invocation's binary afterward; no
+Python, jq or Homebrew installation is required.
+
 The commands below are instructions for a later authorized reproduction, not
 checks performed during integration. Relaunch/installation/device or registration
 actions require separate approval; do not infer a running process loaded the new
@@ -101,6 +179,21 @@ the user's authorization; adding logs does not authorize those checks.
   names/MACs, stdout, stderr and raw error descriptions are never logged. A launch
   failure is separate from a command exit failure; the log does not guess that
   exit 75 means a specific authorization/device problem.
+  At debug, command configuration adds the deadline under the same operation ID.
+  `reported_failure` classifies only a bounded stderr prefix's allowlisted phrases:
+  reported timeout, not-paired, access failure or connection failure; otherwise
+  `unknown`. These are command-reported symptoms, not verified permission/pairing
+  causes. Raw output remains excluded at every level, including `all`.
+- Bluetooth debug events correlate manual queue/replacement/cancellation and cycle
+  start/finish; automatic attempts, verified reconnects and retry scheduling share
+  the cycle ID plus an attempt ordinal. No device identifier, name, raw progress
+  reason or error text is added. Canceled cycles cannot claim successful completion.
+  Trace adds small cache/backoff/coalescing events with native snapshot age, at the
+  existing poll cadence, not per subprocess read. Observation start/finish IDs are
+  distinct from host publication and command IDs; timeline proximity alone does
+  not prove cross-layer causation. Host debug events expose closed admission phase
+  and quit drain; warning vetoes include the closed busy/mouse/clipboard/recovery
+  reason. Existing host and feature admission/restoration policy is unchanged.
 - Host `bluetooth/manual_action_finished` records use only `power_on`, `connect`
   or `disconnect`, a result and `error_cleared`. Failure uses its published error's
   UUID as the operation token; a matching verified recovery reuses that token.

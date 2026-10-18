@@ -3,6 +3,35 @@ import Darwin
 import CryptoKit
 import Security
 
+enum DiagnosticLevel: String, CaseIterable {
+    case trace, debug, info, warning, error
+    var rank: Int { Self.allCases.firstIndex(of: self)! }
+    static func parse(_ value: String?) -> Self? {
+        guard let value, value.utf8.count <= 32 else { return nil }
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized == "all" ? .trace : Self(rawValue: normalized)
+    }
+}
+
+/// Resolve only the logging key, never enumerate preferences. Invalid values are
+/// reported as booleans, never copied into logs. The environment wins when valid.
+struct DiagnosticConfiguration {
+    static let preferenceKey = "diagnostics.level"
+    let level: DiagnosticLevel
+    let source: String
+    var invalidEnvironment = false
+    var invalidPreference = false
+    static func resolve(environment: String?, preference: String?) -> Self {
+        let env = DiagnosticLevel.parse(environment), saved = DiagnosticLevel.parse(preference)
+        return Self(level: env ?? saved ?? .info, source: env != nil ? "environment" : (saved != nil ? "preference" : "default"),
+                    invalidEnvironment: environment != nil && env == nil, invalidPreference: preference != nil && saved == nil)
+    }
+    var fields: [String: String] {
+        ["effective_log_level": level.rawValue, "log_level_source": source,
+         "invalid_log_level_environment": String(invalidEnvironment), "invalid_log_level_preference": String(invalidPreference)]
+    }
+}
+
 /// Only audited operational metadata belongs here. Never pass error descriptions,
 /// command arguments/output, clipboard payloads, or third-party identifiers.
 struct DiagnosticEvent: Encodable {
@@ -220,6 +249,7 @@ final class Diagnostics {
         let operation: String
         let durationMS: Double?
         let fields: [String: String]
+        let level: DiagnosticLevel
     }
     private var pending: [Pending] = []
     private var running = false
@@ -227,6 +257,9 @@ final class Diagnostics {
     private var dropped = 0
     private let capacity: Int
     private let startupMetadata: (() -> [String: String])?
+    private let loadConfiguration: (() -> DiagnosticConfiguration)?
+    private var configuration: DiagnosticConfiguration
+    private var configurationLoaded: Bool
     private let sink: DiagnosticSink?
     private let now: () -> Date
     private let uptime: () -> TimeInterval
@@ -234,22 +267,30 @@ final class Diagnostics {
     private let pid: Int32
     init(sink: DiagnosticSink? = nil, session: String = UUID().uuidString, pid: Int32 = getpid(),
          now: @escaping () -> Date = Date.init, uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
-         capacity: Int = 128, startupMetadata: (() -> [String: String])? = nil) {
+         capacity: Int = 128, startupMetadata: (() -> [String: String])? = nil,
+         minimumLevel: DiagnosticLevel = .info, loadConfiguration: (() -> DiagnosticConfiguration)? = nil) {
         self.sink = sink; self.session = session; self.pid = pid; self.now = now; self.uptime = uptime
         self.capacity = max(1, min(128, capacity)); self.startupMetadata = startupMetadata
+        self.loadConfiguration = loadConfiguration
+        configuration = DiagnosticConfiguration(level: minimumLevel, source: "injected")
+        configurationLoaded = loadConfiguration == nil
     }
     func start() -> TimeInterval { uptime() }
     func emit(_ category: String, _ event: String, outcome: String = "observed", operation: String = UUID().uuidString,
-              since: TimeInterval? = nil, fields: [String: String] = [:]) {
+              since: TimeInterval? = nil, level: DiagnosticLevel? = nil, fields: [String: String] = [:]) {
         guard sink != nil else { return }
+        let severity = level ?? (outcome == "failure" ? .error : .info)
         // Bound payload size as well as event count BEFORE retaining or scheduling.
         // No filesystem, encoder or arbitrary closure runs under admission.
         guard fields.count <= 64, [category, event, outcome, operation].allSatisfy({ $0.utf8.count <= 128 }),
               fields.allSatisfy({ $0.key.utf8.count <= 128 && $0.value.utf8.count <= 1024 }),
               fields.reduce(0, { $0 + $1.key.utf8.count + $1.value.utf8.count }) <= 16 * 1024 else { return }
         let item = Pending(date: now(), category: category, event: event, outcome: outcome, operation: operation,
-                           durationMS: since.map { max(0, uptime() - $0) * 1000 }, fields: fields)
+                           durationMS: since.map { max(0, uptime() - $0) * 1000 }, fields: fields, level: severity)
         admission.lock()
+        // Until worker-side configuration completes, bounded admission accepts all
+        // levels. Startup always explains the threshold, even at warning/error.
+        guard !configurationLoaded || shouldDeliver(item) else { admission.unlock(); return }
         guard outstanding < capacity else { dropped = min(Int.max - 1, dropped) + 1; admission.unlock(); return }
         pending.append(item); outstanding += 1
         if !running {
@@ -259,7 +300,17 @@ final class Diagnostics {
         }
         admission.unlock()
     }
+    private func shouldDeliver(_ item: Pending) -> Bool {
+        (item.category == "process" && item.event == "startup") || item.level.rank >= configuration.level.rank
+    }
     private func drain() {
+        if let loadConfiguration {
+            admission.lock(); let needsConfiguration = !configurationLoaded; admission.unlock()
+            if needsConfiguration {
+                let loaded = loadConfiguration() // Preference I/O never runs on emit's caller.
+                admission.lock(); configuration = loaded; configurationLoaded = true; admission.unlock()
+            }
+        }
         while true {
             admission.lock()
             guard !pending.isEmpty else {
@@ -269,14 +320,16 @@ final class Diagnostics {
             admission.unlock()
             // A continuously busy drain must not accumulate Foundation autoreleases.
             autoreleasepool {
+                guard shouldDeliver(item) else { return }
                 var fields = item.fields
-                if item.category == "process", item.event == "startup", let startupMetadata {
-                    fields.merge(startupMetadata()) { original, _ in original }
+                if item.category == "process", item.event == "startup" {
+                    fields.merge(configuration.fields) { _, actual in actual }
+                    if let startupMetadata { fields.merge(startupMetadata()) { original, _ in original } }
                 }
                 let formatter = ISO8601DateFormatter()
                 formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
                 let record = DiagnosticEvent(timestamp: formatter.string(from: item.date), session: session, pid: pid,
-                                             category: item.category, event: item.event, severity: item.outcome == "failure" ? "error" : "info",
+                                             category: item.category, event: item.event, severity: item.level.rawValue,
                                              outcome: item.outcome, operation: item.operation, durationMS: item.durationMS, fields: fields)
                 // Logging failure must never veto feature work or recursively log itself.
                 if var data = try? JSONEncoder().encode(record) { data.append(10); try? sink?.write(data) }
@@ -302,7 +355,11 @@ final class Diagnostics {
             return RotatingDiagnosticSink(directory: directory, session: session, pid: getpid())
         }
         let logger = Diagnostics(sink: sink, session: session,
-                                 startupMetadata: { startupMetadata(revision: revision, sourceState: sourceState) })
+                                 startupMetadata: { startupMetadata(revision: revision, sourceState: sourceState) },
+                                 loadConfiguration: {
+                                     DiagnosticConfiguration.resolve(environment: ProcessInfo.processInfo.environment["MAC_UTILS_LOG_LEVEL"],
+                                                                     preference: UserDefaults.standard.string(forKey: DiagnosticConfiguration.preferenceKey))
+                                 })
         shared = logger
         logger.emit("process", "startup", fields: ["compiled_base_revision": revision, "compiled_source_state": sourceState,
                     "entry_uptime_seconds": String(ProcessInfo.processInfo.systemUptime)])

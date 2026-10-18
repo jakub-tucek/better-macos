@@ -69,8 +69,12 @@ case "${1:-help}" in
     build)
         exec bash "$ROOT/build.sh"
         ;;
+    logs)
+        shift
+        exec bash "$ROOT/scripts/diagnostics" "$@"
+        ;;
     help|--help|-h)
-        echo "Usage: bash scripts/dev {bootstrap|build|lint|format-check}"
+        echo "Usage: bash scripts/dev {bootstrap|build|lint|format-check|logs}"
         echo "Checks never rewrite sources. Build does not require bootstrap."
         ;;
     *) fail "Unknown command '$1'; use bash scripts/dev help." ;;

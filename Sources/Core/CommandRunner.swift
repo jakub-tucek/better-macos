@@ -15,6 +15,16 @@ private final class CapturedOutput: @unchecked Sendable {
 /// Commands run only on a background queue, with argument arrays (never a shell).
 struct CommandRunner: CommandRunning {
     var diagnostics: Diagnostics = .shared
+    /// Evidence from bounded, known phrases only. This is a reported symptom,
+    /// not a diagnosis of TCC, pairing state, or the cause of a generic exit code.
+    static func reportedFailure(_ stderr: String) -> String {
+        let text = String(stderr.prefix(4096)).lowercased()
+        if text.contains("timed out") || text.contains("timeout") { return "reported_timeout" }
+        if text.contains("not paired") { return "reported_not_paired" }
+        if text.contains("not authorized") || text.contains("permission denied") { return "reported_access_failure" }
+        if text.contains("connection failed") || text.contains("failed to connect") { return "reported_connection_failure" }
+        return "unknown"
+    }
     static func timeout(for executable: String, arguments: [String]) -> TimeInterval {
         // A normal Bluetooth page timeout is slightly longer than 15 seconds.
         // Do not kill a legitimate connection just before the OS reports it.
@@ -27,6 +37,8 @@ struct CommandRunner: CommandRunning {
         let allowed = ["--connect", "--disconnect", "--paired", "--connected", "--power", "--info"]
         let action = isBluetooth ? (arguments.first.flatMap { allowed.contains($0) ? $0 : nil } ?? "other") : "other"
         let category = isBluetooth ? "bluetooth" : "command"
+        diagnostics.emit(category, "command_configuration", operation: operation, level: .debug,
+                         fields: ["action": action, "timeout_seconds": String(Self.timeout(for: executable, arguments: arguments))])
         diagnostics.emit(category, "command_start", operation: operation, fields: ["action": action])
         let process = Process()
         let output = Pipe()
@@ -67,7 +79,8 @@ struct CommandRunner: CommandRunning {
         diagnostics.emit(category, "command_finish", outcome: process.terminationStatus == 0 ? "success" : "failure",
                          operation: operation, since: started, fields: ["action": action,
                          "exit_code": String(process.terminationStatus), "timed_out": String(!timedOut.get().isEmpty),
-                         "stdout_bytes": String(stdout.get().count), "stderr_bytes": String(stderr.get().count),
+                          "stdout_bytes": String(stdout.get().count), "stderr_bytes": String(stderr.get().count),
+                          "reported_failure": process.terminationStatus == 0 ? "none" : (isBluetooth ? Self.reportedFailure(errorText) : "unknown"),
                          "failure_class": !timedOut.get().isEmpty ? "timeout" : (process.terminationStatus == 0 ? "none" : "exit")])
         guard process.terminationStatus == 0 else {
             let detail = (errorText.isEmpty ? text : errorText).trimmingCharacters(in: .whitespacesAndNewlines)

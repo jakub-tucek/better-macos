@@ -257,7 +257,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // Host-side barrier, not a UI-only disable: callbacks retained by views also
     // consult it at invocation time. Cleanup paths deliberately bypass this gate.
-    private var actionHost: AppDelegate? { transactions.acceptsActions ? self : nil }
+    private var actionHost: AppDelegate? {
+        guard transactions.acceptsActions else {
+            Diagnostics.shared.emit("host", "action_rejected", outcome: "blocked", level: .debug,
+                                    fields: ["reason": "host_closed", "phase": transactions.diagnosticPhase])
+            return nil
+        }
+        return self
+    }
 
     private func configureActions() {
         model.onOpenSettings = { [weak self] group in self?.actionHost?.showSettings(group) }

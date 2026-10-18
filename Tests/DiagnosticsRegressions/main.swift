@@ -158,10 +158,15 @@ func replacedDirectory() throws {
     try check(rejected == 2 && outsideData == Data("OUTSIDE".utf8) && mode?.intValue == 0o644, "hardlinked regular files are rejected before content or permission mutation")
 }
 
+if CommandLine.arguments.count == 4, CommandLine.arguments[1] == "--logging-child" {
+    exit(runLevelChild(directory: CommandLine.arguments[2], domain: CommandLine.arguments[3]) ? 0 : 1)
+}
+
 do {
     for _ in 0..<10 { try existingDirectory() }
     try responsiveDelivery(); try replacedDirectory()
     try runRetentionRegressions()
+    try runLevelRegressions()
     print("\(regressionChecks) diagnostic review regression checks passed")
 }
 catch { fputs("FAIL: \(error.localizedDescription)\n", stderr); exit(1) }

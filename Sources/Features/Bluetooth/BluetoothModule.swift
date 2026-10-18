@@ -273,6 +273,43 @@ struct BluetoothBackend {
 final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     private let defaults: UserDefaults
     private let diagnosticsLogger: Diagnostics
+    private var diagnosticCycle: (operation: String, started: TimeInterval)?
+    private var diagnosticPendingManual: String?
+    private var diagnosticAttempt = 0
+
+    private func logManualRejection(_ reason: String) {
+        diagnosticsLogger.emit("bluetooth", "manual_rejected", outcome: "blocked", level: .warning,
+                               fields: ["reason": reason, "busy": String(busy)])
+    }
+    private func queueDiagnosticManual(_ action: String) {
+        if let previous = diagnosticPendingManual {
+            diagnosticsLogger.emit("bluetooth", "manual_queue_replaced", outcome: "canceled", operation: previous, level: .debug)
+        }
+        let operation = UUID().uuidString
+        diagnosticPendingManual = operation
+        diagnosticsLogger.emit("bluetooth", "manual_queued", operation: operation, level: .debug,
+                               fields: ["action": action, "busy": String(busy)])
+    }
+    private func beginDiagnosticCycle(operation: String = UUID().uuidString, manual: Bool) {
+        diagnosticCycle = (operation, diagnosticsLogger.start())
+        diagnosticAttempt = 0
+        diagnosticsLogger.emit("bluetooth", "cycle_start", operation: operation, level: .debug,
+                               fields: ["manual": String(manual), "saved_target_count": String(autoAddresses.count)])
+    }
+    private func finishDiagnosticCycle(_ result: Result<[BluetoothDevice], Error>) {
+        guard let cycle = diagnosticCycle else { return }
+        diagnosticCycle = nil
+        let outcome: String
+        switch result {
+        case .success: outcome = "success"
+        case .failure: outcome = "failure"
+        }
+        let canceled = stopped || cycleCancellation?.isCanceled == true
+        diagnosticsLogger.emit("bluetooth", "cycle_finish", outcome: canceled ? "canceled" : outcome,
+                               operation: cycle.operation, since: cycle.started, level: canceled ? .debug : (outcome == "failure" ? .error : .debug),
+                               fields: ["canceled": String(canceled), "attempt_count": String(diagnosticAttempt),
+                                        "result_device_count": (try? result.get()).map { String($0.count) } ?? "unknown"])
+    }
     private var discoveryRead = BluetoothDiscoveryRead.notObserved
     private var pendingDiscoveryRead: BluetoothDiscoveryRead?
     // One bounded previous key, never a history of identities or observations.
@@ -528,6 +565,11 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     func stop(completion: (() -> Void)? = nil) {
+        diagnosticsLogger.emit("bluetooth", "stop_requested", level: .debug, fields: ["busy": String(busy)])
+        if let operation = diagnosticPendingManual {
+            diagnosticsLogger.emit("bluetooth", "manual_queue_canceled", outcome: "canceled", operation: operation, level: .debug)
+        }
+        diagnosticPendingManual = nil
         cancelActivityConnections()
         if let activityManual { activityJournal?.finish(activityManual, result: .canceled) }
         activityManual = nil
@@ -571,6 +613,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
                                             autoAddresses: Set(autoAddresses.filter { retryAfter[$0, default: .distantPast] <= Date() }), protectOtherAudio: protectOtherAudio,
                                             switchAudioOutput: switchAudioOutput, protectedAudioAddresses: protectedAudioAddresses)
         busy = true
+        beginDiagnosticCycle(manual: false)
         pendingDiscoveryRead = nil
         backend = observingDiscovery(backend)
         activity = "Checking Bluetooth devices…"
@@ -613,19 +656,22 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     func requestConnection(_ connected: Bool, address: String) {
-        guard !stopped else { return }
-        guard controlsAvailable else { onError?(ToggleError(message: reconnectSummary)); onChange?(); return }
+        guard !stopped else { logManualRejection("stopped"); return }
+        guard controlsAvailable else { logManualRejection("control_evidence_unavailable"); onError?(ToggleError(message: reconnectSummary)); onChange?(); return }
         guard !permissionRequired else {
+            logManualRejection("parent_access_required")
             activityJournal?.record(.bluetoothConnect(connected), trigger: .user, result: .blocked)
             onError?(ToggleError(message: reconnectSummary)); onChange?(); return
         }
         let device = try? BluetoothIdentity.resolve(address, in: devices, allowOpaque: backend?.observationService == nil)
         guard device != nil || backend?.observationService == nil else {
+            logManualRejection("target_unresolved")
             onError?(ToggleError(message: "Bluetooth target is unavailable in the current helper inventory.")); onChange?(); return
         }
         if let activityPendingManual { activityJournal?.finish(activityPendingManual, result: .canceled) }
         activityPendingManual = activityJournal?.begin(.bluetoothConnect(connected), trigger: .user, queued: true)
         pendingManual = .connection(device?.address ?? address, connected)
+        queueDiagnosticManual(connected ? "connect" : "disconnect")
         clearAudioIntent()
         cycleCancellation?.cancel() // Manual intent takes precedence over later auto targets.
         onChange?()
@@ -633,15 +679,17 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     func turnBluetoothOn() {
-        guard !stopped else { return }
-        guard controlsAvailable else { onError?(ToggleError(message: reconnectSummary)); onChange?(); return }
+        guard !stopped else { logManualRejection("stopped"); return }
+        guard controlsAvailable else { logManualRejection("control_evidence_unavailable"); onError?(ToggleError(message: reconnectSummary)); onChange?(); return }
         guard !permissionRequired else {
+            logManualRejection("parent_access_required")
             activityJournal?.record(.bluetoothPower, trigger: .user, result: .blocked)
             onError?(ToggleError(message: reconnectSummary)); onChange?(); return
         }
         if let activityPendingManual { activityJournal?.finish(activityPendingManual, result: .canceled) }
         activityPendingManual = activityJournal?.begin(.bluetoothPower, trigger: .user, queued: true)
         pendingManual = .powerOn
+        queueDiagnosticManual("power_on")
         clearAudioIntent()
         cycleCancellation?.cancel()
         onChange?()
@@ -651,6 +699,11 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     private func startPendingManual() {
         guard !stopped, !busy, var backend, let request = pendingManual else { return }
         guard controlsAvailable, !permissionRequired else {
+            logManualRejection("queued_admission_changed")
+            if let operation = diagnosticPendingManual {
+                diagnosticsLogger.emit("bluetooth", "manual_queue_canceled", outcome: "blocked", operation: operation, level: .warning)
+            }
+            diagnosticPendingManual = nil
             pendingManual = nil
             if let activityPendingManual { activityJournal?.finish(activityPendingManual, result: .blocked) }
             activityPendingManual = nil
@@ -659,6 +712,8 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         }
         pendingDiscoveryRead = nil
         pendingManual = nil
+        beginDiagnosticCycle(operation: diagnosticPendingManual ?? UUID().uuidString, manual: true)
+        diagnosticPendingManual = nil
         backend.observationService?.invalidate()
         readback = nil
         let cancellation = BluetoothCycleCancellation()
@@ -709,6 +764,9 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         switch progress {
         case .radio(let poweredOn): radioPoweredOn = poweredOn
         case .connecting(let device):
+            diagnosticAttempt += 1
+            diagnosticsLogger.emit("bluetooth", "reconnect_attempt", operation: diagnosticCycle?.operation ?? UUID().uuidString,
+                                   level: .debug, fields: ["attempt": String(diagnosticAttempt)])
             let address = selectionAddress(device.address)
             activityWaitingNoted.removeValue(forKey: address)
             if let previous = activityRetryNoted[address], activityJournal?.contains(previous) != true {
@@ -720,6 +778,8 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
             activity = "Connecting to \(device.name)…"
             deviceStates[address] = "Connecting…"
         case .connected(let device):
+            diagnosticsLogger.emit("bluetooth", "reconnect_verified", operation: diagnosticCycle?.operation ?? UUID().uuidString,
+                                   level: .debug, fields: ["attempt": String(diagnosticAttempt)])
             let address = selectionAddress(device.address)
             if let operation = activityAutomatic.removeValue(forKey: address) {
                 activityJournal?.finish(operation, result: .completed)
@@ -741,6 +801,8 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
             }
             deviceStates[address] = reason
         case .failed(let device, let reason):
+            diagnosticsLogger.emit("bluetooth", "retry_scheduled", outcome: "failure", operation: diagnosticCycle?.operation ?? UUID().uuidString,
+                                   level: .warning, fields: ["attempt": String(diagnosticAttempt), "retry_after_seconds": "30"])
             let address = selectionAddress(device.address)
             if let operation = activityAutomatic.removeValue(forKey: address) {
                 activityJournal?.finish(operation, result: .retryScheduled)
@@ -757,6 +819,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     private func complete(_ result: Result<[BluetoothDevice], Error>, reportError: Bool, manualOperation: ManualOperation? = nil) {
+        finishDiagnosticCycle(result)
         if finishStoppedOperation() { return }
         if let pendingDiscoveryRead { discoveryRead = pendingDiscoveryRead }
         pendingDiscoveryRead = nil
