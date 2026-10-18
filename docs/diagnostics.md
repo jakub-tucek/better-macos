@@ -453,3 +453,63 @@ All **14 shell inputs**, **239 local links and 41 fragments across 31 tracked
 Markdown documents**, compiler-input/privacy/scope assertions and `git diff --check`
 passed. Direct comparisons confirm the final reviewed diagnostics backend,
 retention regressions and Clipboard instrumentation are unchanged by rebinding.
+
+## Verbosity and local reader · 2026-10-18
+
+Implementation/test revision `76aa5e9`, based on main `78c8543`, adds the levels,
+worker-side configuration, closed operational context and local timeline above.
+The descriptor-relative backend, 128-event / 16-KiB admission bounds and file
+retention limits remain unchanged. New work still requires independent review
+before integration; historical backend review is not review of this extension.
+
+Isolated checks at this revision:
+
+- **160 diagnostic regression checks**, including the previous 81 backend checks,
+  threshold ordering/startup exceptions, invalid configuration, gated preference
+  loading, pre-resolution filtering, resolved admission filtering, real trace
+  rotation, host veto correlation and child-process environment/preference sources.
+- **13 reader fixture checks**: rotations and sessions, malformed/partial lines,
+  unrelated files/symlinks, GUI versus helper/dead/reused PID birth evidence, combined
+  timeline filters and missing/invalid input. No user log paths in those fixtures.
+- **152 focused Bluetooth observation checks**, including all-level privacy,
+  cache trace, manual correlation/rejection, canceled cycles and fetch severity.
+- Pinned lint/format passed across **70 Swift files**; offline developer-tool and
+  CI-whitespace fixtures, touched shell syntax and whitespace checks passed.
+
+Earlier full-suite attempts were not accepted: one exceeded a 120-second command
+limit; one exposed the mocked build fixture's missing stub for the new reader
+entry point (corrected in `247ebcb`); an unfrozen attempt rejected a test source
+modified during compilation. Their ignored logs remain local; none is a passing
+full-suite result.
+
+Frozen `76aa5e94d275526aed397d99610fd5cedbefcfe5` then passed one complete
+`DEVELOPER_DIR=/Library/Developer/CommandLineTools MAC_UTILS_SIGNING_IDENTITY=- bash test.sh`
+run: **4,805 legacy checks**, **160 separate diagnostics**, **13 reader fixtures**,
+**152 observation**, **39 permission-context**, **114 C safety checks**,
+**10 policy tests / 3 suites**, **13 mocked installer scenarios**, build fixtures
+and signed/relocated-bundle packaging checks. These are separate runner counts;
+focused coverage overlaps legacy coverage and must not be added into one total.
+Apple Swift 6.4 (`swiftlang-6.4.0.34.1`), standalone CLT / SDK 27.0; app/test target
+arm64/macOS 15 in Swift 5 language mode. Built plist revision matches `76aa5e9`.
+The artifact predates this evidence-only documentation change. Ignored local logs:
+`diagnostics-76aa5e9-{full,bluetooth,lint,format,tools,ci-whitespace}.log`,
+`diagnostics-level-tests.log`, `diagnostics-reader-tests.log` and
+`diagnostics-live-reader.log`. Full execution and focused passes do not supply
+independent review or hardware acceptance.
+
+Read-only reader follow-up `ed0c742` reproduced an equal-timestamp rotation-order
+inversion with fixed-mtime fixtures, then corrected the bounded file read order.
+Its **13 reader checks** and unmodified pinned lint/format across 70 Swift files
+passed. Red/green logs: `diagnostics-reader-tie-{red,green}.log`; final tooling logs:
+`diagnostics-final-{lint,format}.log`. App sources are unchanged from the full-suite
+revision above. The full suite/app build was not rerun for this reader-only fix;
+do not describe the existing bundle as built from `ed0c742` or this evidence commit.
+
+The authorized machine-local change was only
+`io.github.jakub-tucek.mac-utils` → `diagnostics.level=all`, verified by reading
+that one key. No feature preference, permission, device, app installation or running
+app was changed. The read-only live viewer refused automatic selection because
+retained logs did not provide a verified live GUI startup; it did not guess a
+session or launch anything. No claim is made that the running binary uses these
+new events, that prior missing events can be recovered, or that any underlying
+Bluetooth/host issue is fixed. Relaunch and hardware acceptance remain separate.
