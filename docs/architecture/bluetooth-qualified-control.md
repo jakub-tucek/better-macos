@@ -1,5 +1,10 @@
 # Bluetooth reconnect: native control qualification
 
+The final source series through `ec6babe` has now been supplied independently
+re-reviewed **CLEAN** and integrated on main. Historical blockers/pending-review
+statements below belong to their named revisions. See
+[main integration](#main-integration--2026-10-18) for the artifact and launch scope.
+
 ## Stage 1 result · 2026-10-18
 
 Based on main `9225999`, isolated branch `sol/bluetooth-qualified-control`.
@@ -185,7 +190,7 @@ that existing cleanup is part of the approval, not performed by the probe.
 After the existing process has exited gracefully:
 
 ```sh
-open "/Users/jakubtucek/Projects/others/fix-mac-os-bt-qualified/build/Fix macOS.app" --args --bluetooth-readonly-probe
+open "/Users/jakubtucek/Projects/others/fix-mac-os/build/Fix macOS.app" --args --bluetooth-readonly-probe
 ```
 
 Keep the result window open. Use its exact **Session** value to collect retained
@@ -276,3 +281,116 @@ feature preference, Audio change, push or tag occurred. Source/tests/build check
 do not establish same-app TCC identity, getter qualification or working reconnect.
 **Independent re-review of the blocker correction remains mandatory before any
 integration or authorized live probe.**
+
+## Main integration · 2026-10-18
+
+The parent supplied independent re-review **CLEAN**, including the explicit probe
+launch correction. Main was `9225999`; the branch has exactly the three requested
+unique commits on that base, with no earlier unmerged stage dependency:
+
+| Reviewed source | Main commit |
+| --- | --- |
+| `dc2ef05` — read-only getter qualification/probe instrumentation | `67356e2` |
+| `178942c` — isolated same-bundle GUI probe launch | `d8de3c7` |
+| `ec6babe` — frozen explicit-launch evidence | `0beb750` |
+
+All applied in order without conflicts. Production, tests, script and compiler
+inputs exactly match reviewed `ec6babe`; no new probe/host rebinding was introduced.
+The separate `diagnose/native-bluetooth-schema` branch was **not integrated**.
+The normal-reconcile probe instrumentation remains part of `dc2ef05`; it is
+read-only and cannot grant control. The explicit launch path takes precedence
+over all other flags and lazily constructs only the probe delegate, with no normal
+AppDelegate/bootstrap/cleanup, helper command or feature automation.
+
+The built main artifact is **`build/Fix macOS.app`** in the main checkout, not the
+earlier branch's build directory. The authorized-invocation example above now
+points to that main artifact. Its exact tested compiled revision and signature
+are recorded with the completed checks below; the later docs-only evidence commit
+does not imply a rebuild or a loaded-image update.
+
+### Launch approval boundary
+
+**No live qualification has occurred in this integration.** All getter, preference
+and probe-window tests use injected capabilities; source/build/signature checks
+do not qualify same-app Bluetooth access or connection control. No production app
+was quit, launched, installed or probed for a new PID/loaded-revision claim.
+The source record's PID 35520 is a supplied historical observation, not an assertion
+about the current process. Existing running app(s) were left untouched.
+
+Before any live probe, obtain new explicit user approval covering **graceful quit
+of the existing app, its normal owned-state cleanup, then launch of this reviewed
+main bundle with only `--bluetooth-readonly-probe`**. If graceful quit is refused,
+stop; do not force quit, bypass a veto, use `open -n` or launch a second instance.
+The probe does not initialize normal feature owners and its immediate quit has
+no restoration work. A later normal app restart needs **separate user approval**;
+no automatic normal relaunch follows probe completion. No prior approval is reused.
+
+Keep a later authorized probe window open and select its exact Session/Run token
+for local reader inspection. Reader `--pid` selection needs retained startup
+evidence for that PID and can be ambiguous across reused/historical sessions;
+prefer the explicit window Session. Automatic selection may correctly reject an
+older GUI with unsuitable startup evidence; never fall back to a latest helper.
+Existing `diagnostics.level=all` remains untouched, and logging/privacy/retention,
+helper/native control authority and user feature choices are preserved.
+
+No native getter, real blueutil/system_profiler, device, radio, TCC/permission,
+login registration or live preference mutation, installation, push or tag was
+performed. Bluetooth reconnect/control remains unqualified; a completed getter
+probe would still not authorize implementing or exercising native connection APIs.
+
+### Completed integrated checks and artifact
+
+At **`0beb7505a9d5bce0af8339b7ec22848b1434a166`**, one complete sequential
+standalone CLT `bash test.sh` run passed:
+
+| Runner | Actual main result |
+| --- | --- |
+| Legacy host/app/feature | **4,805 checks** |
+| Focused Bluetooth observation/read-only launch | **190 checks**, plus source capability/early-entry guard |
+| Diagnostics | **160 checks**, including the prior 81 backend checks, plus no-flush/no-sync-wait guard |
+| Read-only diagnostic reader | **31 fixture checks** |
+| Permission context | **39 checks** |
+| Instant gesture C safety | **114 assertions** |
+| Swift Testing policy | **10 tests / 3 suites** |
+| Mocked installer | **13 scenarios** |
+| App/compiler/real and relocated bundle | Passed, including explicit inputs, complete notices/provenance, strict signature and staged replacement/rollback fixtures |
+
+Counts are separate and overlapping; no combined assertion total is claimed.
+The 190 checks include injected normal-reconcile and explicit-launch probe paths,
+lazy factory exclusion, worker/cancellation, malformed settings, all-flag routing
+and count-only privacy. **No real native getter or app lifecycle was exercised.**
+Historical failed/cache/path attempts above are preserved as source-worktree
+evidence, not silently converted into integrated successes.
+
+Log: `build/bt-qualified-integration-clt.log`. It records exact HEAD, timestamped
+commands, scoped standalone CLT compiler/SDK paths, Swift 6.4 / SDK 27.0, arm64 and
+explicit unset `SDKROOT`. Source/built plist lint and metadata passed: version
+`0.4`, build `4`, arm64/macOS 15+, SDK 27.0, embedded revision exactly the tested
+source above. The compiled revision literal was verified in the executable without
+executing it. The later evidence-only commit does not change that artifact's SHA.
+
+Parent handoff artifact:
+
+- Bundle: `/Users/jakubtucek/Projects/others/fix-mac-os/build/Fix macOS.app`.
+- Compiled source: `0beb7505a9d5bce0af8339b7ec22848b1434a166`.
+- Signing: existing configured **Apple Development** certificate, strict verification
+  passed; **TeamIdentifier `QEC369PJFV`**, matching prior main's recorded team.
+- CodeDirectory CDHash: `f18f855d2e2c75b978c0bc14057d2ac09ac2530c`.
+- Approved-in-code launch scope: only `--bluetooth-readonly-probe`; **execution
+  remains unauthorized** until the parent obtains the new graceful-quit/probe-only
+  consent described above. No normal restart is included in that future consent.
+
+Unmodified pinned lint/format passed across **71 Swift files**. Offline tooling
+and CI whitespace fixtures passed, with no rule/baseline/config changes. Logs:
+`build/bt-qualified-integration-{lint,format,tools,ci}.log`. Current all-level log
+configuration, reader ordering/evidence checks, descriptor-relative retention,
+Bluetooth helper-control authority, Audio ownership, HostTransactions and quiet
+session Activity remain preserved. The existing tracked worktree gitlink change
+and all unrelated worktree/untracked data were left intact and unstaged.
+
+All **20 shell inputs**, **284 local documentation links and 66 fragments across
+38 tracked Markdown files**, probe compiler-input/source comparisons, schema-
+branch exclusion checks and `git diff --check` passed. The profiler parser is
+byte-identical to pre-integration `9225999`; no pending schema correction was
+folded into this probe build. Only evidence docs are committed afterward; the
+pre-existing modified worktree gitlink remains the user's unstaged change.
