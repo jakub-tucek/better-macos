@@ -159,6 +159,10 @@ func runBluetoothObservationTests() throws {
     expect(records.contains { $0["event"] as? String == "manual_rejected" && ($0["fields"] as? [String: String])?["reason"] == "control_evidence_unavailable" },
            "non-UI admission rejection records only closed reason")
     expect(records.contains { $0["event"] as? String == "cycle_finish" && $0["outcome"] as? String == "canceled" }, "stopped cycle records cancellation without claiming verified success")
+    expect(records.contains { $0["event"] as? String == "observation" && $0["severity"] as? String == "warning" &&
+        ($0["fields"] as? [String: String])?["fetch_result"] == "timeout" }, "failed observation uses warning severity and current fetch result")
+    expect(records.contains { $0["event"] as? String == "observation" && $0["outcome"] as? String == "canceled" &&
+        ($0["fields"] as? [String: String])?["timed_out"] == "false" }, "canceled observation does not invent a current timeout")
 }
 
 private final class ObservationMutationRunner: CommandRunning {

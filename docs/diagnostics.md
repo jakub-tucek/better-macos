@@ -188,6 +188,10 @@ the user's authorization; adding logs does not authorize those checks.
   start/finish; automatic attempts, verified reconnects and retry scheduling share
   the cycle ID plus an attempt ordinal. No device identifier, name, raw progress
   reason or error text is added. Canceled cycles cannot claim successful completion.
+  Their separate `backend_result` retains success/failure returned by the backend;
+  cancellation does not prove an in-flight device mutation was undone. Observation
+  conflicts/failures use warning severity; cancellation uses debug and retains the
+  cached issue separately from the current fetch result/timeout flag.
   Trace adds small cache/backoff/coalescing events with native snapshot age, at the
   existing poll cadence, not per subprocess read. Observation start/finish IDs are
   distinct from host publication and command IDs; timeline proximity alone does

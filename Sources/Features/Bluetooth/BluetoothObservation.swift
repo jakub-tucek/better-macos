@@ -240,10 +240,12 @@ final class BluetoothObservationService: @unchecked Sendable {
         case .success(let snapshot): fetchResult = snapshot.complete ? "complete" : "partial"
         case .failure(let failure): fetchResult = failure.rawValue
         }
-        diagnostics.emit("bluetooth", "observation", operation: operation, since: started, fields: ["source": observation.source,
+        let canceled = fetchResult == BluetoothReadIssue.canceled.rawValue
+        diagnostics.emit("bluetooth", "observation", outcome: canceled ? "canceled" : "observed", operation: operation, since: started,
+                         level: canceled ? .debug : (issue != nil || observation.conflicting ? .warning : .info), fields: ["source": observation.source,
                          "conflict": String(observation.conflicting), "stale": String(observation.nativeStale),
                          "controller": observation.displayedPower.map { $0 ? "on" : "off" } ?? "unknown",
-                          "fetch_result": fetchResult, "timed_out": String(issue == .timeout),
+                          "fetch_result": fetchResult, "timed_out": String(fetchResult == BluetoothReadIssue.timeout.rawValue),
                          "status": issue?.rawValue ?? "complete", "device_count": String(observation.displayedDevices?.count ?? 0)])
         return observation
     }

@@ -308,6 +308,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         diagnosticsLogger.emit("bluetooth", "cycle_finish", outcome: canceled ? "canceled" : outcome,
                                operation: cycle.operation, since: cycle.started, level: canceled ? .debug : (outcome == "failure" ? .error : .debug),
                                fields: ["canceled": String(canceled), "attempt_count": String(diagnosticAttempt),
+                                        "backend_result": outcome,
                                         "result_device_count": (try? result.get()).map { String($0.count) } ?? "unknown"])
     }
     private var discoveryRead = BluetoothDiscoveryRead.notObserved
