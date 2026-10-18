@@ -1,4 +1,103 @@
 import Foundation
+import CoreBluetooth
+import IOBluetooth
+
+/// Read-only, in-process evidence for a possible future control adapter. This
+/// report never grants admission and never changes helper/native provenance.
+final class BluetoothControlProbe {
+    struct DeviceRead {
+        let address: String
+        let paired: Bool
+        let connected: Bool
+    }
+
+    private let authorized: () -> Bool
+    private let controllerOn: () -> Bool?
+    private let lookup: (String) -> DeviceRead?
+    private let clock: () -> TimeInterval
+    private let diagnostics: Diagnostics
+    private var nextRead: TimeInterval = -.infinity
+
+    // Owned by the Bluetooth serial worker, just like reconciliation. No device
+    // objects, addresses or names are retained between probes.
+    init(authorized: @escaping () -> Bool, controllerOn: @escaping () -> Bool?,
+         lookup: @escaping (String) -> DeviceRead?, clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+         diagnostics: Diagnostics = .shared) {
+        self.authorized = authorized
+        self.controllerOn = controllerOn
+        self.lookup = lookup
+        self.clock = clock
+        self.diagnostics = diagnostics
+    }
+
+    static func live(diagnostics: Diagnostics) -> BluetoothControlProbe {
+        BluetoothControlProbe(authorized: { CBCentralManager.authorization == .allowedAlways }, controllerOn: {
+            guard let controller = IOBluetoothHostController.default() else { return nil }
+            switch controller.powerState.rawValue {
+            case 0: return false
+            case 1: return true
+            default: return nil
+            }
+        }, lookup: { canonical in
+            let bytes = Array(canonical)
+            let address = stride(from: 0, to: bytes.count, by: 2).map { String(bytes[$0..<$0 + 2]) }.joined(separator: ":")
+            guard let device = IOBluetoothDevice(addressString: address), let returnedAddress = device.addressString else { return nil }
+            return DeviceRead(address: returnedAddress, paired: device.isPaired(), connected: device.isConnected())
+        }, diagnostics: diagnostics)
+    }
+
+    /// Called only for blocked helper comparisons. Native profiler inventory is
+    /// a set of lookup candidates, never proof of pairing or control capability.
+    @discardableResult
+    func inspect(saved: Set<String>, protected: Set<String>, inventory: [BluetoothDevice]?,
+                 shouldContinue: () -> Bool) -> [String: String]? {
+        guard shouldContinue(), clock() >= nextRead else { return nil }
+        nextRead = clock() + 30
+        let operation = UUID().uuidString
+        let started = diagnostics.start()
+        var fields = ["scope": "read_only_app_process", "control_capability": "unverified",
+                      "saved_count": String(saved.count), "protected_count": String(protected.count)]
+        func finish(_ outcome: String) -> [String: String] {
+            fields["probe_stage"] = outcome
+            diagnostics.emit("bluetooth", "native_control_probe", outcome: outcome, operation: operation,
+                             since: started, level: .debug, fields: fields)
+            return fields
+        }
+        guard authorized() else { return finish("parent_access_required") }
+        guard shouldContinue() else { return finish("canceled") }
+        let power = controllerOn()
+        fields["documented_controller_state"] = power.map { $0 ? "on" : "off" } ?? "unknown"
+        guard power == true else { return finish("controller_not_on") }
+        let rawAddresses = saved.union(protected)
+        let canonical = rawAddresses.compactMap(BluetoothIdentity.canonical)
+        guard canonical.count == rawAddresses.count, Set(canonical).count == canonical.count else { return finish("invalid_saved_identity") }
+        if let inventory {
+            guard (try? BluetoothIdentity.validate(inventory)) != nil else { return finish("invalid_inventory_identity") }
+        }
+        let all = Set(canonical).union((inventory ?? []).compactMap { BluetoothIdentity.canonical($0.address) })
+        fields["candidate_count"] = String(all.count)
+        // Bound OS getter calls even with malformed or unexpectedly huge input.
+        guard all.count <= 64 else { return finish("lookup_budget_exceeded") }
+        var matched = Set<String>(), paired = Set<String>(), connected = Set<String>()
+        for identity in all.sorted() {
+            guard shouldContinue(), authorized() else { return finish("canceled_or_access_changed") }
+            guard let device = lookup(identity), BluetoothIdentity.canonical(device.address) == identity else { continue }
+            matched.insert(identity)
+            if device.paired { paired.insert(identity) }
+            if device.connected { connected.insert(identity) }
+        }
+        guard shouldContinue(), authorized() else { return finish("canceled_or_access_changed") }
+        let savedIDs = Set(saved.compactMap(BluetoothIdentity.canonical))
+        let protectedIDs = Set(protected.compactMap(BluetoothIdentity.canonical))
+        fields.merge(["matched_count": String(matched.count), "paired_true_count": String(paired.count),
+                      "connected_true_count": String(connected.count), "saved_paired_true_count": String(savedIDs.intersection(paired).count),
+                      "protected_paired_true_count": String(protectedIDs.intersection(paired).count),
+                      "inventory_present": String(inventory != nil)]) { _, new in new }
+        // False getters can be context-dependent. Never report them as proof of
+        // unpairing, and never claim async control has been qualified by getters.
+        return finish("read_complete")
+    }
+}
 
 /// Comparison only. Never rewrite stored target IDs or use names as identity.
 enum BluetoothIdentity {

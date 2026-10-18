@@ -54,6 +54,7 @@ private func fixtureDevice(_ index: Int) -> [String: Any] {
 }
 
 func runBluetoothObservationTests() throws {
+    try runBluetoothControlProbeTests()
     try runBluetoothMergedAdmissionTests()
     try runBluetoothMergedManualTests()
     func data(_ root: [String: Any]) throws -> Data { try JSONSerialization.data(withJSONObject: root) }
@@ -163,6 +164,75 @@ func runBluetoothObservationTests() throws {
         ($0["fields"] as? [String: String])?["fetch_result"] == "timeout" }, "failed observation uses warning severity and current fetch result")
     expect(records.contains { $0["event"] as? String == "observation" && $0["outcome"] as? String == "canceled" &&
         ($0["fields"] as? [String: String])?["timed_out"] == "false" }, "canceled observation does not invent a current timeout")
+}
+
+private func runBluetoothControlProbeTests() throws {
+    let sink = ObservationSink(), logger = Diagnostics(sink: sink, minimumLevel: .trace)
+    var allowed = true, power: Bool? = true, now: TimeInterval = 0
+    var controllerReads = 0, lookups = 0, paired = true, wrongIdentity = false
+    let probe = BluetoothControlProbe(authorized: { allowed }, controllerOn: {
+        controllerReads += 1; return power
+    }, lookup: { identity in
+        lookups += 1
+        return .init(address: wrongIdentity ? "AA:BB:CC:DD:EE:FF" : identity, paired: paired, connected: false)
+    }, clock: { now }, diagnostics: logger)
+    let saved: Set<String> = ["aa-bb-cc-dd-ee-01", "AABBCCDDEE02"]
+    let inventory = (1...6).map { BluetoothDevice(address: String(format: "AA:BB:CC:DD:EE:%02X", $0), name: "SENSITIVE-PROBE", connected: false) }
+    let first = probe.inspect(saved: saved, protected: ["AABBCCDDEE03"], inventory: inventory, shouldContinue: { true })
+    expect(first?["saved_paired_true_count"] == "2" && first?["protected_paired_true_count"] == "1" && lookups == 6,
+           "direct lookup proves saved and protected pairing separately without enumerating pairedDevices")
+    expect(first?["documented_controller_state"] == "on" && first?["control_capability"] == "unverified",
+           "documented on and true pairing remain read-only evidence, not mutation qualification")
+    expect(probe.inspect(saved: saved, protected: [], inventory: inventory, shouldContinue: { true }) == nil && lookups == 6,
+           "probe repeats no faster than 30 seconds")
+    now = 30; allowed = false
+    let denied = probe.inspect(saved: saved, protected: [], inventory: inventory, shouldContinue: { true })
+    expect(denied?["probe_stage"] == "parent_access_required" && controllerReads == 1 && lookups == 6,
+           "denied parent causes no native getters or permission request")
+    now = 60; allowed = true; power = nil
+    expect(probe.inspect(saved: saved, protected: [], inventory: inventory, shouldContinue: { true })?["documented_controller_state"] == "unknown" && lookups == 6,
+           "unknown documented controller cannot proceed to device lookup")
+    now = 90; power = false
+    expect(probe.inspect(saved: saved, protected: [], inventory: inventory, shouldContinue: { true })?["probe_stage"] == "controller_not_on" && lookups == 6,
+           "off documented controller cannot imply a power-on request")
+    now = 120; power = true
+    expect(probe.inspect(saved: ["invalid"], protected: [], inventory: inventory, shouldContinue: { true })?["probe_stage"] == "invalid_saved_identity" && lookups == 6,
+           "invalid saved identity fails before lookup")
+    now = 150
+    expect(probe.inspect(saved: ["AABBCCDDEE01", "aa:bb:cc:dd:ee:01"], protected: [], inventory: inventory, shouldContinue: { true })?["probe_stage"] == "invalid_saved_identity",
+           "canonical saved collisions are not silently merged")
+    now = 180
+    expect(probe.inspect(saved: saved, protected: [], inventory: inventory + [inventory[0]], shouldContinue: { true })?["probe_stage"] == "invalid_inventory_identity",
+           "duplicate native display identities cannot seed qualification reads")
+    now = 210; wrongIdentity = true
+    expect(probe.inspect(saved: saved, protected: [], inventory: inventory, shouldContinue: { true })?["matched_count"] == "0",
+           "lookup object must match the requested canonical identity")
+    now = 240; wrongIdentity = false; paired = false
+    expect(probe.inspect(saved: saved, protected: [], inventory: nil, shouldContinue: { true })?["saved_paired_true_count"] == "0",
+           "false contextual pairing getters never become positive pairing proof")
+    now = 270
+    let beforeCanceled = lookups
+    expect(probe.inspect(saved: saved, protected: [], inventory: inventory, shouldContinue: { false }) == nil && lookups == beforeCanceled,
+           "canceled cycle cannot begin qualification reads")
+
+    let nativeData = try JSONSerialization.data(withJSONObject: profilerFixture(disconnected: (1...6).map(fixtureDevice)))
+    let runner = ObservationRunner()
+    let backend = BluetoothBackend(runner: runner, blueutil: "/fixture/blueutil", audioTool: nil,
+                                   observationService: BluetoothObservationService(diagnostics: logger) { _ in nativeData }, controlProbe: probe)
+    var attempts = 0
+    let config = BluetoothConfiguration(enabled: true, autoAddresses: saved, protectOtherAudio: true, switchAudioOutput: true,
+                                        protectedAudioAddresses: ["AABBCCDDEE03"])
+    do {
+        _ = try backend.reconcile(config, progress: { if case .connecting = $0 { attempts += 1 } })
+        expect(false, "contradictory production backend remains blocked")
+    } catch {
+        expect(attempts == 0 && runner.calls == [["--power"], ["--paired", "--format", "json"]],
+               "production off-empty versus on-six with two saved targets reproduces zero reconnect attempts")
+    }
+    expect(lookups == beforeCanceled + 6, "blocked production reconciliation invokes injected app-context probe")
+    expect(logger.flushForTesting(timeout: 2), "read-only probe fixture drains isolated diagnostics")
+    expect(sink.text.contains("native_control_probe") && !sink.text.contains("SENSITIVE") && !sink.text.contains("AABB") && !sink.text.contains("aa-bb"),
+           "native qualification diagnostics retain stages and counts, never names or addresses")
 }
 
 private final class ObservationMutationRunner: CommandRunning {

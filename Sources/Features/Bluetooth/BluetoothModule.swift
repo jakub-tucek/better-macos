@@ -104,6 +104,7 @@ struct BluetoothBackend {
     var onDiscoveryRead: ((BluetoothDiscoveryRead) -> Void)?
     var observationService: BluetoothObservationService?
     var onObservation: ((BluetoothReadback) -> Void)?
+    var controlProbe: BluetoothControlProbe?
 
     func isPoweredOn() throws -> Bool {
         let value: String
@@ -210,6 +211,8 @@ struct BluetoothBackend {
             let observation = observationService.observe(power: poweredOn, devices: current, shouldContinue: shouldContinue)
             onObservation?(observation)
             guard !observation.controlsBlocked else {
+                controlProbe?.inspect(saved: configuration.autoAddresses, protected: configuration.protectedAudioAddresses,
+                                      inventory: observation.native.flatMap { try? $0.inventory.get() }, shouldContinue: shouldContinue)
                 throw BluetoothObservationFailure(underlying: ToggleError(message: observation.summary ?? "Bluetooth controls unavailable."))
             }
             progress?(.radio(poweredOn))
@@ -411,7 +414,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         self.backend = backend ?? CommandRunner.find("blueutil").map {
             BluetoothBackend(runner: CommandRunner(diagnostics: diagnostics), blueutil: $0, audioTool: nil,
                              audioOutputs: { Set(try CoreAudioBackend().devices().filter { $0.directions.contains(.output) }.map(\.name)) },
-                              observationService: .live(diagnostics: diagnostics))
+                               observationService: .live(diagnostics: diagnostics), controlProbe: .live(diagnostics: diagnostics))
         }
         super.init()
         defaults.register(defaults: ["bluetooth.protectAudio": true, "bluetooth.switchAudio": true])
