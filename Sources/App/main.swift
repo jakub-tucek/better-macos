@@ -16,7 +16,21 @@ func runChild(_ arguments: [String], capture: Bool = false) throws -> Data {
     return data
 }
 
-if let index = CommandLine.arguments.firstIndex(of: "--watchdog") {
+let launchMode = ApplicationLaunchMode(arguments: CommandLine.arguments)
+
+func runGUI(_ mode: ApplicationLaunchMode) {
+    let application = NSApplication.shared
+    let delegate = mode.delegate(normal: { AppDelegate() }, probe: { BluetoothReadOnlyProbeDelegate() })
+    application.setActivationPolicy(.accessory)
+    application.delegate = delegate
+    withExtendedLifetime(delegate) { application.run() }
+}
+
+// Read-only GUI routing takes precedence even over other command flags. No
+// normal host initializer or mutating command dispatcher runs in this mode.
+if launchMode == .bluetoothReadOnlyProbe {
+    runGUI(launchMode)
+} else if let index = CommandLine.arguments.firstIndex(of: "--watchdog") {
     guard index + 1 < CommandLine.arguments.count else { exit(2) }
     exit(SafetyWatchdog.run(directory: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true)))
 } else if CommandLine.arguments.contains("--bluetooth-status") {
@@ -170,9 +184,5 @@ if let index = CommandLine.arguments.firstIndex(of: "--watchdog") {
         exit(1)
     }
 } else {
-    let application = NSApplication.shared
-    let delegate = AppDelegate()
-    application.setActivationPolicy(.accessory)
-    application.delegate = delegate
-    application.run()
+    runGUI(launchMode)
 }

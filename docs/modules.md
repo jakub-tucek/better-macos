@@ -89,7 +89,9 @@ claim that the baseline's release blockers are fixed.
   see the [observation contract](architecture/bluetooth-observation.md).
   Blocked comparisons also collect read-only in-process controller/direct-device
   getter counts; this [qualification probe](architecture/bluetooth-qualified-control.md)
-  neither connects devices nor grants native control admission.
+  neither connects devices nor grants native control admission. The explicit
+  `--bluetooth-readonly-probe` GUI mode constructs its own inert delegate, bypassing
+  normal host/module startup and cleanup rather than changing feature choices.
 - **Control boundary:** native inventory is display-only. Contradictory, stale or
   incomplete comparisons block owner-level control, including queued/non-UI calls;
   native-on never triggers automatic power-on. Mutations resolve canonical saved

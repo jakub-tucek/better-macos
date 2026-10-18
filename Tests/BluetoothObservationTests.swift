@@ -1,5 +1,6 @@
 import Foundation
 import CoreBluetooth
+import AppKit
 
 private final class ObservationSink: DiagnosticSink {
     private let lock = NSLock()
@@ -55,6 +56,7 @@ private func fixtureDevice(_ index: Int) -> [String: Any] {
 
 func runBluetoothObservationTests() throws {
     try runBluetoothControlProbeTests()
+    try runBluetoothReadOnlyLaunchTests()
     try runBluetoothMergedAdmissionTests()
     try runBluetoothMergedManualTests()
     func data(_ root: [String: Any]) throws -> Data { try JSONSerialization.data(withJSONObject: root) }
@@ -233,6 +235,91 @@ private func runBluetoothControlProbeTests() throws {
     expect(logger.flushForTesting(timeout: 2), "read-only probe fixture drains isolated diagnostics")
     expect(sink.text.contains("native_control_probe") && !sink.text.contains("SENSITIVE") && !sink.text.contains("AABB") && !sink.text.contains("aa-bb"),
            "native qualification diagnostics retain stages and counts, never names or addresses")
+}
+
+private final class ProbeLaunchDelegateFixture: NSObject, NSApplicationDelegate {}
+
+private func runBluetoothReadOnlyLaunchTests() throws {
+    let sink = ObservationSink(), logger = Diagnostics(sink: sink, minimumLevel: .info)
+    var preferenceReads = [String](), controllerReads = 0, lookupIDs = [String]()
+    let values: [String: Any] = ["bluetooth.autoAddresses": ["AA:BB:CC:DD:EE:01", "aa-bb-cc-dd-ee-02"],
+                               "bluetooth.protectedAudioAddresses": ["AABBCCDDEE03"]]
+    let run = BluetoothReadOnlyProbeRun(readValue: { key in preferenceReads.append(key); return values[key] }, makeProbe: {
+        BluetoothControlProbe(authorized: { true }, controllerOn: { controllerReads += 1; return true }, lookup: { id in
+            lookupIDs.append(id); return .init(address: id, paired: true, connected: false)
+        }, diagnostics: logger)
+    }, diagnostics: logger)
+    var scheduled: (() -> Void)?, presentations = [String](), normalConstructions = 0
+    let probe = BluetoothReadOnlyProbeDelegate(run: run, work: { scheduled = $0 }, present: { presentations.append($0) })
+    let mode = ApplicationLaunchMode(arguments: ["fix-mac-os", "--bluetooth-readonly-probe", "--test-connect-in-gui", "--enable-login", "--watchdog"])
+    let selected = mode.delegate(normal: { normalConstructions += 1; return ProbeLaunchDelegateFixture() }, probe: { probe })
+    expect(mode == .bluetoothReadOnlyProbe && selected === probe && normalConstructions == 0,
+           "typed read-only GUI route bypasses normal host construction even with mutating command flags")
+    expect(Diagnostics.processRole(arguments: ["app", "--bluetooth-readonly-probe"]) == "gui" &&
+           Diagnostics.processRole(arguments: ["app", "--watchdog"]) == "watchdog" &&
+           Diagnostics.processRole(arguments: ["app", "--bluetooth-status"]) == "command_or_helper",
+           "explicit probe startup retains GUI role without relabeling ordinary helper commands")
+    let notification = Notification(name: NSApplication.didFinishLaunchingNotification)
+    probe.applicationDidFinishLaunching(notification)
+    expect(preferenceReads.isEmpty && controllerReads == 0 && lookupIDs.isEmpty && scheduled != nil,
+           "probe launch schedules getters off main before reading any preferences or native state")
+    probe.applicationDidFinishLaunching(notification)
+    scheduled?()
+    let deadline = Date().addingTimeInterval(2)
+    while probe.resultText == nil && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
+    expect(preferenceReads == ["bluetooth.autoAddresses", "bluetooth.protectedAudioAddresses"],
+           "probe reads exactly the two target preference keys and never writes preferences")
+    expect(controllerReads == 1 && lookupIDs == ["aabbccddee01", "aabbccddee02", "aabbccddee03"],
+           "probe-only GUI executes only documented controller and registered-target getters")
+    expect(presentations.count == 2 && probe.resultText?.contains("saved_paired_true_count: 2") == true && probe.resultText?.contains("control_capability: unverified") == true,
+           "visible probe completion persists with run token and public counts, without claiming qualification")
+    expect(normalConstructions == 0,
+           "probe lifecycle constructs zero normal modules, watchdog, login, input, audio or mutation capabilities")
+    expect(probe.applicationShouldTerminate(NSApplication.shared) == .terminateNow,
+           "probe quit returns immediately without normal host restoration or preference writes")
+    probe.applicationWillTerminate(Notification(name: NSApplication.willTerminateNotification))
+    expect(ApplicationLaunchMode(arguments: ["app"]) == .normal && ApplicationLaunchMode(arguments: ["app", "--bluetooth-app-status"]) == .normal,
+           "ordinary GUI and legacy status routing remain unchanged")
+    var normalFactoryCalls = 0, probeFactoryCalls = 0
+    _ = ApplicationLaunchMode.normal.delegate(normal: { normalFactoryCalls += 1; return ProbeLaunchDelegateFixture() },
+                                              probe: { probeFactoryCalls += 1; return ProbeLaunchDelegateFixture() })
+    expect(normalFactoryCalls == 1 && probeFactoryCalls == 0, "normal launch still constructs only the normal delegate")
+
+    for invalid: Any in ["not-an-array", ["bad"], ["AABBCCDDEE01", "aa:bb:cc:dd:ee:01"], [7], ["AABBCCDDEE01", "AABBCCDDEE01"]] {
+        var nativeFactories = 0
+        let malformed = BluetoothReadOnlyProbeRun(readValue: { _ in invalid }, makeProbe: {
+            nativeFactories += 1
+            return BluetoothControlProbe(authorized: { true }, controllerOn: { true }, lookup: { _ in nil }, diagnostics: logger)
+        }, diagnostics: logger)
+        let fields = malformed.run(operation: UUID().uuidString, shouldContinue: { true })
+        expect(fields["probe_stage"] == "invalid_saved_identity" && fields["saved_count"] == "unknown" && fields["protected_count"] == "unknown" && nativeFactories == 0,
+               "malformed saved values report unknown counts and cannot construct native getter capabilities")
+    }
+    var canceledWork: (() -> Void)?, canceledReads = 0
+    let invalidProtected = BluetoothReadOnlyProbeRun(readValue: { key in key == "bluetooth.autoAddresses" ? ["AABBCCDDEE01"] : "invalid" },
+        makeProbe: { fatalError("invalid protected identity must not construct native getters") }, diagnostics: logger)
+    let protectedResult = invalidProtected.run(operation: UUID().uuidString, shouldContinue: { true })
+    expect(protectedResult["probe_stage"] == "invalid_saved_identity" && protectedResult["saved_count"] == "unknown",
+           "malformed protected preferences fail before any native getter and do not imply empty protection")
+    var unbundled = run
+    unbundled.isAppBundle = { false }
+    let readsBeforeUnbundled = preferenceReads.count
+    expect(unbundled.run(operation: UUID().uuidString, shouldContinue: { true })["probe_stage"] == "not_app_bundle" && preferenceReads.count == readsBeforeUnbundled,
+           "unbundled command context cannot run preference or native qualification reads")
+    let canceled = BluetoothReadOnlyProbeDelegate(run: .init(readValue: { _ in canceledReads += 1; return nil }, makeProbe: { fatalError("canceled probe must not construct native getters") }, diagnostics: logger), work: { canceledWork = $0 }, present: { _ in })
+    canceled.applicationDidFinishLaunching(notification)
+    expect(canceled.applicationShouldTerminate(NSApplication.shared) == .terminateNow, "quit before probe work needs no cleanup drain")
+    canceledWork?()
+    RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+    expect(canceledReads == 0 && canceled.resultText == nil, "canceled probe does not read settings or publish a late completion")
+    expect(logger.flushForTesting(timeout: 2), "probe-launch fixture flushes injected diagnostics only in tests")
+    let records = sink.text.split(separator: "\n").compactMap { (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any] }
+    let begin = records.first { $0["event"] as? String == "readonly_probe_begin" }
+    let token = begin?["operation"] as? String
+    expect(token != nil && records.contains { $0["event"] as? String == "readonly_probe_result" && $0["operation"] as? String == token } && records.contains { $0["event"] as? String == "native_control_probe" && $0["operation"] as? String == token },
+           "probe begin, getter result and completion share one run UUID at default info threshold")
+    expect(!sink.text.contains("AA:BB") && !sink.text.contains("aabbccddee") && !sink.text.contains("not-an-array"),
+           "probe launch diagnostics exclude raw preferences and all target identities")
 }
 
 private final class ObservationMutationRunner: CommandRunning {

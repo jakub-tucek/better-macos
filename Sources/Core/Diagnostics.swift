@@ -364,6 +364,12 @@ final class Diagnostics {
         logger.emit("process", "startup", fields: ["compiled_base_revision": revision, "compiled_source_state": sourceState,
                     "entry_uptime_seconds": String(ProcessInfo.processInfo.systemUptime)])
     }
+    static func processRole(arguments: [String]) -> String {
+        if arguments.contains("--bluetooth-readonly-probe") { return "gui" }
+        if arguments.contains("--watchdog") { return "watchdog" }
+        return arguments.count > 1 ? "command_or_helper" : "gui"
+    }
+
     private static func startupMetadata(revision: String, sourceState: String) -> [String: String] {
         // Bundle/signature/prefs I/O belongs to the worker, never safety entry.
         // These observations are NOT evidence of the loaded image's identity.
@@ -371,7 +377,7 @@ final class Diagnostics {
         let path = bundle.bundleURL.path
         var fields = ["compiled_base_revision": revision, "compiled_source_state": sourceState, "bundle_path_hash": identity(path),
                       "metadata_capture": "asynchronous_not_loaded_image",
-                      "process_role": ProcessInfo.processInfo.arguments.contains("--watchdog") ? "watchdog" : (ProcessInfo.processInfo.arguments.count > 1 ? "command_or_helper" : "gui"),
+                       "process_role": processRole(arguments: ProcessInfo.processInfo.arguments),
                       "bundle_location": path.contains("/build/") ? "build" : (path.contains("/Applications/") ? "applications" : "other"),
                       "executable_path_hash": identity(ProcessInfo.processInfo.arguments.first ?? ""),
                        "bundle_revision_observed_on_worker": bundle.object(forInfoDictionaryKey: "FixMacOSRevision") as? String ?? "absent",

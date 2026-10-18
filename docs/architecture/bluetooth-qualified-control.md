@@ -112,11 +112,13 @@ when reviewing bounded stop/drain behavior; do not add a semaphore wait on main.
 ## Required next evidence
 
 Independent review of this read-only stage first. Then obtain explicit permission
-to replace/relaunch the app with **automatic reconnection suspended in memory**
-(no preference changes) for an app-context read-only probe. Collect only the safe
+to gracefully quit the current app and launch the reviewed same-bundle GUI in
+**read-only probe mode**. This mode never constructs the normal app host and never
+starts automations; it does not change any feature preference. Collect only the safe
 stage/count event and compiled revision. Expected candidate evidence: documented
 controller on, both saved targets matched and paired true, protected target paired
-true, valid inventory coverage. The suspension must not suppress discovery/probe.
+true. Full current inventory/protection coverage remains a separate control gate;
+this registered-target-only probe deliberately does not run a profiler/helper.
 
 If any getter cannot qualify there, report that exact stage. Do not infer success
 from `system_profiler`, standalone shell getters or a successful build. No such
@@ -139,3 +141,93 @@ at lines 365 and 428; no changed Bluetooth file had a violation. The lint baseli
 and Windows source were not changed to obtain a green result. `git diff --check`
 passed. Full-suite results and independent review must be recorded separately;
 these focused checks are not app-context qualification or a reconnect fix.
+
+## Review blocker correction: explicit read-only GUI launch
+
+`dc2ef05` was blocked for lacking a launch path that could run the probe without
+also starting normal app automations. Its normal-reconcile instrumentation alone
+was not safe to use as the requested manual qualification entry point.
+
+`ApplicationLaunchMode` now selects `--bluetooth-readonly-probe` before any helper
+or mutating CLI dispatch. Its lazy delegate factory constructs only
+`BluetoothReadOnlyProbeDelegate`, never `AppDelegate`. Consequently normal host
+property initializers, module factories, watchdog, mouse/display recovery, input
+activation, source updater, login refresh/registration and Audio never run.
+No `AppDelegate` lifecycle callback or quit cleanup participates. Probe quit is
+immediate, since it owns no mutations or feature restoration work.
+
+The same app executable runs `NSApplication` with a probe-only completion window.
+Native getters run on a utility worker. The window remains open after completion,
+showing the run UUID, diagnostic session, PID, closed stage and public counts.
+Begin, native getter result and completion use the same run UUID at info severity.
+No production flush or auto-exit races diagnostic delivery. Logging remains
+best-effort; a visible completed result does not prove its log was written.
+Startup explicitly identifies this mode as `process_role=gui`, despite its flag.
+
+Only `bluetooth.autoAddresses` and `bluetooth.protectedAudioAddresses` are read
+through `CFPreferencesCopyAppValue` in the real app domain. Missing keys mean no
+saved choice; malformed values/identities or duplicate canonical choices report
+unknown counts and never construct getter capabilities. No defaults registration,
+preference write, Bluetooth permission request, central manager, scan, paired-device
+enumeration, helper command, power action or device connection is available to
+the probe-only composition. An unexpected/unbundled executable reports
+`not_app_bundle` before preference or native reads. The bundle check establishes
+packaging only, **not proof of TCC identity or successful device control**.
+
+### Later authorized invocation, not executed
+
+After independent review, obtain one explicit approval covering graceful quit of
+the current GUI and launch of the reviewed bundle in this read-only mode. Do not
+launch a second instance, force-quit the current app, use `open -n`, reset TCC or
+change feature choices. Normal quit may restore already-owned feature state;
+that existing cleanup is part of the approval, not performed by the probe.
+
+After the existing process has exited gracefully:
+
+```sh
+open "/Users/jakubtucek/Projects/others/fix-mac-os-bt-qualified/build/Fix macOS.app" --args --bluetooth-readonly-probe
+```
+
+Keep the result window open. Use its exact **Session** value to collect retained
+events, rather than guessing the newest helper/session:
+
+```sh
+bash scripts/dev logs --session <SESSION-FROM-PROBE-WINDOW> --all --category bluetooth
+```
+
+Match `readonly_probe_begin`, `native_control_probe` and `readonly_probe_result`
+by the window's **Run** token. Inspect startup in the same explicit session to
+record compiled base revision/source state and GUI role. Do not use
+`--bluetooth-app-status` or `--test-connect-in-gui`; the former reads an old cached
+snapshot, and the latter can mutate devices/Audio. No command above was executed
+during implementation. A real same-app-context getter result remains pending.
+
+### Initial stage-1 full run, now completed
+
+The previously pending full CLT/ad-hoc `test.sh` run passed: **4,805 legacy**,
+**168 focused observation**, **39 permission-context**, **160 diagnostics**,
+**31 reader**, **114 C assertions**, **10 policy tests / 3 suites**, **13 mocked
+installer scenarios**, and app/build/real and relocated bundle fixtures. Counts
+are separate and overlap; do not sum them. It began at base `9225999` with modified
+stage-1 source subsequently committed as `dc2ef05`; no compiled source was edited
+during the run. It is not a claim that the artifact embeds `dc2ef05` or includes
+the later explicit probe launch. Log: `bt-qualified-full.log` in the approved
+OpenCode temporary directory.
+
+The initial lint/format errors above were path-sensitive tooling artifacts in the
+temporary worktree (`/private/var` versus `/var` alias). After moving the same
+isolated worktree to `/Users/jakubtucek/Projects/others/fix-mac-os-bt-qualified`,
+normal pinned lint and format checks pass without Windows, baseline or configuration
+edits. The old failures remain recorded rather than being recast as source fixes.
+Final explicit-launch full-suite evidence and independent re-review remain required.
+
+Before freezing the explicit-launch implementation, the focused runner passed
+**190 checks**, plus its source capability/entry-order guard. New tests exercise
+the typed delegate factory, zero normal-host construction, queued worker execution,
+exact read-only preference keys/getter calls, malformed target/protection settings,
+unbundled refusal, repeated launch callbacks, idle quit, pre-work cancellation,
+info-level run correlation and redaction. UI presentation and native getters are
+injected; these tests do not launch the production app or qualify its TCC context.
+Normal pinned lint and format passed across **71 Swift files**, and whitespace
+checks passed. Logs: `bt-readonly-focused-final.log`, `bt-readonly-lint-final.log`,
+`bt-readonly-format-final.log`, in the approved OpenCode temporary directory.

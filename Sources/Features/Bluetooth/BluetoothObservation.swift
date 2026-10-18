@@ -50,17 +50,16 @@ final class BluetoothControlProbe {
     /// a set of lookup candidates, never proof of pairing or control capability.
     @discardableResult
     func inspect(saved: Set<String>, protected: Set<String>, inventory: [BluetoothDevice]?,
-                 shouldContinue: () -> Bool) -> [String: String]? {
+                 shouldContinue: () -> Bool, operation: String = UUID().uuidString, level: DiagnosticLevel = .debug) -> [String: String]? {
         guard shouldContinue(), clock() >= nextRead else { return nil }
         nextRead = clock() + 30
-        let operation = UUID().uuidString
         let started = diagnostics.start()
         var fields = ["scope": "read_only_app_process", "control_capability": "unverified",
                       "saved_count": String(saved.count), "protected_count": String(protected.count)]
         func finish(_ outcome: String) -> [String: String] {
             fields["probe_stage"] = outcome
             diagnostics.emit("bluetooth", "native_control_probe", outcome: outcome, operation: operation,
-                             since: started, level: .debug, fields: fields)
+                             since: started, level: level, fields: fields)
             return fields
         }
         guard authorized() else { return finish("parent_access_required") }
