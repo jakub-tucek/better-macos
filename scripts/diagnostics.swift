@@ -6,6 +6,8 @@ struct DiagnosticLogReader {
     struct Record {
         let timestamp: Date
         let object: [String: Any]
+        let generation: Int
+        let line: Int
         var session: String { object["session"] as? String ?? "" }
         var pid: Int32 { (object["pid"] as? NSNumber)?.int32Value ?? 0 }
         var category: String { object["category"] as? String ?? "" }
@@ -19,7 +21,24 @@ struct DiagnosticLogReader {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter.date(from: text) ?? ISO8601DateFormatter().date(from: text)
     }
-    static func read(_ directory: String) throws -> (records: [Record], skipped: Int) {
+    private struct File {
+        let name: String
+        let pid: Int32
+        let pidText: String
+        let session: String
+        let generation: Int
+        init?(_ name: String) {
+            guard name.range(of: #"^fixmacos-[0-9]+-[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}-[012]\.jsonl$"#, options: .regularExpression) != nil else { return nil }
+            let pieces = name.dropFirst("fixmacos-".count)
+            let pidText = String(pieces.prefix(while: { $0 != "-" }))
+            guard let pid = Int32(pidText), pid > 0,
+                  let generation = Int(String(name.suffix(7).prefix(1))) else { return nil }
+            self.name = name; self.pid = pid; self.pidText = pidText
+            session = String(pieces.dropFirst(pidText.count + 1).prefix(36))
+            self.generation = generation
+        }
+    }
+    static func read(_ directory: String, session: String? = nil, pid: Int32? = nil) throws -> (records: [Record], skipped: Int) {
         let fd = open(directory, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         guard fd >= 0 else { throw failure("Log directory unavailable") }
         defer { close(fd) }
@@ -29,43 +48,49 @@ struct DiagnosticLogReader {
         guard enumeration >= 0 else { throw failure("Cannot enumerate logs") }
         guard let stream = fdopendir(enumeration) else { close(enumeration); throw failure("Cannot enumerate logs") }
         defer { closedir(stream) }
-        var files: [(String, Int)] = []
+        var files: [File] = []
         while let entry = readdir(stream) {
             let name = withUnsafePointer(to: &entry.pointee.d_name) {
                 $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXNAMLEN) + 1) { String(cString: $0) }
             }
-            guard name.range(of: #"^fixmacos-[0-9]+-[A-Fa-f0-9-]{36}-[012]\.jsonl$"#, options: .regularExpression) != nil else { continue }
+            guard let file = File(name), pid == nil || file.pid == pid,
+                  session == nil || file.session.caseInsensitiveCompare(session!) == .orderedSame else { continue }
             var info = stat()
             guard fstatat(fd, name, &info, AT_SYMLINK_NOFOLLOW) == 0, valid(info) else { continue }
-            files.append((name, info.st_mtimespec.tv_sec))
+            // Filter explicit selections BEFORE enforcing the input budget. Never
+            // silently truncate a session's rotations using mutable file metadata.
+            guard files.count < 24 else { throw failure("More than 24 matching log files; select a narrower --session or --pid") }
+            files.append(file)
         }
         var records: [Record] = [], skipped = 0
-        // Select the newest bounded set, then read oldest first. For equal mtimes
-        // the filename tie-break reads -2/-1/-0 in generation order; stable date
-        // sorting below must not invert events sharing a millisecond at rotation.
-        for (name, _) in files.sorted(by: { $0.1 == $1.1 ? $0.0 < $1.0 : $0.1 > $1.1 }).prefix(24).reversed() {
-            let file = openat(fd, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        for identity in files {
+            let file = openat(fd, identity.name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
             guard file >= 0 else { continue }
             let handle = FileHandle(fileDescriptor: file, closeOnDealloc: true)
             var info = stat()
             guard fstat(file, &info) == 0, valid(info), let data = try? handle.read(upToCount: 512 * 1024) else { continue }
-            let pieces = name.dropFirst("fixmacos-".count)
-            let expectedPID = pieces.prefix(while: { $0 != "-" })
-            let expectedSession = pieces.dropFirst(expectedPID.count + 1).prefix(36)
             // A partial trailing record is deliberately ignored.
             let lines = data.split(separator: 10, omittingEmptySubsequences: false).dropLast()
-            for line in lines where !line.isEmpty {
+            for (position, line) in lines.enumerated() where !line.isEmpty {
                 guard line.count <= 64 * 1024,
                       let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any],
                       let text = object["timestamp"] as? String, let timestamp = date(text),
-                      object["session"] as? String == String(expectedSession),
-                      (object["pid"] as? NSNumber)?.stringValue == String(expectedPID),
+                      object["session"] as? String == identity.session,
+                      (object["pid"] as? NSNumber)?.stringValue == identity.pidText,
                       object["category"] is String, object["event"] is String,
                       levels.contains(object["severity"] as? String ?? "") else { skipped += 1; continue }
-                records.append(Record(timestamp: timestamp, object: object))
+                records.append(Record(timestamp: timestamp, object: object, generation: identity.generation, line: position))
             }
         }
-        return (records.sorted { $0.timestamp < $1.timestamp }, skipped)
+        return (records.sorted {
+            if $0.timestamp != $1.timestamp { return $0.timestamp < $1.timestamp }
+            // Cross-process/session ties have no known chronology. Use an explicit
+            // deterministic identity order, then oldest generation and file line.
+            if $0.pid != $1.pid { return $0.pid < $1.pid }
+            if $0.session != $1.session { return $0.session < $1.session }
+            if $0.generation != $1.generation { return $0.generation > $1.generation }
+            return $0.line < $1.line
+        }, skipped)
     }
     private static func valid(_ info: stat) -> Bool {
         info.st_mode & S_IFMT == S_IFREG && info.st_uid == getuid() && info.st_nlink == 1 && info.st_size <= 512 * 1024
@@ -94,7 +119,7 @@ struct DiagnosticLogReader {
         formatter.dateFormat = "EEE MMM d HH:mm:ss yyyy"
         return formatter.date(from: String(text.prefix(24)))
     }
-    static func run(_ arguments: [String]) throws {
+    static func run(_ arguments: [String], output: (String) -> Void = { print($0) }) throws {
         var directory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Fix macOS").path
         var session: String?, pid: Int32?, since: Date?, category: String?, minimum: String?
         var all = false, limit = 60, index = 0
@@ -102,7 +127,7 @@ struct DiagnosticLogReader {
             let arg = arguments[index]; index += 1
             if arg == "--all" { all = true; continue }
             if arg == "--help" {
-                print("Usage: bash scripts/dev logs [--all] [--session UUID | --pid PID] [--since ISO8601] [--category NAME] [--level trace|debug|info|warning|error] [--limit 1..200] [--directory PATH]")
+                output("Usage: bash scripts/dev logs [--all] [--session UUID | --pid PID] [--since ISO8601] [--category NAME] [--level trace|debug|info|warning|error] [--limit 1..200] [--directory PATH]")
                 return
             }
             guard index < arguments.count else { throw failure("Missing option value") }
@@ -124,7 +149,7 @@ struct DiagnosticLogReader {
             }
         }
         guard session == nil || pid == nil else { throw failure("Choose session or PID, not both") }
-        let loaded = try read(directory)
+        let loaded = try read(directory, session: session, pid: pid)
         let startups = loaded.records.filter { $0.category == "process" && $0.event == "startup" }
         if session == nil {
             if let pid { session = startups.last(where: { $0.pid == pid })?.session }
@@ -134,7 +159,7 @@ struct DiagnosticLogReader {
         let selected = loaded.records.filter { $0.session.caseInsensitiveCompare(session) == .orderedSame }
         guard !selected.isEmpty else { throw failure("Session not found in retained logs") }
         let startup = selected.first(where: { $0.category == "process" && $0.event == "startup" })
-        print("session=\(session) pid=\(selected[0].pid) level=\(startup?.fields["effective_log_level"] ?? "unknown") source=\(startup?.fields["log_level_source"] ?? "unknown") retained=\(selected.count) malformed_skipped=\(loaded.skipped)")
+        output("session=\(session) pid=\(selected[0].pid) level=\(startup?.fields["effective_log_level"] ?? "unknown") source=\(startup?.fields["log_level_source"] ?? "unknown") retained=\(selected.count) malformed_skipped=\(loaded.skipped)")
         let stateEvents = ["startup", "discovery_state_changed", "observation", "manual_action_finished", "quit_vetoed"]
         let filtered = selected.filter {
             (since == nil || $0.timestamp >= since!) && (category == nil || $0.category == category) &&
@@ -144,9 +169,9 @@ struct DiagnosticLogReader {
         for record in filtered.suffix(limit) {
             let object = record.object
             let fields = record.fields.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: " ")
-            print("\(object["timestamp"] ?? "") \(record.level) \(record.category)/\(record.event) \(object["outcome"] ?? "") op=\(object["operation"] ?? "") ms=\(object["durationMS"] ?? "-") \(fields)")
+            output("\(object["timestamp"] ?? "") \(record.level) \(record.category)/\(record.event) \(object["outcome"] ?? "") op=\(object["operation"] ?? "") ms=\(object["durationMS"] ?? "-") \(fields)")
         }
-        print("shown=\(min(limit, filtered.count))/\(filtered.count) (use --all --limit 200 for verbose retained timeline)")
+        output("shown=\(min(limit, filtered.count))/\(filtered.count) (use --all --limit 200 for verbose retained timeline)")
     }
 }
 
