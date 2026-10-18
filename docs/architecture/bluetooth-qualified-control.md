@@ -231,3 +231,48 @@ injected; these tests do not launch the production app or qualify its TCC contex
 Normal pinned lint and format passed across **71 Swift files**, and whitespace
 checks passed. Logs: `bt-readonly-focused-final.log`, `bt-readonly-lint-final.log`,
 `bt-readonly-format-final.log`, in the approved OpenCode temporary directory.
+
+## Frozen explicit-launch validation · `178942c`
+
+Implementation/test revision: **`178942c41aa3eb1bfc294a960b21d59061bf0ae6`**.
+One complete sequential run passed:
+
+```sh
+DEVELOPER_DIR=/Library/Developer/CommandLineTools MAC_UTILS_SIGNING_IDENTITY=- bash test.sh
+```
+
+| Runner | Result |
+| --- | --- |
+| Legacy isolated host/app/feature | 4,805 checks |
+| Focused Bluetooth observation and read-only launch | 190 checks, plus source capability/entry-order guard |
+| Permission-context | 39 checks |
+| Diagnostics | 160 checks, plus safety no-flush/no-sync-wait guard |
+| Diagnostic reader | 31 fixture checks |
+| Instant gesture C safety | 114 assertions, zero failures |
+| Swift Testing policy | 10 tests / 3 suites |
+| Mocked installer | 13 scenarios |
+| App/build/packaging | Passed, including relocated strict signature, complete notices and compiler inputs; app not launched |
+
+These are separate, overlapping totals. Pinned lint and format passed across 71
+Swift files after the full run. CLT Apple Swift 6.4 (`swiftlang-6.4.0.34.1`), Swift
+5 language mode, arm64/macOS 15 deployment target. The built plist's
+`FixMacOSRevision` was read back as the exact full revision above without executing
+the app. The later documentation-only evidence commit does not rebuild that bundle.
+
+Preserved failed attempt: the first full run at the same frozen source stopped
+after 190 focused checks, while compiling ClipboardPolicy, because the moved
+worktree's old SwiftPM precompiled module recorded its original temporary path.
+Only this worktree's generated `build/swiftpm` directory was renamed to
+`build/swiftpm-before-worktree-move`, preserving it. The successful rerun generated
+a fresh cache. No source, package setting, fixture, lint baseline or test assertion
+was changed between those attempts.
+
+Local evidence in the approved OpenCode temporary directory:
+`bt-readonly-178942c-full.log` (failed old-cache attempt),
+`bt-readonly-178942c-full-clean-cache.log` (complete pass),
+`bt-readonly-178942c-lint.log` and `bt-readonly-178942c-format.log`.
+No app quit/launch/relaunch/install, live probe or device query/action, permission,
+feature preference, Audio change, push or tag occurred. Source/tests/build checks
+do not establish same-app TCC identity, getter qualification or working reconnect.
+**Independent re-review of the blocker correction remains mandatory before any
+integration or authorized live probe.**
