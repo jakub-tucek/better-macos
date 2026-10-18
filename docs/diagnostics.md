@@ -552,3 +552,95 @@ retained logs did not provide a verified live GUI startup; it did not guess a
 session or launch anything. No claim is made that the running binary uses these
 new events, that prior missing events can be recovered, or that any underlying
 Bluetooth/host issue is fixed. Relaunch and hardware acceptance remain separate.
+
+## Log-level main integration · 2026-10-18
+
+The parent supplied final independent **CLEAN** review of `sol/log-level`, including
+the mtime-independent identity/generation ordering correction and 31 reader checks.
+The historical review-pending statements above belong to their named source
+revisions, not this final supplied review. Integration preserves the source series
+without new production rebinding or conflict resolution.
+
+Actual main was **`deb28d3`**, not the earlier `78c8543`. The intervening user commit
+tracks worktree gitlinks. Its already-modified `.worktrees/sol-log-level` gitlink
+was left untouched; neither that user work nor other worktree/untracked contents
+were reset, staged into evidence or deleted. All six unique source commits were
+verified and cherry-picked in dependency order:
+
+| Reviewed source | Main commit |
+| --- | --- |
+| `247ebcb` — typed levels, operational context, local reader | `6e73459` |
+| `76aa5e9` — fetch severity and canceled backend results | `f2bf6d9` |
+| `ed0c742` — equal-time generation ordering | `da23479` |
+| `cce2461` — frozen source evidence and local configuration | `cfd698a` |
+| `11d44f4` — identity/generation order independent of mtime | `bc6a20e` |
+| `3357136` — final reader-review evidence | `d2bfe45` |
+
+No conflicts occurred. Production, tests, scripts and compiler inputs exactly match
+the reviewed final branch. Typed levels are `trace/debug/info/warning/error`;
+`all` selects trace, precedence remains environment → one app-domain logging key
+→ info, with the documented safe invalid-value handling. Threshold resolution
+and preference reading stay on the logging worker, never a host admission or
+synchronous disk dependency. Descriptor-relative IO, retention capacity/permissions,
+bounded asynchronous admission, privacy redaction, Bluetooth helper/control
+authority and quiet session Activity semantics remain intact.
+
+Reader tests use only isolated files and injected process-birth checks. Automatic
+selection still refuses retained records without a verified live GUI startup;
+an older running build is not grounds to select an arbitrary latest helper or
+relax birth/session/identity checks. No live log directory was inspected here.
+
+The user previously authorized and set machine-local `diagnostics.level=all`.
+**This integration does not write, reset or re-read that preference**, nor any
+other live preference. A future newly started process can resolve it to trace
+unless its environment overrides it; the current process is not reconfigured by
+replacing the bundle. No app quit/launch/relaunch/install was performed, no PID
+or loaded-image revision is guessed, and no prior relaunch approval was reused.
+No real Bluetooth/system-profiler, device, TCC/permission or login-registration
+action, push/tag or publication occurred. Underlying Bluetooth/host incidents,
+native/hardware and hosted-CI acceptance remain open; all logs stay local.
+
+### Frozen integrated validation
+
+At **`d2bfe45b782d22fe0cc79387e859c456617ef276`**, one complete, sequential
+standalone CLT `bash test.sh` run passed:
+
+| Runner | Actual integrated result |
+| --- | --- |
+| Legacy isolated app/host/feature | **4,805 checks** |
+| Diagnostic regressions | **160 checks**, including the prior 81 backend checks, plus the production no-flush/no-sync-wait guard |
+| Read-only diagnostic reader | **31 fixture checks**, including reversed/equal mtimes, generation ties, birth/GUI selection and rendered filter output |
+| Focused Bluetooth observation | **152 checks**, including existing conservative helper/control authority and all-level privacy/canceled-fetch evidence |
+| Focused permission context | **39 checks** |
+| Instant gesture safety | **114 C assertions** |
+| Swift Testing policy | **10 tests / 3 suites** |
+| Mocked installer | **13 scenarios** |
+| Compiler/build and real/relocated bundle | Passed, including exact notices/provenance, strict configured-certificate signature, compiler-input ownership and staged rollback fixtures |
+
+These totals are separate, with overlapping focused coverage; do not add them
+into one total or add 81 again to the diagnostic count. This main run covers the
+final reader fix, unlike the earlier branch full run at `76aa5e9`.
+Log: `build/log-level-integration-clt.log`, recording HEAD, timestamped commands,
+command-scoped CLT compiler/SDK paths, Swift 6.4 / SDK 27.0, arm64 and explicitly
+unset `SDKROOT`. Source/built plist lint, strict signature and metadata passed:
+version `0.4`, build `4`, arm64/macOS 15+, SDK 27.0 and embedded revision equal
+the exact tested source above. No artifact is claimed rebuilt at the later
+documentation-only evidence commit.
+
+Unmodified pinned lint/format passed across **70 Swift files**, without rewrites
+or baseline changes. Offline developer-tool and CI whitespace fixtures passed.
+Logs: `build/log-level-integration-{lint,format,tools,ci}.log`. Direct comparisons
+retain the reviewed source tree and prove descriptor-relative `LocalDiagnosticFiles`
+and rotating retention code unchanged from prior main; Bluetooth control remains
+helper-authorized and canonical, with native fallback display-only. Activity,
+Clipboard policy ownership, shared display/watchdog authority, vendor C ABI/safety,
+login service and existing host guard outcomes remain intact. No source/test
+edit raced the frozen compilation.
+
+All **20 shell inputs**, **280 local documentation links and 63 fragments across
+37 tracked Markdown files**, compiler/fixture scope comparisons and
+`git diff --check` passed. `bash scripts/dev logs --help` passed without reading
+live logs (`build/log-level-integration-reader-help.log`). The existing AGENTS
+diagnostics pointer already covers this work and did not need expansion.
+Only the three evidence/developer-doc files are staged for the evidence commit;
+the user's pre-existing `.worktrees/sol-log-level` gitlink change stays unstaged.

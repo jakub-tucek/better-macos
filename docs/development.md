@@ -54,6 +54,7 @@ bash scripts/dev build           # existing build.sh; bootstrap is NOT required
 bash Tests/swiftui-compatibility.sh # compile production state alias with selected tools
 bash scripts/dev-tools-test.sh   # offline tooling regressions after bootstrap
 bash Tests/packaging.sh          # inspect notices/signature after a successful build
+bash scripts/dev logs --help    # local JSONL reader options; help reads no live logs
 ```
 
 Build output: `build/Fix macOS.app`. Building signs the local bundle; it does not
@@ -72,6 +73,11 @@ uses these entry points; hosted execution and branch-protection requirements rem
 
 For local structured log locations, safe reading commands and evidence limits,
 see [operational diagnostics](diagnostics.md).
+`bash scripts/dev logs` reads retained local records only after verifying a live
+GUI startup; it does not pick an arbitrary latest helper when the running build
+has no suitable startup evidence. Use explicit PID/session selection for a known
+historical run. Level configuration is resolved per process startup; building a
+bundle does not apply it to the already-running process or authorize a relaunch.
 
 ## Pinned development tools
 
