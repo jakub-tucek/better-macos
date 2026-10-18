@@ -40,7 +40,10 @@ struct DiagnosticLogReader {
             files.append((name, info.st_mtimespec.tv_sec))
         }
         var records: [Record] = [], skipped = 0
-        for (name, _) in files.sorted(by: { $0.1 == $1.1 ? $0.0 < $1.0 : $0.1 > $1.1 }).prefix(24) {
+        // Select the newest bounded set, then read oldest first. For equal mtimes
+        // the filename tie-break reads -2/-1/-0 in generation order; stable date
+        // sorting below must not invert events sharing a millisecond at rotation.
+        for (name, _) in files.sorted(by: { $0.1 == $1.1 ? $0.0 < $1.0 : $0.1 > $1.1 }).prefix(24).reversed() {
             let file = openat(fd, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
             guard file >= 0 else { continue }
             let handle = FileHandle(fileDescriptor: file, closeOnDealloc: true)

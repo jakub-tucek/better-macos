@@ -20,18 +20,23 @@ do {
     var old = try line(first, "startup", at: now)
     old.append(Data("malformed\n{partial".utf8))
     try old.write(to: root.appendingPathComponent("fixmacos-123-\(first)-2.jsonl"))
-    try line(first, "later", at: now.addingTimeInterval(1)).write(to: root.appendingPathComponent("fixmacos-123-\(first)-0.jsonl"))
+    var current = try line(first, "same_tick", at: now)
+    current.append(try line(first, "later", at: now.addingTimeInterval(1)))
+    try current.write(to: root.appendingPathComponent("fixmacos-123-\(first)-0.jsonl"))
+    for generation in [0, 2] {
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: root.appendingPathComponent("fixmacos-123-\(first)-\(generation).jsonl").path)
+    }
     try line(second, "startup", at: now.addingTimeInterval(2), role: "watchdog", pid: 456).write(to: root.appendingPathComponent("fixmacos-456-\(second)-0.jsonl"))
     try Data("PRIVATE_UNRELATED\n".utf8).write(to: root.appendingPathComponent("unrelated.jsonl"))
     let symlink = root.appendingPathComponent("fixmacos-789-\(UUID().uuidString)-0.jsonl")
     try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: root.appendingPathComponent("unrelated.jsonl"))
     let loaded = try DiagnosticLogReader.read(root.path)
-    try check(loaded.records.count == 3 && loaded.skipped == 1, "reader skips malformed/partial lines, unrelated files and symlinks")
-    try check(loaded.records.map(\.event) == ["startup", "later", "startup"], "reader orders rotations and distinct sessions chronologically")
+    try check(loaded.records.count == 4 && loaded.skipped == 1, "reader skips malformed/partial lines, unrelated files and symlinks")
+    try check(loaded.records.map(\.event) == ["startup", "same_tick", "later", "startup"], "reader orders rotations and distinct sessions, preserving equal-timestamp generation order")
     let startup = loaded.records[0]
     try check(DiagnosticLogReader.liveGUI(startup, birth: { _ in now.addingTimeInterval(-1) }), "current GUI matches actual birth time")
     try check(!DiagnosticLogReader.liveGUI(startup, birth: { _ in now.addingTimeInterval(5) }), "PID reuse cannot select an older startup")
-    try check(!DiagnosticLogReader.liveGUI(loaded.records[2], birth: { _ in now }), "newer helper cannot displace GUI session")
+    try check(!DiagnosticLogReader.liveGUI(loaded.records.last!, birth: { _ in now }), "newer helper cannot displace GUI session")
     try check(!DiagnosticLogReader.liveGUI(startup, birth: { _ in nil }), "dead PID cannot select historical GUI automatically")
     try DiagnosticLogReader.run(["--directory", root.path, "--session", first, "--all", "--since", "1970-01-01T00:16:41Z", "--category", "process", "--level", "info", "--limit", "1"])
     for args in [["--limit", "201"], ["--level", "invalid"], ["--since", "bad"], ["--pid", "0"], ["--session", first, "--pid", "123"], ["--session", UUID().uuidString, "--directory", root.path], ["--directory", root.appendingPathComponent("missing").path]] {
