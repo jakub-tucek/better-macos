@@ -14,7 +14,7 @@ Fix macOS adds the controls, tweaks, and tools we wish were built in. One modula
 | Menu bar | Experimental icon spacing and hiding divider; no notch-overflow panel. |
 | Hold to quit | Hold ⌘Q through a countdown to prevent accidental quits. |
 | Keep awake | Prevent idle sleep for a timer or while chosen apps run. |
-| Window positions | Save and restore layouts on demand or after reconnect/wake; no full-screen/Space restore. |
+| Window positions | Save/restore layouts and opt into Rectangle-style keyboard tiling; no full-screen/Space restore. |
 | Clipboard | Search text/PNG history with ⌘⇧V. Capture is opt-in, paused each launch; optional local disk retention is unencrypted. |
 | Mouse | Experimental acceleration/tracking overrides; no per-device or wheel controls. |
 

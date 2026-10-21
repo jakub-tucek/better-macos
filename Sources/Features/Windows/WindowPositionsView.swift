@@ -10,10 +10,35 @@ struct WindowPositionsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+          if setup {
+            DashboardCard {
+                DashboardSwitchRow(title: "Window keyboard shortcuts", isOn: Binding(get: { module.shortcutsEnabled }, set: { module.shortcutsEnabled = $0 }))
+                    .font(.headline)
+                Text("Rectangle-style controls for the focused window. Uses Accessibility; no extra app required.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text(module.shortcutStatus).font(.caption).textSelection(.enabled)
+                if module.shortcutsEnabled && !module.shortcutsActive {
+                    Button("Retry shortcuts", action: module.retryShortcuts)
+                }
+                DisclosureGroup("Keyboard shortcuts") {
+                    VStack(spacing: 8) {
+                        ForEach(WindowShortcutAction.allCases) { action in
+                            HStack {
+                                Text(action.title)
+                                Spacer()
+                                Text(action.shortcut).font(.system(.body, design: .monospaced))
+                            }
+                        }
+                        Text("Letter keys use US key positions. Restore remembers up to 64 windows for this session. App size limits apply; full-screen windows and other Spaces are not supported.")
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }.padding(.top, 8)
+                }
+            }
+          }
           DashboardCard {
             Label("Window positions", systemImage: DashboardTab.windows.symbol).font(.headline)
             if !module.permitted {
-                Text("Accessibility access is required to save and restore windows.").font(.caption)
+                Text("Accessibility access is required to move, save and restore windows.").font(.caption)
                 Button("Grant Accessibility access") { module.requestPermission() }
             } else if !module.ready {
                 Text("Waiting for stable displays and display-change confirmation.").font(.caption)

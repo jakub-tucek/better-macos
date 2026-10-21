@@ -173,6 +173,11 @@ claim that the baseline's release blockers are fixed.
   observers and generation-checked queued moves. `stop()` invalidates work and removes
   observers/connection registration; it keeps saved layouts. Host display settling
   gates restoration; full-screen windows and Space assignments remain outside scope.
+- **Keyboard tiling:** [WindowShortcuts.swift](../Sources/Features/Windows/WindowShortcuts.swift)
+  provides opt-in Rectangle-style halves, quarters, maximize, center, restore and
+  display movement without another vendor. The same owner gates focused-window
+  moves and unregisters Carbon shortcuts during invalidation/stop. See
+  [controls, lifecycle and validation](validation/ui-window-shortcuts.md).
 
 ### Clipboard · `clipboard`
 

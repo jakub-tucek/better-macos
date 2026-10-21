@@ -4,6 +4,11 @@ import CStrafe
 import CoreBluetooth
 import IOKit.pwr_mgt
 
+if CommandLine.arguments.contains("--presentation-tests") {
+    runPresentationDisplayRefreshTests()
+    exit(0)
+}
+
 if let index = CommandLine.arguments.firstIndex(of: "--login-ui-fixtures"), index + 1 < CommandLine.arguments.count {
     try renderLoginUIFixtures(directory: CommandLine.arguments[index + 1])
     exit(0)
@@ -103,6 +108,8 @@ if CommandLine.arguments.contains("--bluetooth-discovery-visibility-regressions"
     print("\(checks) Bluetooth discovery visibility and recovery checks passed")
     exit(0)
 }
+
+runWindowShortcutTests()
 
 final class FakeWindowBackend: WindowPositionBackend {
     var permitted = true
@@ -621,31 +628,23 @@ expect(closeRequests == 0, "Toggling auto-reconnect does not request dashboard d
 selectionBinding.wrappedValue = false
 expect(dashboardModel.selectedAddresses.isEmpty, "Turning a device rule off is explicit and reflected immediately")
 
-func bluePixels(isOn: Bool) -> Int {
+func switchImage(isOn: Bool) -> Data? {
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 80, height: 50), styleMask: [.borderless], backing: .buffered, defer: false)
     window.appearance = NSAppearance(named: .aqua)
     let view = NSHostingView(rootView: BlueSwitch(label: "Test switch", isOn: .constant(isOn)).frame(width: 80, height: 50))
     window.contentView = view
     RunLoop.current.run(until: Date().addingTimeInterval(0.05))
     view.layoutSubtreeIfNeeded()
-    guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return 0 }
+    guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
     view.cacheDisplay(in: view.bounds, to: bitmap)
-    var pixels = 0
-    for x in 0..<bitmap.pixelsWide {
-        for y in 0..<bitmap.pixelsHigh {
-            if let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB),
-               color.blueComponent > 0.5, color.blueComponent > color.redComponent * 1.5, color.blueComponent > color.greenComponent * 1.2 {
-                pixels += 1
-            }
-        }
-    }
-    return pixels
+    return bitmap.representation(using: .png, properties: [:])
 }
 // Rendering creates WindowServer/CoreAnimation resources. Keep it opt-in while
 // investigating the system rendering stall; the normal suite stays non-rendering.
 if CommandLine.arguments.contains("--render-ui") {
-    expect(bluePixels(isOn: true) > 100, "Enabled switch actually renders blue even in an inactive window")
-    expect(bluePixels(isOn: false) == 0, "Disabled switch renders gray, not blue")
+    let enabled = switchImage(isOn: true), disabled = switchImage(isOn: false)
+    expect(enabled != nil && disabled != nil && enabled != disabled,
+           "Native switch renders distinct on/off states without overriding system accent or inactive appearance")
 }
 
 // The real user's geometry: middle Dell is main; laptop is below the left screen.

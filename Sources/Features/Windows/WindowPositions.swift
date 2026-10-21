@@ -69,6 +69,16 @@ protocol WindowPositionBackend: AnyObject {
     func displays() -> [WindowDisplay]
     func windows() throws -> [PositionedWindow]
     func move(_ window: PositionedWindow, to frame: CGRect) -> Bool
+    func focusedWindow() throws -> PositionedWindow?
+    func moveFocused(_ window: PositionedWindow, to frame: CGRect) -> Bool
+}
+
+extension WindowPositionBackend {
+    func focusedWindow() throws -> PositionedWindow? { nil }
+    func moveFocused(_ window: PositionedWindow, to frame: CGRect) -> Bool {
+        guard permitted, let focused = try? focusedWindow(), focused.token == window.token else { return false }
+        return move(window, to: frame)
+    }
 }
 
 /// Main-thread coordinator. Each write yields to lifecycle notifications and checks its generation.
@@ -79,6 +89,21 @@ final class WindowPositions: ObservableObject {
     @Published private var pausedValue: Bool
     @Published private var exclusionsValue: String
     @Published private var selectedValue: String
+    @Published private var shortcutsValue: Bool
+    @Published private(set) var shortcutsActive = false
+    @Published private(set) var shortcutStatus = "Shortcuts are off."
+    var shortcutsEnabled: Bool {
+        get { shortcutsValue }
+        set {
+            guard acceptsActions(), !stopped else { return }
+            shortcutsValue = newValue; defaults.set(newValue, forKey: "windows.shortcuts")
+            unregisterShortcuts(); reconcileShortcuts()
+        }
+    }
+    private let shortcuts: WindowShortcutRegistering
+    private var shortcutAttempted = false
+    private var shortcutGeneration = 0
+    private var originalFrames: [String: CGRect] = [:]
     var automatic: Bool {
         get { automaticValue }
         set { guard acceptsActions() else { return }; automaticValue = newValue; defaults.set(newValue, forKey: "windows.auto"); pending = false; generation += 1 }
@@ -117,8 +142,11 @@ final class WindowPositions: ObservableObject {
     var onWake: (() -> Void)?
 
     init(backend: WindowPositionBackend = AXWindowPositionBackend(), defaults: UserDefaults = .standard,
+         shortcuts: WindowShortcutRegistering = WindowShortcutRegistration(),
          schedule: @escaping (@escaping () -> Void) -> Void = { DispatchQueue.main.asyncAfter(deadline: .now() + 0.01, execute: $0) }) {
         self.backend = backend; self.defaults = defaults
+        self.shortcuts = shortcuts
+        shortcutsValue = defaults.bool(forKey: "windows.shortcuts")
         self.schedule = schedule
         automaticValue = defaults.bool(forKey: "windows.auto")
         pausedValue = defaults.bool(forKey: "windows.paused")
@@ -141,6 +169,7 @@ final class WindowPositions: ObservableObject {
     }
     func stop() {
         stopped = true; invalidate()
+        originalFrames.removeAll()
         onWake = nil
         WindowConnectionNotifications.remove(self)
         let center = NSWorkspace.shared.notificationCenter
@@ -149,12 +178,13 @@ final class WindowPositions: ObservableObject {
         wakeObserver = nil; sleepObserver = nil
     }
     deinit { stop() }
-    func invalidate() { ready = false; pending = false; generation += 1 }
+    func invalidate() { ready = false; pending = false; generation += 1; unregisterShortcuts() }
     func wake() { invalidate(); pending = automatic && !paused }
     func connectionChanged() { wake(); onWake?() }
     func reconcile(ready: Bool, settled: Bool) {
         if !ready { generation += 1 }
         self.ready = ready && !stopped
+        reconcileShortcuts()
         guard settled, !stopped else { return }
         let ids = backend.displays().map(\.id).sorted()
         if let previous = lastDisplaySet, previous != ids { pending = automatic && !paused }
@@ -170,6 +200,56 @@ final class WindowPositions: ObservableObject {
     func requestPermission() { guard acceptsActions() else { return }; backend.requestPermission() }
     var permitted: Bool { backend.permitted }
     var canCapture: Bool { acceptsActions() && ready && !stopped && permitted }
+    private func unregisterShortcuts() {
+        shortcutGeneration += 1
+        shortcuts.stop(); shortcutsActive = false; shortcutAttempted = false
+    }
+    func retryShortcuts() {
+        guard acceptsActions(), !stopped else { return }
+        unregisterShortcuts(); reconcileShortcuts()
+    }
+    private func reconcileShortcuts() {
+        guard shortcutsEnabled, canCapture else {
+            unregisterShortcuts()
+            shortcutStatus = shortcutsEnabled ? "Waiting for Accessibility access and stable displays." : "Shortcuts are off."
+            return
+        }
+        guard !shortcutAttempted else { return }
+        shortcutAttempted = true
+        let ticket = shortcutGeneration
+        shortcutsActive = shortcuts.start { [weak self] action in
+            guard let self, self.shortcutGeneration == ticket, self.shortcutsActive else { return }
+            self.performShortcut(action)
+        }
+        shortcutStatus = shortcutsActive ? "Ready · acts on the focused window." : "Shortcuts unavailable. Quit other window managers, then retry."
+    }
+    func performShortcut(_ action: WindowShortcutAction) {
+        guard shortcutsEnabled, shortcutsActive, canCapture else { return }
+        let window: PositionedWindow
+        do {
+            guard let focused = try backend.focusedWindow(), focused.supported, !excluded.contains(focused.app) else {
+                shortcutStatus = "Focus a supported window in an app that is not excluded."; return
+            }
+            window = focused
+        } catch { shortcutStatus = "Window discovery failed: \(error.localizedDescription)"; return }
+        let displays = backend.displays()
+        guard let frame = action.destination(for: window.frame, displays: displays, original: originalFrames[window.token]) else {
+            shortcutStatus = action == .restore ? "No original size saved for this window." : "No available destination display."; return
+        }
+        guard canCapture, displays == backend.displays() else { return }
+        // A manual move supersedes any queued automatic layout restoration.
+        pending = false; generation += 1
+        if action != .restore && originalFrames[window.token] == nil {
+            if originalFrames.count >= 64, let key = originalFrames.keys.sorted().first { originalFrames.removeValue(forKey: key) }
+            originalFrames[window.token] = window.frame
+        }
+        if backend.moveFocused(window, to: frame) {
+            if action == .restore { originalFrames.removeValue(forKey: window.token) }
+            shortcutStatus = "\(action.title) applied."
+        } else {
+            shortcutStatus = "Window could not reach the requested size or position. The app may limit resizing; try Restore original size."
+        }
+    }
     func canRestore(_ id: String) -> Bool {
         guard canCapture, let layout = layouts.first(where: { $0.id == id }) else { return false }
         return layout.displays.map(\.id).sorted() == backend.displays().map(\.id).sorted()
@@ -406,7 +486,33 @@ final class AXWindowPositionBackend: WindowPositionBackend {
     static func destinationIsClear(_ frame: CGRect, for window: PositionedWindow, in snapshot: [PositionedWindow]) -> Bool {
         !snapshot.contains { $0.app == window.app && $0.token != window.token && $0.frame == frame }
     }
+    private func focusedElement() -> CFTypeRef? {
+        guard permitted, let app = NSWorkspace.shared.frontmostApplication,
+              app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return nil }
+        let root = AXUIElementCreateApplication(app.processIdentifier)
+        guard AXUIElementSetMessagingTimeout(root, 0.05) == .success,
+              let focused = value(root, kAXFocusedWindowAttribute) else { return nil }
+        return focused
+    }
+    private func isFocused(_ element: AXUIElement) -> Bool {
+        guard let focused = focusedElement() else { return false }
+        return CFEqual(focused, element)
+    }
+    func focusedWindow() throws -> PositionedWindow? {
+        let snapshot = try windows()
+        guard let focused = focusedElement() else { return nil }
+        return snapshot.first { window in
+            guard window.supported, let element = elements[window.token] else { return false }
+            return CFEqual(focused, element)
+        }
+    }
+    func moveFocused(_ window: PositionedWindow, to frame: CGRect) -> Bool {
+        move(window, to: frame, requireFocus: true)
+    }
     func move(_ window: PositionedWindow, to frame: CGRect) -> Bool {
+        move(window, to: frame, requireFocus: false)
+    }
+    private func move(_ window: PositionedWindow, to frame: CGRect, requireFocus: Bool) -> Bool {
         guard permitted, let element = elements[window.token] else { return false }
         guard let snapshot = try? windows() else { return false }
         let fresh = snapshot.filter { $0.app == window.app && $0.title == window.title }
@@ -417,6 +523,7 @@ final class AXWindowPositionBackend: WindowPositionBackend {
               value(element, "AXFullScreen") as? Bool == false else { return false }
         var size = frame.size, point = frame.origin
         guard let s = AXValueCreate(.cgSize, &size), let p = AXValueCreate(.cgPoint, &point) else { return false }
+        guard !requireFocus || isFocused(element) else { return false }
         // Move onto the destination before requesting its larger size, then
         // correct any position adjustment caused by the application's resize.
         guard AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, p) == .success,

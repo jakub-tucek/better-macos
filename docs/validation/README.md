@@ -2,6 +2,10 @@
 
 ## Evidence index
 
+- [Native UI polish and Rectangle-style window shortcuts](ui-window-shortcuts.md):
+  4,841 isolated checks; 4,842 with opt-in native switch rendering, plus named
+  regression suites. Live global shortcuts and device acceptance remain open.
+
 Commands and source paths in code spans refer to the repository root. Historical
 records retain paths and status from their named revisions; relocated links point
 to the current documentation. Native/hardware acceptance remains open.

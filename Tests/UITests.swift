@@ -363,6 +363,17 @@ func renderReleaseUIFixtures(directory: String? = nil) throws {
         model.settingsGroup = .clipboard
         let clipboard = mount(AnyView(SettingsView(model: model)), dark: dark)
         try snapshot(clipboard, "settings-clipboard-\(suffix)"); clipboard.orderOut(nil)
+        model.enabledModules = [.windows]
+        model.settingsGroup = .displays
+        model.windowPositions = WindowPositions(backend: UIWindows(), defaults: defaults)
+        let windows = mount(AnyView(SettingsView(model: model)), dark: dark)
+        try snapshot(windows, "settings-windows-\(suffix)")
+        if let scroller = scroll(windows.contentView!), let document = scroller.documentView {
+            document.scroll(NSPoint(x: 0, y: max(0, document.bounds.height - scroller.contentSize.height)))
+            try snapshot(windows, "settings-windows-bottom-\(suffix)")
+        }
+        windows.orderOut(nil)
+        model.windowPositions = nil; model.enabledModules = [.audio, .clipboard]
         model.audioDevices = []
         let draft = SetupDraft(current: model, defaults: defaults)
         draft.selected = [.audio]; draft.syncSelection(); draft.step = .configure(.sound)

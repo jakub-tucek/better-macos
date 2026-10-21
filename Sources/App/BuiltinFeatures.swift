@@ -27,7 +27,7 @@ enum BuiltinFeatures {
         .init(module: .menuBar, title: "Menu bar", detail: "Compact spacing and hide less-used menu-bar icons.", feature: .menuBar, settings: .system, settingsOrder: 1),
         .init(module: .quitGuard, title: "Hold to quit", detail: "Hold ⌘Q before quitting, with the app name and a countdown.", feature: .keyboard, settings: .input, settingsOrder: 0),
         .init(module: .keepAwake, title: "Keep awake", detail: "Timed and app-based awake sessions, with optional display wake.", feature: .keepAwake, settings: .system, settingsOrder: 2),
-        .init(module: .windows, title: "Window positions", detail: "Named window layouts with optional reconnect and wake restoration.", feature: .windows, settings: .displays, settingsOrder: 2),
+        .init(module: .windows, title: "Window positions", detail: "Keyboard tiling and named layouts with optional reconnect and wake restoration.", feature: .windows, settings: .displays, settingsOrder: 2),
         .init(module: .clipboard, title: "Clipboard", detail: "Local history, search, pins, and optional disk retention. Recording starts paused.", feature: .clipboard, settings: .clipboard, settingsOrder: 0),
         .init(module: .mouse, title: "Mouse", detail: "Opt-in mouse acceleration and tracking, with runtime restoration.", feature: .mouse, settings: .input, settingsOrder: 1)
     ]
