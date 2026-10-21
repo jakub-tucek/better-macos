@@ -5,6 +5,17 @@ enum SettingsGroup: String, CaseIterable, Identifiable {
     case general = "General", quickActions = "Quick actions", displays = "Displays"
     case sound = "Sound & connections", input = "Input", system = "System", clipboard = "Clipboard"
     var id: String { rawValue }
+    var symbol: String {
+        switch self {
+        case .general: return "gearshape"
+        case .quickActions: return "square.grid.2x2"
+        case .displays: return "display"
+        case .sound: return "speaker.wave.2"
+        case .input: return "keyboard"
+        case .system: return "slider.horizontal.3"
+        case .clipboard: return "clipboard"
+        }
+    }
     var modules: [AppModule] { BuiltinFeatures.modules(in: self) }
     static func forFeature(_ feature: DashboardTab) -> SettingsGroup {
         allCases.first { $0.modules.contains { $0.dashboardFeature == feature } } ?? .general
@@ -270,10 +281,11 @@ struct QuickActionsView: View {
                 Spacer()
                 if editor.draft != nil {
                     Button("Cancel", action: editor.cancel)
-                    Button("Done") { editor.done(save: model.onSaveWidgets) }
+                    Button("Done") { editor.done(save: model.onSaveWidgets) }.buttonStyle(.borderedProminent)
                 } else { Button("Edit") { editor.begin(model.widgetLayout) } }
                 Button { model.onOpenSettings(nil) } label: { Image(systemName: "gearshape") }
                     .accessibilityLabel("Settings")
+                    .help("Open Settings")
             }.padding(.horizontal, 14).padding(.vertical, 10)
                 .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { headerHeight = $0 }
             Divider().frame(height: 1)
@@ -294,7 +306,8 @@ struct QuickActionsView: View {
                         }
                         if entries.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Your quick actions, your choice.").font(.headline)
+                                Label("Quick actions", systemImage: "square.grid.2x2").font(.headline)
+                                Text("Keep your most-used controls in the menu bar.").font(.caption).foregroundStyle(.secondary)
                                 Button("Add quick actions") { editor.begin(model.widgetLayout) }
                                 Button("Run setup", action: model.onRunSetup)
                             }.padding(14)
@@ -691,26 +704,35 @@ struct SettingsView: View {
     var body: some View {
         HSplitView {
             List(SettingsGroup.allCases, selection: Binding<SettingsGroup?>(get: { model.settingsGroup }, set: { if let value = $0 { model.settingsGroup = value } })) { group in
-                Text(group.rawValue).tag(group)
+                Label(group.rawValue, systemImage: group.symbol).padding(.vertical, 4).tag(group)
             }.listStyle(.sidebar).frame(minWidth: 175, idealWidth: 190, maxWidth: 240)
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text(model.settingsGroup.rawValue).font(.largeTitle)
+                    Text(model.settingsGroup.rawValue).font(.system(.title, design: .rounded, weight: .semibold))
+                        .accessibilityAddTraits(.isHeader)
                     SafetyAlerts(model: model)
                     if model.settingsGroup == .general { general }
                     else if model.settingsGroup == .quickActions { editor }
                     else {
-                        ForEach(model.settingsGroup.modules) { module in
-                            DashboardCard {
-                                Toggle(module.title, isOn: Binding(get: { model.enabledModules.contains(module) }, set: { model.onModuleChanged(module, $0) }))
-                                    .disabled(model.stoppingModules.contains(module) || ((module == .monitors || module == .arrangement) && model.monitorBusy))
-                                Text(module.detail).font(.caption).foregroundStyle(.secondary)
-                                if model.stoppingModules.contains(module) { Text("Finishing recovery before stopping…").foregroundStyle(.orange) }
+                        ForEach(features, id: \.self) { feature in
+                            VStack(alignment: .leading, spacing: 10) {
+                                DashboardCard {
+                                    ForEach(model.settingsGroup.modules.filter { $0.dashboardFeature == feature }) { module in
+                                        Toggle(isOn: Binding(get: { model.enabledModules.contains(module) }, set: { model.onModuleChanged(module, $0) })) {
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(module.title).font(.headline)
+                                                Text(module.detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                                            }
+                                        }.toggleStyle(.switch)
+                                            .disabled(model.stoppingModules.contains(module) || ((module == .monitors || module == .arrangement) && model.monitorBusy))
+                                        if model.stoppingModules.contains(module) { Label("Finishing recovery before stopping…", systemImage: "clock").foregroundStyle(.orange) }
+                                    }
+                                }
+                                DashboardView(model: model, feature: feature).id(feature)
                             }
                         }
-                        ForEach(features, id: \.self) { feature in DashboardView(model: model, feature: feature).id(feature) }
                     }
-                }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
+                }.frame(maxWidth: 720).padding(24).frame(maxWidth: .infinity, alignment: .top)
             }.id(model.settingsGroup).frame(minWidth: 440, idealWidth: 620)
                 .onAppear {
                     Diagnostics.shared.emit("settings", "category_content_appeared", fields: ["category": model.settingsGroup.rawValue,
@@ -732,13 +754,19 @@ struct SettingsView: View {
             if widgetEditor.draft != nil {
                 HStack {
                     Button("Cancel", action: widgetEditor.cancel)
-                    Button("Done") { widgetEditor.done(save: model.onSaveWidgets) }
+                    Spacer()
+                    Button("Done") { widgetEditor.done(save: model.onSaveWidgets) }.buttonStyle(.borderedProminent)
                 }
                 WidgetEditor(layout: Binding(get: { widgetEditor.draft ?? model.widgetLayout }, set: { widgetEditor.draft = $0 }), model: model)
             } else {
                 Text("Choose, order, and resize the actions shown in the menu-bar popup.")
                 Button("Edit quick actions") { widgetEditor.begin(model.widgetLayout) }
-                ForEach(model.widgetLayout.entries) { Text($0.known?.title ?? $0.kind) }
+                if model.widgetLayout.entries.isEmpty {
+                    Text("No quick actions yet. Add the controls you use most.").foregroundStyle(.secondary)
+                }
+                ForEach(model.widgetLayout.entries) { entry in
+                    Label(entry.known?.title ?? entry.kind, systemImage: entry.known?.feature.symbol ?? "questionmark.square")
+                }
             }
         }
     }

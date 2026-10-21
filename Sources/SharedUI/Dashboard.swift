@@ -302,20 +302,12 @@ struct BlueSwitch: View {
     @Binding var isOn: Bool
 
     var body: some View {
-        Button { isOn.toggle() } label: {
-            Capsule()
-                .fill(isOn ? Color.blue : Color.gray.opacity(0.35))
-                .frame(width: 38, height: 22)
-                .overlay(alignment: isOn ? .trailing : .leading) {
-                    Circle().fill(.white).frame(width: 18, height: 18)
-                        .shadow(color: .black.opacity(0.15), radius: 1, y: 1).padding(2)
-                }
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .animation(.easeInOut(duration: 0.15), value: isOn)
-        .accessibilityRepresentation { Toggle(label, isOn: $isOn) }
-        .help(label)
+        Toggle(label, isOn: $isOn)
+            .toggleStyle(.switch)
+            .labelsHidden()
+            .controlSize(.small)
+            .accessibilityLabel(label)
+            .help(label)
     }
 }
 
@@ -327,6 +319,7 @@ struct DashboardCard<Content: View>: View {
         VStack(alignment: .leading, spacing: 12) { content }
             .padding(12).frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.primary.opacity(0.06)))
             .accessibilityElement(children: .contain)
     }
 }
