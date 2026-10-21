@@ -19,11 +19,12 @@ private func presentationViews(_ view: NSView) -> [NSView] {
     [view] + view.subviews.flatMap(presentationViews)
 }
 
-private func presentationEvents(until ready: () -> Bool, timeout: TimeInterval = 0.5) {
+private func presentationEvents(until ready: () -> Bool, timeout: TimeInterval = 0.5, afterDispatch: (NSEvent) -> Void = { _ in }) {
     let deadline = Date().addingTimeInterval(timeout)
     while !ready() && Date() < deadline {
         if let event = NSApp.nextEvent(matching: .any, until: min(deadline, Date().addingTimeInterval(0.01)), inMode: .default, dequeue: true) {
             NSApp.sendEvent(event)
+            afterDispatch(event)
         }
         NSApp.updateWindows()
     }
@@ -58,20 +59,30 @@ private func presentationClick(_ view: NSView, at point: NSPoint) {
     let up = NSEvent.mouseEvent(with: .leftMouseUp, location: location, modifierFlags: [], timestamp: time + 0.001,
         windowNumber: window.windowNumber, context: nil, eventNumber: 2, clickCount: 1, pressure: 0)!
     var delivered = 0
-    let monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { event in
-        guard event.window === window else { return event }
+    func record(_ event: NSEvent) {
         let actual = event.locationInWindow
         // WindowServer bounds are integral pixels; allow only their rounding,
         // far less than the switch's 22-point height. Never retry a missed click.
         expect(abs(actual.x - intendedLocation.x) < 2 && abs(actual.y - intendedLocation.y) < 2,
             "native fixture \(event.type) arrives at its intended control point (\(actual), expected \(intendedLocation))")
         delivered += 1
+    }
+    let monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { event in
+        guard event.window === window else { return event }
+        record(event)
         return event
     }!
     defer { NSEvent.removeMonitor(monitor) }
     // SwiftUI needs currentEvent from nextEvent, not direct mouseDown dispatch.
     NSApp.postEvent(down, atStart: false); NSApp.postEvent(up, atStart: false)
-    presentationEvents(until: { delivered == 2 })
+    presentationEvents(until: { delivered == 2 }, afterDispatch: { event in
+        // NSSwitch consumes mouse-up inside its native tracking loop. That event
+        // becomes currentEvent without passing through the outer local monitor.
+        if event.type == .leftMouseDown, delivered == 1, let tracked = NSApp.currentEvent,
+           tracked.type == .leftMouseUp, tracked.window === window, tracked.eventNumber == up.eventNumber {
+            record(tracked)
+        }
+    })
     expect(delivered == 2, "native fixture dispatches exactly one mouse-down/up pair")
 }
 

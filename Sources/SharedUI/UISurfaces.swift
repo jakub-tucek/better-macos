@@ -308,8 +308,10 @@ struct QuickActionsView: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 Label("Quick actions", systemImage: "square.grid.2x2").font(.headline)
                                 Text("Keep your most-used controls in the menu bar.").font(.caption).foregroundStyle(.secondary)
-                                Button("Add quick actions") { editor.begin(model.widgetLayout) }
-                                Button("Run setup", action: model.onRunSetup)
+                                HStack {
+                                    Button("Add quick actions") { editor.begin(model.widgetLayout) }
+                                    Button("Run setup", action: model.onRunSetup)
+                                }
                             }.padding(14)
                         }
                     }
@@ -722,13 +724,15 @@ struct SettingsView: View {
                                             VStack(alignment: .leading, spacing: 4) {
                                                 Text(module.title).font(.headline)
                                                 Text(module.detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                                            }
+                                            }.frame(maxWidth: .infinity, alignment: .leading)
                                         }.toggleStyle(.switch)
                                             .disabled(model.stoppingModules.contains(module) || ((module == .monitors || module == .arrangement) && model.monitorBusy))
                                         if model.stoppingModules.contains(module) { Label("Finishing recovery before stopping…", systemImage: "clock").foregroundStyle(.orange) }
                                     }
                                 }
-                                DashboardView(model: model, feature: feature).id(feature)
+                                if model.settingsGroup.modules.contains(where: { $0.dashboardFeature == feature && model.enabledModules.contains($0) }) || (feature == .monitors && model.displayControlsReachable) {
+                                    DashboardView(model: model, feature: feature).id(feature)
+                                }
                             }
                         }
                     }
