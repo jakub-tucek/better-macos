@@ -83,6 +83,10 @@ claim that the baseline's release blockers are fixed.
 
 - **Owner:** [BluetoothModule.swift](../Sources/Features/Bluetooth/BluetoothModule.swift), including backend/policy;
   [CommandRunner.swift](../Sources/Core/CommandRunner.swift) runs external tools such as `blueutil`.
+- **Cycle delivery:** [BluetoothCycleDelivery.swift](../Sources/Features/Bluetooth/BluetoothCycleDelivery.swift)
+  owns callback binding, worker/delivery ordering, cancellation gates and terminal
+  lifetime. The owner retains admission, connection policy, Audio handoff and stop
+  drain; see [ownership and checks](architecture/bluetooth-observation.md#cycle-delivery-ownership).
 - **Observation:** [BluetoothObservation.swift](../Sources/Features/Bluetooth/BluetoothObservation.swift) compares suspicious helper reads with
   a typed read-only native snapshot; [BluetoothProfilerProcess.swift](../Sources/Features/Bluetooth/BluetoothProfilerProcess.swift)
   bounds that subprocess. Native presentation is separate from control/audio policy;

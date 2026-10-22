@@ -111,6 +111,7 @@ if CommandLine.arguments.contains("--bluetooth-discovery-visibility-regressions"
 
 runWindowShortcutTests()
 runWindowExecutionTests()
+runBluetoothCycleDeliveryTests()
 
 final class FakeWindowBackend: WindowPositionBackend {
     var permitted = true

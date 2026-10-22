@@ -18,3 +18,6 @@ _Avoid_: Atomic window move
 
 **Shortcut session**:
 The loaded feature's keyboard-control lifetime, including its reserved shortcuts and original window frames retained for explicit restore. Readiness loss releases the shortcuts but keeps originals; stopping the feature ends the session and discards them.
+
+**Bluetooth cycle**:
+One automatic Bluetooth check or explicit connection or power request, ending when its result has been received. Cancellation can prevent further actions without undoing a connection or changing the request's actual result.

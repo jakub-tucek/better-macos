@@ -47,13 +47,6 @@ enum BluetoothProgress {
     case failed(BluetoothDevice, String)
 }
 
-private final class BluetoothCycleCancellation: @unchecked Sendable {
-    private let lock = NSLock()
-    private var canceled = false
-    func cancel() { lock.lock(); canceled = true; lock.unlock() }
-    var isCanceled: Bool { lock.lock(); defer { lock.unlock() }; return canceled }
-}
-
 /// Distinguish discovery failure from connection/routing failure without
 /// interpreting a subprocess exit code as an authorization decision.
 private struct BluetoothObservationFailure: LocalizedError {
@@ -318,7 +311,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     private var pendingDiscoveryRead: BluetoothDiscoveryRead?
     // One bounded previous key, never a history of identities or observations.
     private var lastDiscoveryFields: [String: String]?
-    private let queue = DispatchQueue(label: "mac-utils.bluetooth", qos: .utility)
+    private let cycleScheduling: BluetoothCycleDelivery.Scheduling
     private var timer: Timer?
     private var stopped = false
     private var onStopped: (() -> Void)?
@@ -337,7 +330,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
     private var pendingManual: ManualOperation?
     private var manualAddress: String?
-    private var cycleCancellation: BluetoothCycleCancellation?
+    private var cycleCancellation: BluetoothCycleDelivery?
     private var pendingAudioName: String?
     private var pendingAudioAddresses = Set<String>()
     private var lastObservation: Date?
@@ -406,9 +399,10 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     init(defaults: UserDefaults = .standard, backend: BluetoothBackend? = nil, importLegacyConfiguration: Bool = true,
          authorizationProvider: @escaping () -> CBManagerAuthorization = { CBCentralManager.authorization },
           legacyServiceTakeover: @escaping () throws -> Void = BluetoothModule.disableLegacyService,
-          diagnostics: Diagnostics = .shared) {
+           diagnostics: Diagnostics = .shared, cycleScheduling: BluetoothCycleDelivery.Scheduling = .live()) {
         self.defaults = defaults
         self.diagnosticsLogger = diagnostics
+        self.cycleScheduling = cycleScheduling
         self.authorizationProvider = authorizationProvider
         self.legacyServiceTakeover = legacyServiceTakeover
         self.backend = backend ?? CommandRunner.find("blueutil").map {
@@ -619,39 +613,16 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         busy = true
         beginDiagnosticCycle(manual: false)
         pendingDiscoveryRead = nil
-        backend = observingDiscovery(backend)
         activity = "Checking Bluetooth devices…"
-        let cancellation = BluetoothCycleCancellation()
+        let cancellation = BluetoothCycleDelivery(scheduling: cycleScheduling)
         cycleCancellation = cancellation
         if !config.enabled || !config.switchAudioOutput { pendingAudioAddresses.removeAll() }
         pendingAudioAddresses.formIntersection(config.autoAddresses)
         backend.pendingAudioAddresses = pendingAudioAddresses
-        backend.onObservation = { [weak self] observation in
-            DispatchQueue.main.async {
-                guard !cancellation.isCanceled, let self, !self.stopped else { return }
-                self.applyReadback(observation)
-                self.onChange?()
-            }
-        }
-        backend.routeOutput = { [weak self] name in
-            DispatchQueue.main.async {
-                guard !cancellation.isCanceled else { return }
-                self?.pendingAudioName = name
-            }
-        }
         onChange?()
         let activityGeneration = activityJournal?.clearGeneration
-        queue.async { [weak self] in
-            let result = Result {
-                try backend.reconcile(config, progress: { progress in
-                    DispatchQueue.main.async {
-                        guard !cancellation.isCanceled else { return }
-                        self?.applyProgress(progress, activityGeneration: activityGeneration)
-                    }
-                }, shouldContinue: { !cancellation.isCanceled })
-            }
-            DispatchQueue.main.async { self?.complete(result, reportError: false) }
-        }
+        cancellation.start(backend: backend, operation: .automatic(config),
+                           callbacks: cycleCallbacks(reportError: false, activityGeneration: activityGeneration))
     }
 
     func toggleConnection(_ address: String) {
@@ -701,7 +672,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     private func startPendingManual() {
-        guard !stopped, !busy, var backend, let request = pendingManual else { return }
+        guard !stopped, !busy, let backend, let request = pendingManual else { return }
         guard controlsAvailable, !permissionRequired else {
             logManualRejection("queued_admission_changed")
             if let operation = diagnosticPendingManual {
@@ -720,16 +691,8 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         diagnosticPendingManual = nil
         backend.observationService?.invalidate()
         readback = nil
-        let cancellation = BluetoothCycleCancellation()
+        let cancellation = BluetoothCycleDelivery(scheduling: cycleScheduling)
         cycleCancellation = cancellation
-        backend.onObservation = { [weak self] observation in
-            DispatchQueue.main.async {
-                guard !cancellation.isCanceled, let self, !self.stopped else { return }
-                self.applyReadback(observation)
-                self.onChange?()
-            }
-        }
-        let observed = observingDiscovery(backend)
         cancelActivityConnections()
         activityManual = activityPendingManual
         activityPendingManual = nil
@@ -749,18 +712,8 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
             manualAddress = nil; activity = "Turning Bluetooth on…"
         }
         onChange?()
-        queue.async { [weak self] in
-            let result = Result {
-                switch request {
-                case .connection(let address, let connected): return try observed.setConnected(connected, address: address)
-                case .powerOn:
-                    try observed.turnPowerOn()
-                    DispatchQueue.main.async { self?.applyProgress(.radio(true)) }
-                    return try observed.devices()
-                }
-            }
-            DispatchQueue.main.async { self?.complete(result, reportError: true, manualOperation: request) }
-        }
+        cancellation.start(backend: backend, operation: .manual(request),
+                           callbacks: cycleCallbacks(reportError: true, manualOperation: request))
     }
 
     private func applyProgress(_ progress: BluetoothProgress, activityGeneration: UUID? = nil) {
@@ -927,19 +880,18 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         return true
     }
 
-    private func observingDiscovery(_ backend: BluetoothBackend) -> BluetoothBackend {
-        var observed = backend
-        let previous = backend.onDiscoveryRead
-        observed.onDiscoveryRead = { [weak self] read in
-            previous?(read)
-            // Same serial-worker/main-queue ordering as progress and completion.
-            // Do not publish intermediate reads against the old inventory.
-            DispatchQueue.main.async { [weak self] in
-                guard let self, !stopped else { return }
-                pendingDiscoveryRead = read
-            }
-        }
-        return observed
+    private func cycleCallbacks(reportError: Bool, manualOperation: ManualOperation? = nil,
+                                activityGeneration: UUID? = nil) -> BluetoothCycleDelivery.Callbacks {
+        BluetoothCycleDelivery.Callbacks(
+            isStopped: { [weak self] in self?.stopped ?? true },
+            discovery: { [weak self] in self?.pendingDiscoveryRead = $0 },
+            observation: { [weak self] observation in
+                self?.applyReadback(observation)
+                self?.onChange?()
+            },
+            progress: { [weak self] in self?.applyProgress($0, activityGeneration: activityGeneration) },
+            route: { [weak self] in self?.pendingAudioName = $0 },
+            completion: { [weak self] in self?.complete($0, reportError: reportError, manualOperation: manualOperation) })
     }
 
     private func publishDiscoveryDiagnostic() {
@@ -987,7 +939,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
         guard !stopped, !busy else { return }
         busy = true
         let takeover = legacyServiceTakeover
-        queue.async { [weak self] in
+        cycleScheduling.worker { [weak self] in
             let result = Result { try takeover() }
             DispatchQueue.main.async {
                 guard let self else { return }

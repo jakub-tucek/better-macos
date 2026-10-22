@@ -6,6 +6,7 @@ trap 'rm -rf "$ROOT"' EXIT
 xcrun swiftc -swift-version 5 -warnings-as-errors -target arm64-apple-macos15.0 \
     Sources/Core/Diagnostics.swift Sources/Core/CommandRunner.swift Sources/Core/ActivityJournal.swift \
     Sources/Features/Audio/AudioModule.swift Sources/Features/Bluetooth/BluetoothModule.swift \
+    Sources/Features/Bluetooth/BluetoothCycleDelivery.swift \
     Sources/Features/Bluetooth/BluetoothObservation.swift Sources/Features/Bluetooth/BluetoothProfilerProcess.swift \
     Tests/BluetoothPermissionRegressions/Support.swift Tests/BluetoothPermissionRegressions/main.swift \
     -framework AppKit -framework CoreBluetooth -framework CoreAudio -o "$ROOT/tests"

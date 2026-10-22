@@ -69,6 +69,96 @@ No parser can detect a silently omitted device in an otherwise valid report.
 Unknown schema versions fail conservatively, rather than claiming native API
 or hardware acceptance.
 
+## Cycle delivery ownership
+
+`BluetoothCycleDelivery` owns one automatic or manual helper cycle: callback
+binding before the backend value-copy, serial worker execution, FIFO main delivery,
+cancellation gates and at-most-once terminal delivery. `BluetoothModule` retains
+admission, connection policy, readback application, diagnostics, Activity, queued
+manual intent and Audio handoff. Native observation remains display-only.
+
+The previous discovery callback still runs synchronously on the worker before
+queued owner discovery delivery. These historical delivery gates intentionally
+differ: discovery checks stop only; observation checks cancellation and stop;
+automatic progress/routing check cancellation; explicit power-on progress checks
+neither. Terminal delivery checks neither, retains the real backend result, and
+always reaches owner stop drain. Worker return alone does not release owner busy
+state. Terminal delivery closes that cycle before the owner may start queued work;
+duplicate terminal or stale event delivery cannot change a subsequent cycle.
+
+Limits: scheduling injection requires serial FIFO executors, with owner calls and
+delivery confined to main in production. Cancellation is cooperative and does not
+undo physical effects, interrupt every manual command, or replace failure with a
+canceled result. Backend-local error wrapping and owner diagnostic/Activity policy
+remain unchanged. Terminal delivery still requires backend return and executor
+progress; no new timeout or backend interruption is introduced. This does not
+qualify native control or add a generic executor or event bus.
+`Tests/BluetoothCycleDeliveryTests.swift` exercises the production orchestrator and
+owner with explicit worker/delivery steps, without clocks, sleeps,
+live Bluetooth or run-loop waiting. Existing observation suites remain separate.
+
+### Candidate 3 validation · working diff atop `a1c7936`
+
+This extraction is uncommitted main-checkout work, not a newly tested commit or
+hardware acceptance. The original backend/connection policy, owner completion,
+readback application and stopped drain compare byte-identical to the base; only
+the cancellation token moved out of the backend section. Audio, HostTransactions,
+native observation/profiler/probe, host composition and vendor sources are unchanged.
+Legacy service takeover continues to share the same serial worker executor.
+
+Preserved attempts: the first full run stopped compiling the old takeover worker
+reference after queue ownership moved. The second passed app/build fixtures and
+existing focused/policy suites, then stopped compiling the new lifetime test's
+never-mutated weak reference under warnings-as-errors. Sharing the worker executor
+and using a weak constant correct those compile errors. Logs remain under `build/`:
+`bluetooth-cycle-full-compile-failure.log` and
+`bluetooth-cycle-full-test-compile-failure.log`. Neither attempt is full-suite success.
+The third attempt passed all 69 new cycle assertions, then failed the existing
+fresh-install UI assertion: the new owner fixture had not restored its registration
+domain. The fixture now saves/restores that domain, following the existing Bluetooth
+test pattern; production and the UI assertion are unchanged. This failed run remains
+in `build/bluetooth-cycle-full-registration-failure.log`, not counted as a full pass.
+
+The final frozen-source run passed with command-scoped standalone CLT and ad-hoc
+signing: `DEVELOPER_DIR=/Library/Developer/CommandLineTools
+MAC_UTILS_SIGNING_IDENTITY=- bash test.sh`. Separate, overlapping results:
+
+| Check | Result |
+| --- | --- |
+| Legacy isolated owner/host/UI | **5,076 checks**, including **69 new deterministic cycle checks** |
+| Focused Bluetooth observation/read-only probe | **190 checks**, plus existing capability/entry-order guard |
+| Permission context | **39 checks** |
+| Diagnostics / reader | **160 / 31 checks** |
+| Instant gesture C safety | **114 assertions**, zero failures |
+| Clipboard policy | **10 tests / 3 suites** |
+| Mocked installer | **13 scenarios** |
+| App/build/packaging | Passed, including new explicit compiler-input ownership, signatures and bundle fixtures |
+| Pinned lint / format | **79 files**, zero violations / required changes |
+
+Logs: `build/bluetooth-cycle-{full,lint,format}.log`. Source hashes are retained in
+`build/bluetooth-cycle-frozen.sha256`; source was not edited during compilation.
+Whitespace, touched shell syntax, compiler-input parity, policy/boundary comparison
+and final frozen-source verification passed, with logs under the same build prefix.
+An independent read-only review compared the combined refactors with `355f8d4`
+and found no actionable regression. Parent inspection confirmed callback ordering,
+distinct delivery gates, terminal lifetime and unchanged owner policy. The reviewer
+did not rerun tests; the frozen-source results above remain the execution evidence.
+No app launch/install, real Bluetooth or native getter probe, permission change,
+branch, worktree or vendor change was performed. Native/hardware qualification
+remains open.
+
+### Combined architecture refactors
+
+- `ff1e046`: verified Windows execution, with native access and deterministic
+  adapters exercising the same discovery/write decisions; 4,924 isolated checks.
+- `a1c7936`: shortcut-session lifetime and native registration rollback;
+  5,007 isolated checks.
+- This cycle-delivery slice: 5,076 isolated checks, including all prior coverage.
+
+The counts describe successive full runs, not additive coverage. Host admission,
+Quit attempt authority and feature-owned recovery remain in their existing owners.
+All work used scoped commits on main and existing build output paths.
+
 ## Worker lifetime and cache
 
 All production subprocess work runs on the existing feature utility queue.

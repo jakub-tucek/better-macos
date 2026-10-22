@@ -45,6 +45,11 @@ case "${0##*/}" in
             esac
         done
         if [[ "$1" == swiftc ]]; then
+            cycle_inputs=0
+            for arg in "$@"; do
+                if [[ "$arg" == Sources/Features/Bluetooth/BluetoothCycleDelivery.swift ]]; then cycle_inputs=$((cycle_inputs + 1)); fi
+            done
+            [[ "$cycle_inputs" == 1 ]] || exit 36
             for source in Sources/Core/ActivityJournal.swift Sources/SharedUI/ActivityView.swift Sources/Features/KeepAwake/KeepAwakeFeature.swift Sources/Features/KeepAwake/KeepAwakePresentation.swift Sources/Core/Diagnostics.swift Sources/Core/LoginDiagnostics.swift Sources/Features/Bluetooth/BluetoothObservation.swift Sources/Features/Bluetooth/BluetoothProfilerProcess.swift Sources/App/BluetoothReadOnlyProbe.swift Sources/Features/Windows/WindowExecution.swift Sources/Features/Windows/AXWindowNativeAccess.swift Sources/Features/Windows/WindowShortcutSession.swift; do
                 inputs=0
                 for arg in "$@"; do
@@ -55,6 +60,7 @@ case "${0##*/}" in
             if [[ "$*" == *'-o build/isolated-tests'* ]]; then
                 [[ "$*" == *'Tests/main.swift'* && "$*" != *'Sources/App/main.swift'* ]] || exit 30
                 [[ "$*" == *'Tests/WindowExecutionTests.swift'* ]] || exit 35
+                [[ "$*" == *'Tests/BluetoothCycleDeliveryTests.swift'* ]] || exit 37
             else
                 [[ "$*" == *'Sources/App/main.swift'* && "$*" != *'Tests/main.swift'* ]] || exit 31
                 generated=0

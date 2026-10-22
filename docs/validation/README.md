@@ -2,6 +2,10 @@
 
 ## Evidence index
 
+- [Windows execution, shortcut sessions and Bluetooth cycle delivery](../architecture/bluetooth-observation.md#combined-architecture-refactors):
+  behavior-preserving deepening, independently reviewed; final combined run passed
+  5,076 isolated checks plus named suites. Native/hardware acceptance remains open.
+
 - [Native UI polish and Rectangle-style window shortcuts](ui-window-shortcuts.md):
   4,841 isolated checks; 4,842 with opt-in native switch rendering, plus named
   regression suites. Live global shortcuts and device acceptance remain open.
