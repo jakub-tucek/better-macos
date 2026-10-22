@@ -126,6 +126,28 @@ the 680 × 480 Windows fixture. Logs: `build/ui-refresh-verified.log`,
 `build/ui-refresh-fixtures.log`, `build/ui-refresh-{lint,format}.log`.
 Hidden fixtures use injected state; no installed-app launch or live device actions.
 
+## Open design · 2026-10-22
+
+Implements the selected Open direction from prototype `3586808`: horizontal native
+category tabs, wider content, restrained headings and divider-based Settings
+sections. The Settings-only environment style also flattens nested feature cards;
+popup and setup retain their existing card presentation. Shortcut reference tiles
+use quiet outlines in Settings.
+
+The native handoff fixture now exercises segmented-control keyboard behavior:
+Right Arrow focuses the next segment, Space selects it. It also checks the initial
+Displays selection. The first attempt assumed arrows selected immediately and
+failed (`build/open-design-test.log`). Minimum-width snapshots revealed intrinsic
+control sizing clipped the navigation; explicit proposed-width sizing fixed it.
+Light/dark fixtures now assert all seven tabs fit within the minimum-width window.
+
+Final `bash test.sh`: **5,079 isolated checks**, supporting named suites,
+packaging/build fixtures and **13 installer scenarios** passed. Pinned lint,
+format and `git diff --check` passed. Native release UI fixtures passed; inspected
+General dark, Windows light and minimum-width Windows light snapshots. Logs:
+`build/open-design-verified.log`, `build/open-design-fixtures.log`,
+`build/open-design-{lint,format}.log`. Live app and VoiceOver acceptance remain open.
+
 ## Shortcut-session extraction · 2026-10-22
 
 The candidate-2 working tree based on `ff1e046` moves registration attempt/generation,

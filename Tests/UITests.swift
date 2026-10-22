@@ -344,6 +344,10 @@ func renderReleaseUIFixtures(directory: String? = nil) throws {
         view.cacheDisplay(in: view.bounds, to: bitmap)
         try bitmap.representation(using: .png, properties: [:])!.write(to: root.appendingPathComponent(name + ".png"))
     }
+    func categoryTabs(_ view: NSView) -> NSSegmentedControl? {
+        if let tabs = view as? NSSegmentedControl { return tabs }
+        return view.subviews.lazy.compactMap { categoryTabs($0) }.first
+    }
     var evidence: [String] = []
     for dark in [false, true] {
         let suffix = dark ? "dark" : "light"
@@ -382,6 +386,11 @@ func renderReleaseUIFixtures(directory: String? = nil) throws {
         }
         windows.orderOut(nil)
         let narrowWindows = mount(AnyView(SettingsView(model: model)), dark: dark, width: 680, height: 480)
+        if let content = narrowWindows.contentView, let tabs = categoryTabs(content) {
+            let frame = tabs.convert(tabs.bounds, to: content)
+            expect(frame.minX >= 0 && frame.maxX <= content.bounds.width && tabs.segmentCount == SettingsGroup.allCases.count,
+                   "all Settings categories fit the minimum-width \(suffix) window")
+        } else { expect(false, "minimum-width Settings exposes category navigation") }
         try snapshot(narrowWindows, "settings-windows-narrow-\(suffix)"); narrowWindows.orderOut(nil)
         model.windowPositions = nil; model.enabledModules = [.audio, .clipboard]
         model.audioDevices = []

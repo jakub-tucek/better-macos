@@ -177,14 +177,19 @@ func runPresentationDisplayRefreshTests() {
     let settings = windows.last!
     RunLoop.main.run(until: Date().addingTimeInterval(0.1))
     settings.contentView?.layoutSubtreeIfNeeded()
-    if let sidebar = settings.contentView.flatMap({ presentationViews($0).compactMap { $0 as? NSOutlineView }.first }) {
-        expect(settings.makeFirstResponder(sidebar), "fixture Settings sidebar accepts native keyboard focus")
+    if let navigation = settings.contentView.flatMap({ presentationViews($0).compactMap { $0 as? NSSegmentedControl }.first }) {
+        expect(navigation.selectedSegment == 2, "Settings tabs reflect Displays before first keyboard input")
+        expect(settings.makeFirstResponder(navigation), "fixture Settings tabs accept native keyboard focus")
         let down = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-            windowNumber: settings.windowNumber, context: nil, characters: "\u{f701}", charactersIgnoringModifiers: "\u{f701}", isARepeat: false, keyCode: 125)!
+            windowNumber: settings.windowNumber, context: nil, characters: "\u{f703}", charactersIgnoringModifiers: "\u{f703}", isARepeat: false, keyCode: 124)!
         settings.sendEvent(down)
+        // Native segmented controls move keyboard focus with arrows and select with Space.
+        let space = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: settings.windowNumber, context: nil, characters: " ", charactersIgnoringModifiers: " ", isARepeat: false, keyCode: 49)!
+        settings.sendEvent(space)
         RunLoop.main.run(until: Date().addingTimeInterval(0.04))
         expect(model.settingsGroup == .sound, "native keyboard navigation acts immediately after stable popup-to-Settings handoff")
-    } else { expect(false, "production Settings exposes its native sidebar") }
+    } else { expect(false, "production Settings exposes its native category tabs") }
 
     NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
     expect(model.displaySettling, "an actual screen-change observer still invalidates the settled snapshot")

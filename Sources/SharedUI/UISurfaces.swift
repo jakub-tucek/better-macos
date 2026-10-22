@@ -715,12 +715,13 @@ struct SettingsView: View {
     @ObservedObject private var widgetEditor: WidgetEditingSession
     init(model: DashboardModel) { self.model = model; self.widgetEditor = model.settingsWidgetEditor }
     var body: some View {
-        HSplitView {
-            List(SettingsGroup.allCases, selection: Binding<SettingsGroup?>(get: { model.settingsGroup }, set: { if let value = $0 { model.settingsGroup = value } })) { group in
-                Label(group.rawValue, systemImage: group.symbol).padding(.vertical, 4).tag(group)
-            }.listStyle(.sidebar).frame(minWidth: 175, idealWidth: 190, maxWidth: 240)
+        VStack(spacing: 0) {
+            SettingsCategoryNavigation(selection: Binding(get: { model.settingsGroup }, set: { model.settingsGroup = $0 }))
+                .frame(height: 28).frame(maxWidth: 720)
+                .padding(.horizontal, 24).padding(.vertical, 18)
+            Divider()
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 24) {
                     SafetyAlerts(model: model)
                     if model.settingsGroup == .general { general }
                     else if model.settingsGroup == .quickActions { editor }
@@ -753,6 +754,7 @@ struct SettingsView: View {
                                             "scroll_policy": "new_scrollview_identity", "scroll_offset_observed": "false"])
                 }
         }.frame(minWidth: 680, minHeight: 480)
+            .environment(\.openSettingsSections, true)
             .background(Color(nsColor: .windowBackgroundColor))
             .onChange(of: model.settingsGroup) { old, new in
                 Diagnostics.shared.emit("settings", "category_changed", fields: ["from": old.rawValue, "to": new.rawValue,
@@ -762,20 +764,14 @@ struct SettingsView: View {
     private var categoryHeader: some View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
-                Image(systemName: model.settingsGroup.symbol)
-                    .font(.system(size: 22, weight: .medium)).foregroundStyle(.tint)
-                    .frame(width: 46, height: 46)
-                    .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(model.settingsGroup.rawValue).font(.system(.title2, design: .rounded, weight: .semibold))
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(model.settingsGroup.rawValue).font(.system(size: 30, weight: .semibold))
                         .accessibilityAddTraits(.isHeader)
                     Text(model.settingsGroup.summary).font(.callout).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
-            }.frame(maxWidth: 720).padding(.horizontal, 24).padding(.vertical, 20)
-            Divider()
+            }.frame(maxWidth: 720).padding(.horizontal, 24).padding(.top, 28).padding(.bottom, 12)
         }.background(Color(nsColor: .windowBackgroundColor))
     }
     private var features: [DashboardTab] {
@@ -856,6 +852,40 @@ struct SettingsView: View {
                 }
             }
             DisclosureGroup("Diagnostics") { Text(model.watchdogStatus).textSelection(.enabled) }
+        }
+    }
+}
+
+/// Native tabs retain first-responder navigation across content replacement.
+struct SettingsCategoryNavigation: NSViewRepresentable {
+    @Binding var selection: SettingsGroup
+    func makeNSView(context: Context) -> NSSegmentedControl {
+        let control = NSSegmentedControl(labels: SettingsGroup.allCases.map { $0 == .sound ? "Sound" : $0.rawValue },
+                                        trackingMode: .selectOne, target: context.coordinator, action: #selector(Coordinator.select(_:)))
+        control.segmentStyle = .texturedRounded
+        control.segmentDistribution = .fillEqually
+        control.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        control.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        control.setAccessibilityLabel("Settings categories")
+        for (index, group) in SettingsGroup.allCases.enumerated() {
+            control.setToolTip(group.rawValue, forSegment: index)
+        }
+        return control
+    }
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSSegmentedControl, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? nsView.intrinsicContentSize.width, height: 28)
+    }
+    func updateNSView(_ control: NSSegmentedControl, context: Context) {
+        context.coordinator.selection = $selection
+        control.selectedSegment = SettingsGroup.allCases.firstIndex(of: selection) ?? 0
+    }
+    func makeCoordinator() -> Coordinator { Coordinator(selection: $selection) }
+    final class Coordinator: NSObject {
+        var selection: Binding<SettingsGroup>
+        init(selection: Binding<SettingsGroup>) { self.selection = selection }
+        @objc func select(_ control: NSSegmentedControl) {
+            guard SettingsGroup.allCases.indices.contains(control.selectedSegment) else { return }
+            selection.wrappedValue = SettingsGroup.allCases[control.selectedSegment]
         }
     }
 }

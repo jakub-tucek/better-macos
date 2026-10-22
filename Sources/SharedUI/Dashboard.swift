@@ -312,14 +312,28 @@ struct BlueSwitch: View {
 }
 
 /// Shared compact sections and trailing switches keep feature panels consistent.
+private struct OpenSettingsSectionsKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var openSettingsSections: Bool {
+        get { self[OpenSettingsSectionsKey.self] }
+        set { self[OpenSettingsSectionsKey.self] = newValue }
+    }
+}
+
 struct DashboardCard<Content: View>: View {
+    @Environment(\.openSettingsSections) private var openSections
     let content: Content
     init(@ViewBuilder content: () -> Content) { self.content = content() }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) { content }
-            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.primary.opacity(0.06)))
+            .padding(openSections ? 0 : 12).padding(.vertical, openSections ? 14 : 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(openSections ? Color.clear : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.primary.opacity(openSections ? 0 : 0.06)))
+            .overlay(alignment: .bottom) { if openSections { Divider() } }
             .accessibilityElement(children: .contain)
     }
 }

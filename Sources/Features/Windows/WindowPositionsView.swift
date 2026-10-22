@@ -124,6 +124,7 @@ struct WindowPositionsView: View {
 
 /// Reference tiles are informational: clicking Settings must never move a window.
 private struct WindowShortcutTile: View {
+    @Environment(\.openSettingsSections) private var openSections
     let action: WindowShortcutAction
     private var preview: CGRect {
         let display = WindowDisplay(id: "preview", bounds: CGRect(x: 0, y: 0, width: 56, height: 36))
@@ -142,7 +143,8 @@ private struct WindowShortcutTile: View {
             Text(action.title).font(.caption).lineLimit(2).multilineTextAlignment(.center)
             Text(action.shortcut).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
         }.frame(maxWidth: .infinity).padding(.vertical, 10)
-            .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 8))
+            .background(.quaternary.opacity(openSections ? 0 : 0.45), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: openSections ? 5 : 8).strokeBorder(.primary.opacity(openSections ? 0.1 : 0)))
             .accessibilityElement(children: .combine)
     }
 }
