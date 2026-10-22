@@ -344,8 +344,8 @@ func renderReleaseUIFixtures(directory: String? = nil) throws {
         view.cacheDisplay(in: view.bounds, to: bitmap)
         try bitmap.representation(using: .png, properties: [:])!.write(to: root.appendingPathComponent(name + ".png"))
     }
-    func categoryTabs(_ view: NSView) -> NSSegmentedControl? {
-        if let tabs = view as? NSSegmentedControl { return tabs }
+    func categoryTabs(_ view: NSView) -> NSStackView? {
+        if let tabs = view as? NSStackView, tabs.arrangedSubviews.first is SettingsTabButton { return tabs }
         return view.subviews.lazy.compactMap { categoryTabs($0) }.first
     }
     var evidence: [String] = []
@@ -378,6 +378,10 @@ func renderReleaseUIFixtures(directory: String? = nil) throws {
         model.enabledModules = [.windows]
         model.settingsGroup = .displays
         model.windowPositions = WindowPositions(backend: UIWindows(), defaults: defaults)
+        model.monitors = [Monitor(uuid: "fixture-first", name: "Studio Display", id: 1, enabled: true, isMain: true, disabledByApp: false),
+                          Monitor(uuid: "fixture-second", name: "MacBook Pro", id: 2, enabled: true, isMain: false, disabledByApp: false)]
+        model.currentLayout = [DisplayPosition(uuid: "fixture-first", x: 0, y: 0, width: 2560, height: 1440),
+                               DisplayPosition(uuid: "fixture-second", x: 2560, y: 458, width: 1512, height: 982)]
         let windows = mount(AnyView(SettingsView(model: model)), dark: dark)
         try snapshot(windows, "settings-windows-\(suffix)")
         if let scroller = scroll(windows.contentView!), let document = scroller.documentView {
@@ -385,14 +389,20 @@ func renderReleaseUIFixtures(directory: String? = nil) throws {
             try snapshot(windows, "settings-windows-bottom-\(suffix)")
         }
         windows.orderOut(nil)
+        model.enabledModules = [.windows, .monitors, .arrangement]
+        model.displaySupported = true
+        let workspace = mount(AnyView(SettingsView(model: model)), dark: dark, width: 1000, height: 760)
+        try snapshot(workspace, "settings-workspace-\(suffix)"); workspace.orderOut(nil)
+        model.enabledModules = [.windows]; model.displaySupported = false
         let narrowWindows = mount(AnyView(SettingsView(model: model)), dark: dark, width: 680, height: 480)
         if let content = narrowWindows.contentView, let tabs = categoryTabs(content) {
             let frame = tabs.convert(tabs.bounds, to: content)
-            expect(frame.minX >= 0 && frame.maxX <= content.bounds.width && tabs.segmentCount == SettingsGroup.allCases.count,
+            expect(frame.minX >= 0 && frame.maxX <= content.bounds.width && tabs.arrangedSubviews.count == SettingsGroup.allCases.count,
                    "all Settings categories fit the minimum-width \(suffix) window")
         } else { expect(false, "minimum-width Settings exposes category navigation") }
         try snapshot(narrowWindows, "settings-windows-narrow-\(suffix)"); narrowWindows.orderOut(nil)
         model.windowPositions = nil; model.enabledModules = [.audio, .clipboard]
+        model.monitors = []; model.currentLayout = []
         model.audioDevices = []
         let draft = SetupDraft(current: model, defaults: defaults)
         draft.selected = [.audio]; draft.syncSelection(); draft.step = .configure(.sound)

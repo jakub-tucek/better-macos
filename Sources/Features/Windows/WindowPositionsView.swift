@@ -1,8 +1,11 @@
 import SwiftUI
 
 struct WindowPositionsView: View {
+    enum Presentation { case all, shortcuts, layouts }
+    @Environment(\.openSettingsSections) private var openSections
     @ObservedObject var module: WindowPositions
     var setup = true
+    var presentation: Presentation = .all
     @StoredState private var name = ""
     @StoredState private var renamingID: String?
     @StoredState private var renameDraft = ""
@@ -10,13 +13,13 @@ struct WindowPositionsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-          if setup {
+          if setup && presentation != .layouts {
             DashboardCard {
                 DashboardSwitchRow(title: "Window keyboard shortcuts", isOn: Binding(get: { module.shortcutsEnabled }, set: { module.shortcutsEnabled = $0 }))
                     .font(.headline)
                 Text("Move the focused window with Rectangle-style shortcuts.")
                     .font(.caption).foregroundStyle(.secondary)
-                HStack(spacing: 8) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: openSections ? 2 : 4), spacing: 12) {
                     ForEach([WindowShortcutAction.left, .right, .maximize, .center]) { action in
                         WindowShortcutTile(action: action)
                     }
@@ -42,7 +45,7 @@ struct WindowPositionsView: View {
                 }
             }
           }
-          DashboardCard {
+          if presentation != .shortcuts { DashboardCard {
             Label("Saved layouts", systemImage: DashboardTab.windows.symbol).font(.headline)
             if !module.permitted {
                 Text("Accessibility access is required to move, save and restore windows.").font(.caption)
@@ -82,7 +85,7 @@ struct WindowPositionsView: View {
                             Button("Delete…", role: .destructive) { deletingID = layout.id }
                         } label: { Image(systemName: "ellipsis.circle") }
                         .menuStyle(.borderlessButton).fixedSize()
-                        .accessibilityLabel("Options for \(layout.name)")
+                         .accessibilityLabel("Options for \(layout.name)")
                         }
                     }
                     if setup && renamingID == layout.id {
@@ -96,14 +99,15 @@ struct WindowPositionsView: View {
                     if layout.id != module.layouts.last?.id { Divider() }
                 }
             }
-            Text(module.summary).font(.caption).textSelection(.enabled)
-          }
-           if setup { DashboardCard {
+             Text(module.summary).font(.caption).textSelection(.enabled)
+           }
+           }
+            if setup && presentation != .layouts { DashboardCard {
                 DisclosureGroup("Automatic restore & exclusions") {
-                WindowPolicyControls(automatic: $module.automatic, paused: $module.paused, selected: $module.selected, exclusions: $module.exclusions, layouts: module.layouts).padding(.top, 8)
-           } }
-        }
-        }
+                 WindowPolicyControls(automatic: $module.automatic, paused: $module.paused, selected: $module.selected, exclusions: $module.exclusions, layouts: module.layouts).padding(.top, 8)
+            } }
+         }
+         }
         .alert("Delete saved layout?", isPresented: Binding(get: { deletingID != nil }, set: { if !$0 { deletingID = nil } })) {
             Button("Delete", role: .destructive) { if let deletingID { module.delete(deletingID) }; deletingID = nil }
             Button("Cancel", role: .cancel) { deletingID = nil }
@@ -131,20 +135,23 @@ private struct WindowShortcutTile: View {
         return action.destination(for: CGRect(x: 14, y: 9, width: 28, height: 18), displays: [display]) ?? display.bounds
     }
     var body: some View {
-        VStack(spacing: 6) {
+        let layout = openSections ? AnyLayout(HStackLayout(spacing: 8)) : AnyLayout(VStackLayout(spacing: 6))
+        layout {
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 4).strokeBorder(.secondary.opacity(0.4))
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.accentColor.opacity(0.25))
-                    .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(Color.accentColor))
+                    .fill(openSections ? Color.secondary.opacity(0.12) : Color.accentColor.opacity(0.25))
+                    .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(openSections ? Color.secondary : Color.accentColor))
                     .frame(width: max(1, preview.width - 4), height: max(1, preview.height - 4))
                     .offset(x: preview.minX + 2, y: preview.minY + 2)
             }.frame(width: 56, height: 36).accessibilityHidden(true)
-            Text(action.title).font(.caption).lineLimit(2).multilineTextAlignment(.center)
-            Text(action.shortcut).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
+            VStack(alignment: openSections ? .leading : .center, spacing: 4) {
+                Text(action.title).font(.caption).lineLimit(2)
+                Text(action.shortcut).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
+            }
         }.frame(maxWidth: .infinity).padding(.vertical, 10)
             .background(.quaternary.opacity(openSections ? 0 : 0.45), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: openSections ? 5 : 8).strokeBorder(.primary.opacity(openSections ? 0.1 : 0)))
+            .overlay(alignment: .bottom) { if openSections { Divider() } }
             .accessibilityElement(children: .combine)
     }
 }

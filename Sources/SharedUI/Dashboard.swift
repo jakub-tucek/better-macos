@@ -353,6 +353,7 @@ struct DashboardSwitchRow: View {
 
 /// A snapshot-only map: geometry reads and layout planning happen outside SwiftUI.
 struct MonitorLayoutMap: View {
+    @Environment(\.openSettingsSections) private var openSections
     let positions: [DisplayPosition]
     let monitors: [Monitor]
     var selected: String? = nil
@@ -386,7 +387,7 @@ struct MonitorLayoutMap: View {
                         }
                         .padding(3)
                         .frame(width: max(1, width - 2), height: max(1, height - 2))
-                        .background(selected == position.uuid ? Color.blue.opacity(0.3) : Color.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 5))
+                         .background(selected == position.uuid ? Color.blue.opacity(0.3) : (openSections ? Color.secondary.opacity(0.06) : Color.blue.opacity(0.1)), in: RoundedRectangle(cornerRadius: 5))
                         .overlay(RoundedRectangle(cornerRadius: 5).stroke(selected == position.uuid ? Color.blue : Color.secondary.opacity(0.5), lineWidth: selected == position.uuid ? 2 : 1))
                         .help(name)
                         Group {
@@ -406,6 +407,7 @@ struct MonitorLayoutMap: View {
 }
 
 struct DashboardView: View {
+    @Environment(\.openSettingsSections) private var openSections
     @ObservedObject var model: DashboardModel
     var feature: DashboardTab
     var setup = true
@@ -765,8 +767,8 @@ struct DashboardView: View {
 
     private var monitors: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label("Monitors", systemImage: DashboardTab.monitors.symbol).font(.headline)
-            if isSetup { displayConfiguration }
+            if !openSections { Label("Monitors", systemImage: DashboardTab.monitors.symbol).font(.headline) }
+            if isSetup && !openSections { displayConfiguration }
             if !model.countdowns.isEmpty {
                 card {
                     ForEach(model.countdowns.keys.sorted(), id: \.self) { uuid in
@@ -810,6 +812,7 @@ struct DashboardView: View {
             if !model.displaySupported { Text("Display controls are unavailable until recovery monitoring is ready.").font(.caption).foregroundStyle(.secondary) }
             Button(model.pendingArrangement ? "Restore previous layout" : "Enable all disabled displays", action: model.onRestoreAll)
                 .disabled(model.displaySettling || model.monitorBusy || (model.disabledMonitorCount == 0 && !model.pendingArrangement))
+            if isSetup && openSections { DisclosureGroup("Display options") { displayConfiguration.padding(.top, 8) } }
         }
     }
 
@@ -834,12 +837,18 @@ struct DashboardView: View {
         let busy = model.displaySettling || model.monitorBusy
         return card {
             HStack {
-                Label("Layout", systemImage: "rectangle.3.group").font(.headline)
+                Text(openSections ? "Your desk" : "Layout").font(.headline)
                 Spacer()
                 Button("Arrange…", action: model.onArrangeDisplays)
                     .disabled(busy || !model.displaySupported || model.disabledMonitorCount > 0 || model.pendingArrangement || model.currentLayout.count < 2)
                     .help("Drag screens to arrange your desk")
             }
+            if model.disabledMonitorCount > 0 {
+                Text("Turn all screens on to arrange.").font(.caption2).foregroundStyle(.secondary)
+            }
+            MonitorLayoutMap(positions: model.currentLayout, monitors: model.monitors,
+                             selected: selected?.uuid, onSelect: model.enabledModules.contains(.monitors) ? { previewMonitor = $0 } : nil)
+                 .disabled(busy)
             if isSetup { DashboardSwitchRow(title: "Match screen edges", isOn: Binding(
                 get: { model.matchScreenEdges }, set: model.onMatchScreenEdgesChanged))
             if model.matchScreenEdges && !model.screenEdgesActive {
@@ -847,12 +856,6 @@ struct DashboardView: View {
                     .font(.caption2).foregroundStyle(.secondary)
             }
             }
-            if model.disabledMonitorCount > 0 {
-                Text("Turn all screens on to arrange.").font(.caption2).foregroundStyle(.secondary)
-            }
-            MonitorLayoutMap(positions: model.currentLayout, monitors: model.monitors,
-                             selected: selected?.uuid, onSelect: model.enabledModules.contains(.monitors) ? { previewMonitor = $0 } : nil)
-                .disabled(busy)
             if let selected, model.enabledModules.contains(.monitors) {
                 HStack {
                     Text("Without \(selected.name)").font(.caption).bold()

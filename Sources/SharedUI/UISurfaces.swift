@@ -715,44 +715,52 @@ struct SettingsView: View {
     @ObservedObject private var widgetEditor: WidgetEditingSession
     init(model: DashboardModel) { self.model = model; self.widgetEditor = model.settingsWidgetEditor }
     var body: some View {
+        GeometryReader { geometry in
         VStack(spacing: 0) {
-            SettingsCategoryNavigation(selection: Binding(get: { model.settingsGroup }, set: { model.settingsGroup = $0 }))
-                .frame(height: 28).frame(maxWidth: 720)
-                .padding(.horizontal, 24).padding(.vertical, 18)
+            HStack(spacing: 24) {
+                if geometry.size.width >= 900 {
+                    Text("Fix macOS").font(.system(size: 14, weight: .semibold)).fixedSize()
+                }
+                SettingsCategoryNavigation(selection: Binding(get: { model.settingsGroup }, set: { model.settingsGroup = $0 }))
+            }.frame(height: 44).frame(maxWidth: 1000)
+                .padding(.horizontal, 40).padding(.top, 12)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     SafetyAlerts(model: model)
                     if model.settingsGroup == .general { general }
                     else if model.settingsGroup == .quickActions { editor }
-                    else {
-                        ForEach(features, id: \.self) { feature in
-                            VStack(alignment: .leading, spacing: 10) {
-                                DashboardCard {
-                                    ForEach(model.settingsGroup.modules.filter { $0.dashboardFeature == feature }) { module in
-                                        Toggle(isOn: Binding(get: { model.enabledModules.contains(module) }, set: { model.onModuleChanged(module, $0) })) {
-                                            VStack(alignment: .leading, spacing: 4) {
-                                                Text(module.title).font(.headline)
-                                                Text(module.detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                                            }.frame(maxWidth: .infinity, alignment: .leading)
-                                        }.toggleStyle(.switch)
-                                            .disabled(model.stoppingModules.contains(module) || ((module == .monitors || module == .arrangement) && model.monitorBusy))
-                                        if model.stoppingModules.contains(module) { Label("Finishing recovery before stopping…", systemImage: "clock").foregroundStyle(.orange) }
+                    else if model.settingsGroup == .displays {
+                        if geometry.size.width >= 800 {
+                            HStack(alignment: .top, spacing: 32) {
+                                VStack(alignment: .leading, spacing: 24) {
+                                    featureSection(.monitors)
+                                    if model.enabledModules.contains(.windows), let windows = model.windowPositions {
+                                        WindowPositionsView(module: windows, presentation: .layouts)
                                     }
-                                }
-                                if model.settingsGroup.modules.contains(where: { $0.dashboardFeature == feature && model.enabledModules.contains($0) }) || (feature == .monitors && model.displayControlsReachable) {
-                                    DashboardView(model: model, feature: feature).id(feature)
-                                }
+                                }.frame(width: (min(1000, geometry.size.width - 80) - 32) / 2)
+                                featureSection(.windows, windowPresentation: .shortcuts).frame(width: (min(1000, geometry.size.width - 80) - 32) / 2)
+                            }
+                        } else {
+                            VStack(alignment: .leading, spacing: 28) {
+                                featureSection(.monitors)
+                                featureSection(.windows)
                             }
                         }
                     }
-                }.frame(maxWidth: 720).padding(24).frame(maxWidth: .infinity, alignment: .top)
+                    else {
+                        ForEach(features, id: \.self) { feature in
+                            featureSection(feature)
+                        }
+                    }
+                }.frame(maxWidth: 1000).padding(.horizontal, 40).padding(.bottom, 32).padding(.top, 16).frame(maxWidth: .infinity, alignment: .top)
             }.safeAreaInset(edge: .top, spacing: 0) { categoryHeader }
                 .id(model.settingsGroup).frame(minWidth: 440, idealWidth: 620)
                 .onAppear {
                     Diagnostics.shared.emit("settings", "category_content_appeared", fields: ["category": model.settingsGroup.rawValue,
                                             "scroll_policy": "new_scrollview_identity", "scroll_offset_observed": "false"])
                 }
+        }
         }.frame(minWidth: 680, minHeight: 480)
             .environment(\.openSettingsSections, true)
             .background(Color(nsColor: .windowBackgroundColor))
@@ -765,14 +773,54 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(model.settingsGroup.rawValue).font(.system(size: 30, weight: .semibold))
+                    Text(model.settingsGroup == .displays ? "Displays & windows" : model.settingsGroup.rawValue).font(.system(size: 34, weight: .semibold))
                         .accessibilityAddTraits(.isHeader)
                     Text(model.settingsGroup.summary).font(.callout).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
-            }.frame(maxWidth: 720).padding(.horizontal, 24).padding(.top, 28).padding(.bottom, 12)
+            }.frame(maxWidth: 1000).padding(.horizontal, 40).padding(.top, 32).padding(.bottom, 20)
         }.background(Color(nsColor: .windowBackgroundColor))
+    }
+    private func featureSection(_ feature: DashboardTab, windowPresentation: WindowPositionsView.Presentation = .all) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if feature == .monitors && !model.enabledModules.contains(.arrangement) {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Text("YOUR DESK").font(.system(size: 10, weight: .semibold)).tracking(1).foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(model.currentLayout.count) displays").font(.caption).foregroundStyle(.secondary)
+                    }
+                    MonitorLayoutMap(positions: model.currentLayout, monitors: model.monitors)
+                }.padding(22).overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.primary.opacity(0.12)))
+            }
+            if feature != .monitors { moduleChoices(feature) }
+            if model.settingsGroup.modules.contains(where: { $0.dashboardFeature == feature && model.enabledModules.contains($0) }) || (feature == .monitors && model.displayControlsReachable) {
+                if feature == .windows, let windows = model.windowPositions {
+                    WindowPositionsView(module: windows, presentation: windowPresentation)
+                } else { DashboardView(model: model, feature: feature).id(feature) }
+            }
+            if feature == .monitors {
+                DisclosureGroup("Display features") { moduleChoices(feature) }
+                if model.stoppingModules.contains(.monitors) || model.stoppingModules.contains(.arrangement) {
+                    Label("Finishing recovery before stopping…", systemImage: "clock").foregroundStyle(.orange)
+                }
+            }
+        }
+    }
+    private func moduleChoices(_ feature: DashboardTab) -> some View {
+        DashboardCard {
+            ForEach(model.settingsGroup.modules.filter { $0.dashboardFeature == feature }) { module in
+                Toggle(isOn: Binding(get: { model.enabledModules.contains(module) }, set: { model.onModuleChanged(module, $0) })) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(module.title).font(.headline)
+                        Text(module.detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }.toggleStyle(.switch)
+                    .disabled(model.stoppingModules.contains(module) || ((module == .monitors || module == .arrangement) && model.monitorBusy))
+                if model.stoppingModules.contains(module) { Label("Finishing recovery before stopping…", systemImage: "clock").foregroundStyle(.orange) }
+            }
+        }
     }
     private var features: [DashboardTab] {
         var seen = Set<DashboardTab>()
@@ -859,34 +907,72 @@ struct SettingsView: View {
 /// Native tabs retain first-responder navigation across content replacement.
 struct SettingsCategoryNavigation: NSViewRepresentable {
     @Binding var selection: SettingsGroup
-    func makeNSView(context: Context) -> NSSegmentedControl {
-        let control = NSSegmentedControl(labels: SettingsGroup.allCases.map { $0 == .sound ? "Sound" : $0.rawValue },
-                                        trackingMode: .selectOne, target: context.coordinator, action: #selector(Coordinator.select(_:)))
-        control.segmentStyle = .texturedRounded
-        control.segmentDistribution = .fillEqually
-        control.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        control.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    func makeNSView(context: Context) -> NSStackView {
+        let control = NSStackView()
+        control.orientation = .horizontal
+        control.distribution = .fillEqually
+        control.spacing = 6
         control.setAccessibilityLabel("Settings categories")
         for (index, group) in SettingsGroup.allCases.enumerated() {
-            control.setToolTip(group.rawValue, forSegment: index)
+            let button = SettingsTabButton(title: group == .sound ? "Sound" : group.rawValue,
+                                           target: context.coordinator, action: #selector(Coordinator.select(_:)))
+            button.tag = index
+            button.isBordered = false
+            button.setButtonType(.momentaryPushIn)
+            button.setAccessibilityLabel(group.rawValue)
+            button.toolTip = group.rawValue
+            button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            control.addArrangedSubview(button)
+            button.heightAnchor.constraint(equalToConstant: 44).isActive = true
         }
         return control
     }
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSSegmentedControl, context: Context) -> CGSize? {
-        CGSize(width: proposal.width ?? nsView.intrinsicContentSize.width, height: 28)
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSStackView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 720, height: 44)
     }
-    func updateNSView(_ control: NSSegmentedControl, context: Context) {
+    func updateNSView(_ control: NSStackView, context: Context) {
         context.coordinator.selection = $selection
-        control.selectedSegment = SettingsGroup.allCases.firstIndex(of: selection) ?? 0
+        for case let button as SettingsTabButton in control.arrangedSubviews {
+            button.selected = SettingsGroup.allCases[button.tag] == selection
+        }
     }
     func makeCoordinator() -> Coordinator { Coordinator(selection: $selection) }
     final class Coordinator: NSObject {
         var selection: Binding<SettingsGroup>
         init(selection: Binding<SettingsGroup>) { self.selection = selection }
-        @objc func select(_ control: NSSegmentedControl) {
-            guard SettingsGroup.allCases.indices.contains(control.selectedSegment) else { return }
-            selection.wrappedValue = SettingsGroup.allCases[control.selectedSegment]
+        @objc func select(_ control: SettingsTabButton) {
+            guard SettingsGroup.allCases.indices.contains(control.tag) else { return }
+            selection.wrappedValue = SettingsGroup.allCases[control.tag]
         }
+    }
+}
+
+/// Plain text tabs retain native button tracking, focus rings and accessibility.
+final class SettingsTabButton: NSButton {
+    var selected = false {
+        didSet {
+            font = .systemFont(ofSize: 12, weight: selected ? .semibold : .regular)
+            contentTintColor = selected ? .labelColor : .secondaryLabelColor
+            setAccessibilityValue(selected ? "Selected" : "")
+            needsDisplay = true
+        }
+    }
+    override var acceptsFirstResponder: Bool { true }
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        if selected {
+            NSColor.controlAccentColor.setFill()
+            NSRect(x: 8, y: isFlipped ? bounds.height - 2 : 0, width: max(0, bounds.width - 16), height: 2).fill()
+        }
+    }
+    override func keyDown(with event: NSEvent) {
+        if event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
+           event.keyCode == 123 || event.keyCode == 124,
+           let stack = superview as? NSStackView {
+            let buttons = stack.arrangedSubviews.compactMap { $0 as? SettingsTabButton }
+            let index = max(0, min(buttons.count - 1, tag + (event.keyCode == 124 ? 1 : -1)))
+            window?.makeFirstResponder(buttons[index])
+        } else { super.keyDown(with: event) }
     }
 }
 

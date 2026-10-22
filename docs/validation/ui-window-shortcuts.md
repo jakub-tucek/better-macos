@@ -148,6 +148,30 @@ General dark, Windows light and minimum-width Windows light snapshots. Logs:
 `build/open-design-verified.log`, `build/open-design-fixtures.log`,
 `build/open-design-{lint,format}.log`. Live app and VoiceOver acceptance remain open.
 
+## Open layout correction · 2026-10-22
+
+After user feedback that the first native version did not resemble the prototype,
+replaced the segmented bar with underlined native button tabs and implemented the
+workspace structure. At widths of 800 points and above, display controls and saved
+layouts occupy the left column; window shortcuts and automation occupy the right.
+Narrow windows stack these sections. New Settings windows start at 1000 × 760.
+Display options and module admission controls remain reachable through named
+disclosures; recovery/countdown controls and pending-stop status stay visible.
+Actual display snapshots supply the canvas; no prototype sample data enters the app.
+
+Native button tabs retain mouse tracking, focus, accessibility labels, arrow-key
+focus navigation and Space activation. Existing first-key and minimum-width tests
+were adapted to the production controls. Windows presentation splits existing
+controls without changing owner admission or layout operations. Fixtures now include
+injected two-display layouts and a 1000 × 760 all-display-features configuration.
+
+`bash test.sh` passed **5,079 isolated checks**, supporting suites and 13 installer
+scenarios (`build/open-layout-final.log`). Lint, format and whitespace checks passed.
+Release fixtures passed; wide light/dark and narrow light renders were inspected.
+Initial compile failure from misplaced section braces was corrected before this run.
+The user authorized normal quit, installed-bundle replacement and restart after UI
+changes; this does not establish hardware-action or VoiceOver acceptance.
+
 ## Shortcut-session extraction · 2026-10-22
 
 The candidate-2 working tree based on `ff1e046` moves registration attempt/generation,

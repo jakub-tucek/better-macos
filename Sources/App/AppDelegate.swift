@@ -780,6 +780,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             window.title = "Fix macOS Settings"
             window.isReleasedWhenClosed = false
             window.contentViewController = NSHostingController(rootView: SettingsView(model: model))
+            window.setContentSize(NSSize(width: 1000, height: 760))
             window.minSize = NSSize(width: 680, height: 480)
             window.center(); settingsWindow = window
         }
