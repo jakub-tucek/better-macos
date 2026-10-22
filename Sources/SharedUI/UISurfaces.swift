@@ -288,16 +288,18 @@ struct QuickActionsView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Fix macOS").font(.headline)
+                Text("Fix macOS").font(.system(size: 14, weight: .semibold))
                 Spacer()
                 if editor.draft != nil {
                     Button("Cancel", action: editor.cancel)
                     Button("Done") { editor.done(save: model.onSaveWidgets) }.buttonStyle(.borderedProminent)
-                } else { Button("Edit") { editor.begin(model.widgetLayout) } }
-                Button { model.onOpenSettings(nil) } label: { Image(systemName: "gearshape") }
-                    .accessibilityLabel("Settings")
-                    .help("Open Settings")
-            }.padding(.horizontal, 14).padding(.vertical, 10)
+                } else {
+                    Button { editor.begin(model.widgetLayout) } label: {
+                        Label("Edit", systemImage: "slider.horizontal.3").font(.system(size: 11))
+                    }.buttonStyle(.plain).foregroundStyle(.secondary)
+                        .help("Choose and arrange quick actions")
+                }
+            }.padding(.horizontal, 16).padding(.vertical, 10)
                 .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { headerHeight = $0 }
             Divider().frame(height: 1)
             ScrollView {
@@ -313,7 +315,7 @@ struct QuickActionsView: View {
                         }
                         ForEach(entries) { entry in
                             QuickWidget(model: model, entry: entry)
-                            Divider().padding(.leading, 14)
+                             if entry.id != entries.last?.id { Divider().padding(.horizontal, 16) }
                         }
                         if entries.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
@@ -333,7 +335,13 @@ struct QuickActionsView: View {
             }
             .frame(height: sizing.viewportHeight)
             Divider().frame(height: 1)
-            HStack { Spacer(); Button("Quit", action: model.onQuit).disabled(model.monitorBusy) }.padding(.horizontal, 14).padding(.vertical, 8)
+             HStack {
+                 Button { model.onOpenSettings(nil) } label: { Label("Settings", systemImage: "gearshape") }
+                     .help("Open Settings")
+                 Spacer()
+                 Button("Quit", action: model.onQuit).disabled(model.monitorBusy)
+             }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(.secondary)
+                 .padding(.horizontal, 16).padding(.vertical, 12)
                 .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { footerHeight = $0 }
         }.frame(width: PopupSizing.width, height: sizing.height)
             .background(Color(nsColor: .windowBackgroundColor))
@@ -485,13 +493,14 @@ struct AwakeSessionWidget: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(actions.status).monospacedDigit()
-                    .foregroundStyle(model.keepAwakeProtectionFailed ? Color.orange : model.keepAwakeActive ? .blue : .secondary)
+                 Text(actions.status).monospacedDigit()
+                     .font(.system(size: model.keepAwakeActive ? 18 : 12, weight: model.keepAwakeActive ? .medium : .regular))
+                     .foregroundStyle(model.keepAwakeProtectionFailed ? Color.orange : model.keepAwakeActive ? .primary : .secondary)
                     .accessibilityLabel("Keep awake: \(actions.status)")
                 Spacer()
                 if model.keepAwakeCanStop || model.keepAwakeProtectionFailed {
                     Button("End session", action: model.onKeepAwakeStop)
-                        .buttonStyle(.borderedProminent).tint(.blue)
+                         .buttonStyle(.bordered)
                         .accessibilityLabel("End keep awake session and pause current app rules")
                 }
             }
@@ -508,7 +517,10 @@ struct AwakeSessionWidget: View {
             } else {
                 HStack(spacing: 5) {
                     ForEach(AwakeSessionActions.presets, id: \.self) { minutes in
-                        Button("\(minutes)") { actions.start(minutes: minutes) }
+                         Button { actions.start(minutes: minutes) } label: {
+                             Text("\(minutes)").monospacedDigit().frame(maxWidth: .infinity).padding(.vertical, 4)
+                                 .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 5))
+                         }.buttonStyle(.plain)
                             .accessibilityLabel("Start keep awake for \(minutes) minutes")
                             .help("Start a \(minutes)-minute session")
                     }
@@ -558,12 +570,12 @@ struct QuickWidget: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     HStack(spacing: 7) {
-                        Image(systemName: kind.feature.symbol).foregroundStyle(.blue).frame(width: 18)
+                         Image(systemName: kind.feature.symbol).foregroundStyle(.secondary).frame(width: 18)
                         Text(kind.title).font(.system(size: 12, weight: .semibold))
                     }
                     Spacer()
                     Button { model.onOpenSettings(SettingsGroup.forFeature(kind.feature)) } label: {
-                        Image(systemName: "gearshape").foregroundStyle(.secondary)
+                         Image(systemName: "arrow.up.right").font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
                     }.buttonStyle(.plain).help("\(kind.title) settings")
                         .accessibilityLabel("\(kind.title) settings")
                 }
@@ -585,7 +597,7 @@ struct QuickWidget: View {
                 }
             }
             .font(.system(size: 12))
-            .padding(.horizontal, 14).padding(.vertical, 10)
+             .padding(.horizontal, 16).padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain)
             .alert("Disconnect device?", isPresented: Binding(get: { disconnect != nil }, set: { if !$0 { disconnect = nil } })) {
@@ -641,8 +653,16 @@ struct QuickWidget: View {
     }
     private var clipboard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack { Button("Open history", action: model.onClipboardOpen); Spacer(); Text("⌘⇧V").foregroundStyle(.secondary) }
-            Text(model.clipboardRecording ? "Recording" : "Recording paused").font(.caption)
+             Button(action: model.onClipboardOpen) {
+                 HStack {
+                     Text("Open history").fontWeight(.medium)
+                     Spacer()
+                     Text("⌘⇧V").font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
+                     Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
+                 }.padding(9).contentShape(Rectangle())
+                     .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
+             }.buttonStyle(.plain)
+             Text(model.clipboardRecording ? "Recording" : "Recording paused").font(.caption).foregroundStyle(.secondary)
             if entry.expanded {
                 Text("\(model.clipboardCount) entries · no previews here").font(.caption)
                 Button(model.clipboardRecording ? "Pause recording" : "Resume recording") { model.onClipboardRecording(!model.clipboardRecording) }

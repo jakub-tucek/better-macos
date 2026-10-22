@@ -172,6 +172,23 @@ Initial compile failure from misplaced section braces was corrected before this 
 The user authorized normal quit, installed-bundle replacement and restart after UI
 changes; this does not establish hardware-action or VoiceOver acceptance.
 
+## Minimal popup · 2026-10-22
+
+The popup now shares the Open visual style: quiet Edit header, persistent Settings
+footer, neutral feature icons, inset separators, uniform duration presets, larger
+active countdowns and a full-width clipboard-history action. Widget Settings links
+use small arrow icons with their existing feature-specific accessibility labels.
+Widget choices, expanded states, owner callbacks, recovery and measured sizing
+remain intact.
+
+`bash test.sh` passed **5,079 isolated checks**, supporting suites and 13 installer
+scenarios (`build/popup-open-test.log`). This includes the native first-display-click,
+keyboard handoff, popup resize/scroll/settling and session-action regressions.
+Pinned lint, format and whitespace checks passed. `--compact-ui-fixtures build`
+generated light/dark previews; inactive light, active dark, editing light and
+recovery light were inspected. Logs: `build/popup-open-{fixtures,lint,format}.log`.
+Restart is authorized; live device operations and VoiceOver remain unverified.
+
 ## Shortcut-session extraction · 2026-10-22
 
 The candidate-2 working tree based on `ff1e046` moves registration attempt/generation,
