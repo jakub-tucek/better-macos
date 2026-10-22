@@ -17,6 +17,17 @@ enum SettingsGroup: String, CaseIterable, Identifiable {
         }
     }
     var modules: [AppModule] { BuiltinFeatures.modules(in: self) }
+    var summary: String {
+        switch self {
+        case .general: return "Startup, updates, and recent activity."
+        case .quickActions: return "Your most-used controls, one click away."
+        case .displays: return "Arrange your screens and put windows in place."
+        case .sound: return "Choose audio routes and manage Bluetooth connections."
+        case .input: return "Tune your mouse and keyboard behavior."
+        case .system: return "Control sleep, animations, and the menu bar."
+        case .clipboard: return "Choose what to capture and how long to keep it."
+        }
+    }
     static func forFeature(_ feature: DashboardTab) -> SettingsGroup {
         allCases.first { $0.modules.contains { $0.dashboardFeature == feature } } ?? .general
     }
@@ -710,8 +721,6 @@ struct SettingsView: View {
             }.listStyle(.sidebar).frame(minWidth: 175, idealWidth: 190, maxWidth: 240)
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text(model.settingsGroup.rawValue).font(.system(.title, design: .rounded, weight: .semibold))
-                        .accessibilityAddTraits(.isHeader)
                     SafetyAlerts(model: model)
                     if model.settingsGroup == .general { general }
                     else if model.settingsGroup == .quickActions { editor }
@@ -737,7 +746,8 @@ struct SettingsView: View {
                         }
                     }
                 }.frame(maxWidth: 720).padding(24).frame(maxWidth: .infinity, alignment: .top)
-            }.id(model.settingsGroup).frame(minWidth: 440, idealWidth: 620)
+            }.safeAreaInset(edge: .top, spacing: 0) { categoryHeader }
+                .id(model.settingsGroup).frame(minWidth: 440, idealWidth: 620)
                 .onAppear {
                     Diagnostics.shared.emit("settings", "category_content_appeared", fields: ["category": model.settingsGroup.rawValue,
                                             "scroll_policy": "new_scrollview_identity", "scroll_offset_observed": "false"])
@@ -748,6 +758,25 @@ struct SettingsView: View {
                 Diagnostics.shared.emit("settings", "category_changed", fields: ["from": old.rawValue, "to": new.rawValue,
                                         "scroll_reset": "identity_requested_not_verified"])
             }
+    }
+    private var categoryHeader: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 14) {
+                Image(systemName: model.settingsGroup.symbol)
+                    .font(.system(size: 22, weight: .medium)).foregroundStyle(.tint)
+                    .frame(width: 46, height: 46)
+                    .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(model.settingsGroup.rawValue).font(.system(.title2, design: .rounded, weight: .semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    Text(model.settingsGroup.summary).font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }.frame(maxWidth: 720).padding(.horizontal, 24).padding(.vertical, 20)
+            Divider()
+        }.background(Color(nsColor: .windowBackgroundColor))
     }
     private var features: [DashboardTab] {
         var seen = Set<DashboardTab>()
@@ -763,13 +792,33 @@ struct SettingsView: View {
                 }
                 WidgetEditor(layout: Binding(get: { widgetEditor.draft ?? model.widgetLayout }, set: { widgetEditor.draft = $0 }), model: model)
             } else {
-                Text("Choose, order, and resize the actions shown in the menu-bar popup.")
-                Button("Edit quick actions") { widgetEditor.begin(model.widgetLayout) }
+                HStack {
+                    Text("Menu-bar layout").font(.headline)
+                    Spacer()
+                    Button("Edit layout") { widgetEditor.begin(model.widgetLayout) }.buttonStyle(.borderedProminent)
+                }
                 if model.widgetLayout.entries.isEmpty {
-                    Text("No quick actions yet. Add the controls you use most.").foregroundStyle(.secondary)
+                    DashboardCard {
+                        Label("Make it yours", systemImage: "square.grid.2x2").font(.headline)
+                        Text("Add the controls you use most. You can reorder them and choose how much detail each one shows.")
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 ForEach(model.widgetLayout.entries) { entry in
-                    Label(entry.known?.title ?? entry.kind, systemImage: entry.known?.feature.symbol ?? "questionmark.square")
+                    DashboardCard {
+                        HStack {
+                            Label(entry.known?.title ?? entry.kind, systemImage: entry.known?.feature.symbol ?? "questionmark.square")
+                                .font(.headline)
+                            Spacer()
+                            Text(entry.expanded ? "Expanded" : "Compact").font(.caption).foregroundStyle(.secondary)
+                        }
+                        if let kind = entry.known {
+                            Text(kind.detail).font(.caption).foregroundStyle(.secondary)
+                            if !model.enabledModules.contains(kind.module) {
+                                Button("Enable in Settings…") { model.onOpenSettings(SettingsGroup.forFeature(kind.feature)) }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -778,19 +827,33 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 18) {
             DashboardCard {
                 LoginSettingsView(model: model)
-                Button("Run setup again…", action: model.onRunSetup)
-                Text("Setup starts from your current settings. Nothing is applied until Finish.").font(.caption)
             }
             DashboardCard {
-                Text("Updates").font(.headline)
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Guided setup", systemImage: "wand.and.stars").font(.headline)
+                        Text("Review your features step by step. Changes apply only when you finish.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                    Button("Run setup…", action: model.onRunSetup)
+                }
+            }
+            DashboardCard {
+                Label("Updates", systemImage: "arrow.triangle.2.circlepath").font(.headline)
                 Text(model.updateStatus)
                 Button("Check for updates", action: model.onCheckUpdates).disabled(model.updateChecking)
                 if model.updateAvailable { Button("Install update…", action: model.onInstallUpdate) }
             }
             DashboardCard {
-                Text("Activity").font(.headline)
-                Text("See what the app has been doing this session.").font(.caption).foregroundStyle(.secondary)
-                Button("Show activity…", action: model.onOpenActivity)
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Activity", systemImage: "clock.arrow.circlepath").font(.headline)
+                        Text("See what happened during this session.").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                    Button("Show activity…", action: model.onOpenActivity)
+                }
             }
             DisclosureGroup("Diagnostics") { Text(model.watchdogStatus).textSelection(.enabled) }
         }
@@ -802,7 +865,7 @@ struct LoginSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Toggle("Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: model.onLoginChanged))
+            DashboardSwitchRow(title: "Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: model.onLoginChanged))
             Text(model.loginStatus.message).font(.caption).foregroundStyle(.secondary)
             if let error = model.loginError {
                 Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)

@@ -102,6 +102,30 @@ No installed-app launch, live global shortcut registration, window movement,
 permission change or hardware action was performed. These checks do not close
 the project's existing hardware/VoiceOver acceptance gaps.
 
+## Settings refresh · 2026-10-22
+
+Category headers now stay visible while settings scroll. General uses compact
+setup/activity rows and a native login switch; Quick actions shows saved widget
+presentation and links disabled features to Settings. Windows adds informational
+shortcut diagrams, consolidates capture and saved layouts, and names its automatic
+restore/exclusions disclosure. Shortcut diagrams do not dispatch window actions.
+
+The initial header container caused native sidebar selection to be absent on first
+open. The existing first-key navigation test caught this; using a scroll-view top
+inset preserves selection. The native scroll-reset fixture now measures document
+top relative to the actual inset (observed offset -87 with inset 87), rather than
+assuming top is always zero. The original proven nonzero pre-navigation offset
+and first-click/first-key assertions remain. Failed attempts remain in
+`build/ui-refresh-test.log` and `build/ui-refresh-final-test.log`.
+
+Final `bash test.sh` passed **5,076 isolated checks**, named regression/policy suites,
+packaging/build checks and **13 installer scenarios**. Lint/format and whitespace
+checks passed. `--release-ui-fixtures build` passed all four light/dark navigation
+checks; General, Quick actions and Windows snapshots were inspected, including
+the 680 × 480 Windows fixture. Logs: `build/ui-refresh-verified.log`,
+`build/ui-refresh-fixtures.log`, `build/ui-refresh-{lint,format}.log`.
+Hidden fixtures use injected state; no installed-app launch or live device actions.
+
 ## Shortcut-session extraction · 2026-10-22
 
 The candidate-2 working tree based on `ff1e046` moves registration attempt/generation,

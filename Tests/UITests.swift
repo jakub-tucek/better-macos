@@ -325,8 +325,8 @@ func renderReleaseUIFixtures(directory: String? = nil) throws {
     func settle(_ window: NSWindow) {
         for _ in 0..<4 { window.contentView?.layoutSubtreeIfNeeded(); RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
     }
-    func mount(_ view: AnyView, dark: Bool) -> NSWindow {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 680), styleMask: [.titled], backing: .buffered, defer: false)
+    func mount(_ view: AnyView, dark: Bool, width: CGFloat = 860, height: CGFloat = 680) -> NSWindow {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height), styleMask: [.titled], backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         window.contentView = NSHostingView(rootView: view)
         settle(window); return window
@@ -348,6 +348,14 @@ func renderReleaseUIFixtures(directory: String? = nil) throws {
     for dark in [false, true] {
         let suffix = dark ? "dark" : "light"
         let model = DashboardModel(); model.enabledModules = [.audio, .clipboard]; model.watchdogReady = true
+        model.settingsGroup = .general
+        let general = mount(AnyView(SettingsView(model: model)), dark: dark)
+        try snapshot(general, "settings-general-\(suffix)"); general.orderOut(nil)
+        model.settingsGroup = .quickActions
+        model.widgetLayout.entries = [.init(.audio, expanded: true), .init(.clipboard)]
+        let quickActions = mount(AnyView(SettingsView(model: model)), dark: dark)
+        try snapshot(quickActions, "settings-quick-actions-\(suffix)"); quickActions.orderOut(nil)
+        model.widgetLayout.entries = []
         model.settingsGroup = .sound
         for scenario in ["empty", "added", "available"] {
             model.audioDevices = scenario == "empty" ? [] : [AudioDevice(uid: "in", name: "Fixture microphone", directions: [.input], bluetooth: false), AudioDevice(uid: "out", name: "Fixture speakers", directions: [.output], bluetooth: false)]
@@ -373,6 +381,8 @@ func renderReleaseUIFixtures(directory: String? = nil) throws {
             try snapshot(windows, "settings-windows-bottom-\(suffix)")
         }
         windows.orderOut(nil)
+        let narrowWindows = mount(AnyView(SettingsView(model: model)), dark: dark, width: 680, height: 480)
+        try snapshot(narrowWindows, "settings-windows-narrow-\(suffix)"); narrowWindows.orderOut(nil)
         model.windowPositions = nil; model.enabledModules = [.audio, .clipboard]
         model.audioDevices = []
         let draft = SetupDraft(current: model, defaults: defaults)
@@ -392,8 +402,11 @@ func renderReleaseUIFixtures(directory: String? = nil) throws {
             model.settingsWidgetEditor.begin(model.widgetLayout)
             settle(settings)
             let after = scroll(settings.contentView!)?.contentView.bounds.origin.y ?? -1
-            evidence.append("Settings \(suffix): before=\(before), after=\(after)")
-            expect(before == 450 && after == 0, "native Settings \(suffix) category navigation resets a proven nonzero content offset")
+            let topInset = scroll(settings.contentView!)?.contentInsets.top ?? 0
+            // The pinned category header reserves native scroll inset space.
+            // Document top is -topInset, not zero; prove the viewport resets there.
+            evidence.append("Settings \(suffix): before=\(before), after=\(after), topInset=\(topInset)")
+            expect(before == 450 && after + topInset == 0, "native Settings \(suffix) category navigation resets a proven nonzero content offset")
             try snapshot(settings, "settings-navigation-\(suffix)")
         } else { expect(false, "native Settings content scroller exists") }
         settings.orderOut(nil)
