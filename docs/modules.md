@@ -165,8 +165,12 @@ claim that the baseline's release blockers are fixed.
 
 ### Window positions · `windows`
 
-- **Owner:** [WindowPositions.swift](../Sources/Features/Windows/WindowPositions.swift), including matching,
-  planning and `AXWindowPositionBackend`.
+- **Owner:** [WindowPositions.swift](../Sources/Features/Windows/WindowPositions.swift), including matching
+  and planning. [WindowExecution.swift](../Sources/Features/Windows/WindowExecution.swift)
+  owns verified discovery, native identity and write orchestration over a low-level
+  access seam. [AXWindowNativeAccess.swift](../Sources/Features/Windows/AXWindowNativeAccess.swift)
+  decodes native facts and preserves the `AXWindowPositionBackend` entry point.
+  See [execution depth and interface](architecture/window-execution.md).
 - **UI:** Displays settings via [WindowPositionsView.swift](../Sources/Features/Windows/WindowPositionsView.swift);
   Window layouts widget and optional Displays restore controls. Accessibility required.
 - **Resources/cleanup:** saved layout/configuration data in preferences, wake/sleep

@@ -111,8 +111,9 @@ Hashes authenticate pinned upstream bytes, not a separate publisher signature.
   unused optional bindings only. All five rules are SourceKit-free; the wrapper
   disables SourceKit loading so these checks also run with standalone CLT. The
   tooling regression rejects configured rules requiring SourceKit.
-- `.swiftlint-baseline.json` records exactly four existing `AXValue` forced casts
-  in `Sources/Features/Windows/WindowPositions.swift` (baseline lines 338 and 401). Each is preceded by a
+- `.swiftlint-baseline.json` records exactly two existing `AXValue` forced casts
+  in `Sources/Features/Windows/AXWindowNativeAccess.swift`. Discovery and readback now
+  share one decoder, removing two duplicate exceptions. Each cast is preceded by a
   `CFGetTypeID(...) == AXValueGetTypeID()` guard. This narrowly accepts existing
   bridging code, not arbitrary new forced casts. Review exceptions when touching
   that code; do not blanket-regenerate the baseline to make checks pass.

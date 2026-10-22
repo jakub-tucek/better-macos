@@ -45,7 +45,7 @@ case "${0##*/}" in
             esac
         done
         if [[ "$1" == swiftc ]]; then
-            for source in Sources/Core/ActivityJournal.swift Sources/SharedUI/ActivityView.swift Sources/Features/KeepAwake/KeepAwakeFeature.swift Sources/Features/KeepAwake/KeepAwakePresentation.swift Sources/Core/Diagnostics.swift Sources/Core/LoginDiagnostics.swift Sources/Features/Bluetooth/BluetoothObservation.swift Sources/Features/Bluetooth/BluetoothProfilerProcess.swift Sources/App/BluetoothReadOnlyProbe.swift; do
+            for source in Sources/Core/ActivityJournal.swift Sources/SharedUI/ActivityView.swift Sources/Features/KeepAwake/KeepAwakeFeature.swift Sources/Features/KeepAwake/KeepAwakePresentation.swift Sources/Core/Diagnostics.swift Sources/Core/LoginDiagnostics.swift Sources/Features/Bluetooth/BluetoothObservation.swift Sources/Features/Bluetooth/BluetoothProfilerProcess.swift Sources/App/BluetoothReadOnlyProbe.swift Sources/Features/Windows/WindowExecution.swift Sources/Features/Windows/AXWindowNativeAccess.swift; do
                 inputs=0
                 for arg in "$@"; do
                     if [[ "$arg" == "$source" ]]; then inputs=$((inputs + 1)); fi
@@ -54,6 +54,7 @@ case "${0##*/}" in
             done
             if [[ "$*" == *'-o build/isolated-tests'* ]]; then
                 [[ "$*" == *'Tests/main.swift'* && "$*" != *'Sources/App/main.swift'* ]] || exit 30
+                [[ "$*" == *'Tests/WindowExecutionTests.swift'* ]] || exit 35
             else
                 [[ "$*" == *'Sources/App/main.swift'* && "$*" != *'Tests/main.swift'* ]] || exit 31
                 generated=0

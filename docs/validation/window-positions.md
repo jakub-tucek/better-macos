@@ -21,3 +21,33 @@ Display-set coverage includes negative coordinates, translation of display B, mu
 GPT-6.1 Sol independently reviewed `e283d5d..274fb06`: no critical issue; one warning remained for CoreGraphics failure/permission loss becoming empty discovery. Both paths now throw and have adapter-level regressions with injected permission/window-list functions, making no live AX or WindowServer reads. The earlier in-flight review also identified failure-dependent destination collisions: any failed write now stops the plan, and each live write validates fresh destination occupancy. New isolated checks exercise these failure paths. Global fail-closed discovery remains deliberate: even an excluded unreadable app can abort capture/restore; exclusions prevent movement, not discovery failures.
 
 Validation at `6e36672`: `bash test.sh` passed the full host/UI build, 238 isolated checks, and all seven installer fixtures. `git diff --check e283d5d HEAD` passed. No live window movement, display changes, or app relaunch occurred. Installer tests use disposable fixture applications rather than the user's installed app.
+
+## Verified execution seam · 2026-10-22
+
+Candidate 1 implementation, uncommitted working tree based on `355f8d4`:
+[Windows execution](../architecture/window-execution.md) moves production discovery,
+identity validation and verified write ordering behind a native-access seam. The
+existing `WindowPositionBackend` interface, `AXWindowPositionBackend` constructors
+and static helper tests remain. Host admission, coordinator guards and shortcut
+lifecycle are unchanged. The new deterministic native-access adapter exercises the
+actual execution algorithm, not a replacement `WindowPositionBackend` algorithm.
+
+Final `bash test.sh` passed the full signed app/UI build, packaging/compiler-input
+and rollback fixtures, **4,924 legacy isolated checks**, **10 policy tests in three
+suites**, and **13 installer fixtures**. Pinned lint and format checks passed across
+76 files; `git diff --check` passed. Logs: `build/window-execution-test.log`,
+`build/window-execution-lint.log`, `build/window-execution-format.log`.
+
+An intermediate expanded run failed a new test's incorrect expected native write
+handle after intervening discovery refreshed the cache. The fixture now changes
+handles again before moving and verifies semantic native identity equality against
+the element cached at move entry. No production behavior was changed to satisfy
+the assertion. Failure retained in
+`build/window-execution-test-alias-assertion-failure.log`. The known SwiftPM native
+build-system deprecation warnings remain visible in the passing run.
+
+No live AX discovery/writes, window movement, display changes, app launch/relaunch,
+permission requests or user preference changes were performed. Existing native
+timeout, focus, TCC and app-specific resize acceptance gaps remain open. The scan
+budget still cannot preempt an in-flight native call; this refactor adds no end-of-
+scan deadline check or write rollback.
