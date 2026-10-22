@@ -31,6 +31,7 @@ private final class ShortcutTestBackend: WindowPositionBackend {
 }
 
 func runWindowShortcutTests() {
+    runShortcutSessionTests()
     let main = WindowDisplay(id: "main", bounds: CGRect(x: 0, y: 25, width: 1201, height: 801))
     let left = WindowDisplay(id: "left", bounds: CGRect(x: -900, y: -500, width: 900, height: 700))
     let frame = CGRect(x: 100, y: 100, width: 600, height: 400)
@@ -139,9 +140,163 @@ func runWindowShortcutTests() {
     let disabledCount = backend.writes.count
     queued?(.left)
     expect(!owner.shortcutsActive && backend.writes.count == disabledCount, "shortcut opt-out unregisters and blocks stale callbacks")
+    owner.acceptsActions = { false }
+    let closedStarts = registration.starts
     owner.shortcutsEnabled = true
+    owner.retryShortcuts()
+    expect(!owner.shortcutsEnabled && registration.starts == closedStarts, "closed host blocks opt-in and retry while shortcuts are off")
+    owner.acceptsActions = { true }
+    owner.shortcutsEnabled = true
+    backend.focused?.token = "one"
     owner.stop()
     queued?(.left)
     expect(!owner.shortcutsActive && backend.writes.count == disabledCount, "stopped owner rejects shortcut work")
     expect(defaults.bool(forKey: "windows.shortcuts"), "stopping owner preserves explicit shortcut preference")
+    let stoppedStarts = registration.starts
+    owner.reconcile(ready: true, settled: true)
+    owner.retryShortcuts()
+    owner.shortcutsEnabled = false
+    expect(registration.starts == stoppedStarts && owner.shortcutsEnabled, "stopped owner cannot register, retry or change opt-in")
+    owner.start()
+    owner.reconcile(ready: true, settled: true)
+    let restartCount = backend.writes.count
+    registration.callback?(.restore)
+    expect(backend.writes.count == restartCount && owner.shortcutStatus.contains("No original"), "owner stop and restart clear session frames")
+    owner.stop()
+}
+
+/// Resource facts and traces only; production registration owns preset/rollback.
+private final class ShortcutNativeFake: WindowShortcutNativeAccess {
+    var trace: [String] = []
+    var failInstall = false
+    var failKey: UInt32?
+    var resourceOnFailure = false
+    var onInstall: (() -> Void)?
+    var callback: ((WindowShortcutAction) -> Void)?
+    func install(_ perform: @escaping (WindowShortcutAction) -> Void) -> (Bool, Int?) {
+        trace.append("install"); callback = perform
+        onInstall?()
+        return (!failInstall, !failInstall || resourceOnFailure ? 99 : nil)
+    }
+    func register(_ action: WindowShortcutAction) -> (Bool, UInt32?) {
+        trace.append("key\(action.rawValue)")
+        let succeeds = failKey != action.rawValue
+        return (succeeds, succeeds || resourceOnFailure ? action.rawValue : nil)
+    }
+    func clearCallback() { trace.append("clear"); callback = nil }
+    func unregister(_ key: UInt32) { trace.append("release\(key)") }
+    func remove(_ handler: Int) { trace.append("remove\(handler)") }
+}
+
+private func runShortcutSessionTests() {
+    for nth in 1...WindowShortcutAction.allCases.count {
+        for returnsResource in [false, true] {
+            let native = ShortcutNativeFake()
+            native.failKey = UInt32(nth); native.resourceOnFailure = returnsResource
+            let registration = WindowShortcutPresetRegistration(native: native)
+            expect(!registration.start { _ in }, "nth-key failure refuses the entire preset")
+            let released = returnsResource ? nth : nth - 1
+            let expected = ["clear", "install"] + (1...nth).map { "key\($0)" } + ["clear"] +
+                (0..<released).map { "release\($0 + 1)" } + ["remove99"]
+            expect(native.trace == expected && native.callback == nil, "nth-key rollback clears callback then every acquired key then handler")
+        }
+    }
+    for returnsResource in [false, true] {
+        let native = ShortcutNativeFake()
+        native.failInstall = true; native.resourceOnFailure = returnsResource
+        let registration = WindowShortcutPresetRegistration(native: native)
+        expect(!registration.start { _ in }, "handler install failure refuses preset")
+        expect(native.trace == ["clear", "install", "clear"] + (returnsResource ? ["remove99"] : []),
+               "install failure cleans any returned handler without registering keys")
+        native.failInstall = false; native.trace = []
+        expect(registration.start { _ in }, "production preset retries after failed install")
+        native.trace = []; registration.stop()
+        expect(native.trace == ["clear"] + WindowShortcutAction.allCases.map { "release\($0.rawValue)" } + ["remove99"],
+               "successful preset stop releases all keys before handler")
+        native.trace = []; registration.stop()
+        expect(native.trace == ["clear"], "preset stop is resource-idempotent")
+        expect(registration.start { _ in }, "successful preset can restart after stop")
+    }
+
+    let backend = ShortcutTestBackend(), native = ShortcutNativeFake()
+    let registration = WindowShortcutPresetRegistration(native: native)
+    let session = WindowShortcutSession(backend: backend, registration: registration)
+    var admitted = true
+    session.admitsAction = { admitted }; session.isExcluded = { _ in false }
+    native.failKey = 3
+    session.reconcile(enabled: true, admitted: true)
+    let failedTrace = native.trace
+    session.reconcile(enabled: true, admitted: true)
+    expect(!session.active && session.status.contains("unavailable") && native.trace == failedTrace,
+           "failed production registration suppresses repeated attempts until retry")
+    native.failKey = nil
+    session.retry(enabled: true, admitted: true)
+    expect(session.active, "session retry registers entire production preset after key conflict clears")
+    session.reconcile(enabled: true, admitted: true)
+    let stale = native.callback
+    session.invalidate(); session.reconcile(enabled: true, admitted: true)
+    stale?(.left)
+    expect(session.active && backend.writes.isEmpty, "old callback cannot act after successful re-registration")
+    native.callback?(.left)
+    expect(backend.writes.count == 1, "new callback acts after successful re-registration")
+    admitted = false
+    native.callback?(.right)
+    expect(backend.writes.count == 1, "session callback rechecks current admission")
+    admitted = true
+    session.stop(); session.reconcile(enabled: true, admitted: true)
+    let original = CGRect(x: 100, y: 100, width: 600, height: 400)
+    backend.succeeds = false; backend.focused?.frame = original
+    native.callback?(.right)
+    session.invalidate(); session.reconcile(enabled: true, admitted: true)
+    native.callback?(.restore)
+    expect(session.status.contains("could not"), "failed restore after invalidation keeps original available")
+    backend.succeeds = true
+    backend.screens = [WindowDisplay(id: "changed", bounds: CGRect(x: 0, y: 25, width: 500, height: 300))]
+    native.callback?(.restore)
+    expect(backend.writes.last == CGRect(x: 0, y: 25, width: 500, height: 300),
+           "failed move retains original and production restore fits changed display geometry")
+    let restoredCount = backend.writes.count
+    native.callback?(.restore)
+    expect(backend.writes.count == restoredCount, "successful restore consumes original")
+
+    backend.screens = [WindowDisplay(id: "main", bounds: CGRect(x: 0, y: 25, width: 1200, height: 800))]
+    // Insert in reverse lexical order: eviction is lexical, not insertion/LRU.
+    for index in (0..<64).reversed() {
+        backend.focused?.token = String(format: "%03d", index); backend.focused?.frame = original
+        native.callback?(.left)
+    }
+    backend.focused?.token = "extra"; backend.focused?.frame = original
+    native.callback?(.right)
+    backend.focused?.token = "000"
+    let cappedCount = backend.writes.count
+    native.callback?(.restore)
+    expect(backend.writes.count == cappedCount && session.status.contains("No original"), "64-frame cap evicts lexical minimum rather than oldest insertion")
+    backend.focused?.token = "001"
+    native.callback?(.restore)
+    expect(backend.writes.last == original && backend.writes.count == cappedCount + 1, "cap preserves next lexical original")
+    backend.focused?.token = "063"
+    native.callback?(.restore)
+    expect(backend.writes.count == cappedCount + 2, "cap preserves earliest inserted frame when not lexical minimum")
+    session.stop(); session.reconcile(enabled: true, admitted: true)
+    backend.focused?.token = "extra"
+    let stoppedCount = backend.writes.count
+    native.callback?(.restore)
+    expect(backend.writes.count == stoppedCount, "session stop clears originals across restart")
+
+    backend.beforeFocus = { session.invalidate(); session.reconcile(enabled: true, admitted: true) }
+    session.perform(.left)
+    backend.beforeFocus = nil
+    expect(session.active && backend.writes.count == stoppedCount, "generation change during discovery cannot reopen canceled shortcut work")
+    session.beforeMove = { session.invalidate(); session.reconcile(enabled: true, admitted: true) }
+    session.perform(.left)
+    session.beforeMove = {}
+    expect(session.active && backend.writes.count == stoppedCount, "owner cancellation callback cannot reopen an invalidated action")
+    session.invalidate()
+    native.onInstall = { session.invalidate() }
+    session.reconcile(enabled: true, admitted: true)
+    native.onInstall = nil
+    expect(!session.active && native.callback == nil && native.trace.last == "remove99",
+           "invalidation during registration cannot publish success or retain newly acquired resources")
+    session.reconcile(enabled: true, admitted: true)
+    expect(session.active, "canceled registration permits a fresh admitted attempt")
 }

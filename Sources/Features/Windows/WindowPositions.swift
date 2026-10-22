@@ -97,13 +97,10 @@ final class WindowPositions: ObservableObject {
         set {
             guard acceptsActions(), !stopped else { return }
             shortcutsValue = newValue; defaults.set(newValue, forKey: "windows.shortcuts")
-            unregisterShortcuts(); reconcileShortcuts()
+            shortcutSession.retry(enabled: shortcutsEnabled, admitted: canCapture)
         }
     }
-    private let shortcuts: WindowShortcutRegistering
-    private var shortcutAttempted = false
-    private var shortcutGeneration = 0
-    private var originalFrames: [String: CGRect] = [:]
+    private let shortcutSession: WindowShortcutSession
     var automatic: Bool {
         get { automaticValue }
         set { guard acceptsActions() else { return }; automaticValue = newValue; defaults.set(newValue, forKey: "windows.auto"); pending = false; generation += 1 }
@@ -145,7 +142,7 @@ final class WindowPositions: ObservableObject {
          shortcuts: WindowShortcutRegistering = WindowShortcutRegistration(),
          schedule: @escaping (@escaping () -> Void) -> Void = { DispatchQueue.main.asyncAfter(deadline: .now() + 0.01, execute: $0) }) {
         self.backend = backend; self.defaults = defaults
-        self.shortcuts = shortcuts
+        shortcutSession = WindowShortcutSession(backend: backend, registration: shortcuts)
         shortcutsValue = defaults.bool(forKey: "windows.shortcuts")
         self.schedule = schedule
         automaticValue = defaults.bool(forKey: "windows.auto")
@@ -154,6 +151,18 @@ final class WindowPositions: ObservableObject {
         selectedValue = defaults.string(forKey: "windows.selected") ?? ""
         if let data = defaults.data(forKey: "windows.layouts") {
             layouts = (try? JSONDecoder().decode([WindowLayout].self, from: data)) ?? []
+        }
+        shortcutSession.admitsAction = { [weak self] in self.map { $0.shortcutsEnabled && $0.canCapture } ?? false }
+        shortcutSession.isExcluded = { [weak self] app in self?.excluded.contains(app) ?? true }
+        shortcutSession.beforeMove = { [weak self] in
+            // Manual movement supersedes queued layout restoration, without reopening admission.
+            guard let self else { return }
+            self.pending = false; self.generation += 1
+        }
+        shortcutSession.onChange = { [weak self] in
+            guard let self else { return }
+            self.shortcutsActive = self.shortcutSession.active
+            self.shortcutStatus = self.shortcutSession.status
         }
     }
 
@@ -169,7 +178,7 @@ final class WindowPositions: ObservableObject {
     }
     func stop() {
         stopped = true; invalidate()
-        originalFrames.removeAll()
+        shortcutSession.stop()
         onWake = nil
         WindowConnectionNotifications.remove(self)
         let center = NSWorkspace.shared.notificationCenter
@@ -178,7 +187,7 @@ final class WindowPositions: ObservableObject {
         wakeObserver = nil; sleepObserver = nil
     }
     deinit { stop() }
-    func invalidate() { ready = false; pending = false; generation += 1; unregisterShortcuts() }
+    func invalidate() { ready = false; pending = false; generation += 1; shortcutSession.invalidate() }
     func wake() { invalidate(); pending = automatic && !paused }
     func connectionChanged() { wake(); onWake?() }
     func reconcile(ready: Bool, settled: Bool) {
@@ -200,56 +209,14 @@ final class WindowPositions: ObservableObject {
     func requestPermission() { guard acceptsActions() else { return }; backend.requestPermission() }
     var permitted: Bool { backend.permitted }
     var canCapture: Bool { acceptsActions() && ready && !stopped && permitted }
-    private func unregisterShortcuts() {
-        shortcutGeneration += 1
-        shortcuts.stop(); shortcutsActive = false; shortcutAttempted = false
-    }
     func retryShortcuts() {
         guard acceptsActions(), !stopped else { return }
-        unregisterShortcuts(); reconcileShortcuts()
+        shortcutSession.retry(enabled: shortcutsEnabled, admitted: canCapture)
     }
     private func reconcileShortcuts() {
-        guard shortcutsEnabled, canCapture else {
-            unregisterShortcuts()
-            shortcutStatus = shortcutsEnabled ? "Waiting for Accessibility access and stable displays." : "Shortcuts are off."
-            return
-        }
-        guard !shortcutAttempted else { return }
-        shortcutAttempted = true
-        let ticket = shortcutGeneration
-        shortcutsActive = shortcuts.start { [weak self] action in
-            guard let self, self.shortcutGeneration == ticket, self.shortcutsActive else { return }
-            self.performShortcut(action)
-        }
-        shortcutStatus = shortcutsActive ? "Ready · acts on the focused window." : "Shortcuts unavailable. Quit other window managers, then retry."
+        shortcutSession.reconcile(enabled: shortcutsEnabled, admitted: canCapture)
     }
-    func performShortcut(_ action: WindowShortcutAction) {
-        guard shortcutsEnabled, shortcutsActive, canCapture else { return }
-        let window: PositionedWindow
-        do {
-            guard let focused = try backend.focusedWindow(), focused.supported, !excluded.contains(focused.app) else {
-                shortcutStatus = "Focus a supported window in an app that is not excluded."; return
-            }
-            window = focused
-        } catch { shortcutStatus = "Window discovery failed: \(error.localizedDescription)"; return }
-        let displays = backend.displays()
-        guard let frame = action.destination(for: window.frame, displays: displays, original: originalFrames[window.token]) else {
-            shortcutStatus = action == .restore ? "No original size saved for this window." : "No available destination display."; return
-        }
-        guard canCapture, displays == backend.displays() else { return }
-        // A manual move supersedes any queued automatic layout restoration.
-        pending = false; generation += 1
-        if action != .restore && originalFrames[window.token] == nil {
-            if originalFrames.count >= 64, let key = originalFrames.keys.sorted().first { originalFrames.removeValue(forKey: key) }
-            originalFrames[window.token] = window.frame
-        }
-        if backend.moveFocused(window, to: frame) {
-            if action == .restore { originalFrames.removeValue(forKey: window.token) }
-            shortcutStatus = "\(action.title) applied."
-        } else {
-            shortcutStatus = "Window could not reach the requested size or position. The app may limit resizing; try Restore original size."
-        }
-    }
+    func performShortcut(_ action: WindowShortcutAction) { shortcutSession.perform(action) }
     func canRestore(_ id: String) -> Bool {
         guard canCapture, let layout = layouts.first(where: { $0.id == id }) else { return false }
         return layout.displays.map(\.id).sorted() == backend.displays().map(\.id).sorted()

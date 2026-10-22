@@ -116,14 +116,54 @@ protocol WindowShortcutRegistering: AnyObject {
     func stop()
 }
 
-/// Registration is all-or-nothing: never leave a partial preset after a conflict.
-final class WindowShortcutRegistration: WindowShortcutRegistering {
-    private var keys: [EventHotKeyRef] = []
-    private var handler: EventHandlerRef?
-    private var perform: ((WindowShortcutAction) -> Void)?
+/// Primitive resources only; preset ordering and rollback belong to registration.
+protocol WindowShortcutNativeAccess: AnyObject {
+    associatedtype Key
+    associatedtype Handler
+    func install(_ perform: @escaping (WindowShortcutAction) -> Void) -> (Bool, Handler?)
+    func register(_ action: WindowShortcutAction) -> (Bool, Key?)
+    func clearCallback()
+    func unregister(_ key: Key)
+    func remove(_ handler: Handler)
+}
+
+/// Registration is all-or-nothing, including resources returned on native failure.
+final class WindowShortcutPresetRegistration<Native: WindowShortcutNativeAccess>: WindowShortcutRegistering {
+    private let native: Native
+    private var keys: [Native.Key] = []
+    private var handler: Native.Handler?
+    init(native: Native) { self.native = native }
     func start(_ perform: @escaping (WindowShortcutAction) -> Void) -> Bool {
         stop()
+        let (installed, handler) = native.install(perform)
+        self.handler = handler
+        guard installed, handler != nil else { stop(); return false }
+        for action in WindowShortcutAction.allCases {
+            let (registered, key) = native.register(action)
+            if let key { keys.append(key) }
+            guard registered, key != nil else { stop(); return false }
+        }
+        return true
+    }
+    func stop() {
+        native.clearCallback()
+        keys.forEach { native.unregister($0) }; keys.removeAll()
+        if let handler { native.remove(handler) }; handler = nil
+    }
+    deinit { stop() }
+}
+
+typealias WindowShortcutRegistration = WindowShortcutPresetRegistration<CarbonWindowShortcutAccess>
+extension WindowShortcutPresetRegistration where Native == CarbonWindowShortcutAccess {
+    convenience init() { self.init(native: CarbonWindowShortcutAccess()) }
+}
+
+/// Carbon decoding and C trampoline, without preset or rollback policy.
+final class CarbonWindowShortcutAccess: WindowShortcutNativeAccess {
+    private var perform: ((WindowShortcutAction) -> Void)?
+    func install(_ perform: @escaping (WindowShortcutAction) -> Void) -> (Bool, EventHandlerRef?) {
         self.perform = perform
+        var handler: EventHandlerRef?
         var type = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let status = InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
             guard let event, let context else { return OSStatus(eventNotHandledErr) }
@@ -133,23 +173,18 @@ final class WindowShortcutRegistration: WindowShortcutRegistering {
                   identifier.signature == 0x57494E53, let action = WindowShortcutAction(rawValue: identifier.id) else {
                 return OSStatus(eventNotHandledErr)
             }
-            Unmanaged<WindowShortcutRegistration>.fromOpaque(context).takeUnretainedValue().perform?(action)
+            Unmanaged<CarbonWindowShortcutAccess>.fromOpaque(context).takeUnretainedValue().perform?(action)
             return noErr
         }, 1, &type, Unmanaged.passUnretained(self).toOpaque(), &handler)
-        guard status == noErr else { stop(); return false }
-        for action in WindowShortcutAction.allCases {
-            var key: EventHotKeyRef?
-            let result = RegisterEventHotKey(action.key, action.modifiers,
-                EventHotKeyID(signature: 0x57494E53, id: action.rawValue), GetApplicationEventTarget(), 0, &key)
-            if let key { keys.append(key) }
-            guard result == noErr, key != nil else { stop(); return false }
-        }
-        return true
+        return (status == noErr, handler)
     }
-    func stop() {
-        perform = nil
-        keys.forEach { UnregisterEventHotKey($0) }; keys.removeAll()
-        if let handler { RemoveEventHandler(handler) }; handler = nil
+    func register(_ action: WindowShortcutAction) -> (Bool, EventHotKeyRef?) {
+        var key: EventHotKeyRef?
+        let status = RegisterEventHotKey(action.key, action.modifiers,
+            EventHotKeyID(signature: 0x57494E53, id: action.rawValue), GetApplicationEventTarget(), 0, &key)
+        return (status == noErr, key)
     }
-    deinit { stop() }
+    func clearCallback() { perform = nil }
+    func unregister(_ key: EventHotKeyRef) { UnregisterEventHotKey(key) }
+    func remove(_ handler: EventHandlerRef) { RemoveEventHandler(handler) }
 }

@@ -179,8 +179,10 @@ claim that the baseline's release blockers are fixed.
   gates restoration; full-screen windows and Space assignments remain outside scope.
 - **Keyboard tiling:** [WindowShortcuts.swift](../Sources/Features/Windows/WindowShortcuts.swift)
   provides opt-in Rectangle-style halves, quarters, maximize, center, restore and
-  display movement without another vendor. The same owner gates focused-window
-  moves and unregisters Carbon shortcuts during invalidation/stop. See
+  display movement without another vendor. [WindowShortcutSession.swift](../Sources/Features/Windows/WindowShortcutSession.swift)
+  owns registration generations/retry, action outcomes and bounded original-frame
+  lifetime. Production preset orchestration handles rollback over a low-level Carbon
+  adapter. The owner retains admission and queued-layout cancellation. See
   [controls, lifecycle and validation](validation/ui-window-shortcuts.md).
 
 ### Clipboard · `clipboard`

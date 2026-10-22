@@ -101,3 +101,43 @@ created. App build/signing ran through the existing staged replacement path.
 No installed-app launch, live global shortcut registration, window movement,
 permission change or hardware action was performed. These checks do not close
 the project's existing hardware/VoiceOver acceptance gaps.
+
+## Shortcut-session extraction · 2026-10-22
+
+The candidate-2 working tree based on `ff1e046` moves registration attempt/generation,
+retry, stale callback rejection, action outcome state and bounded original-frame
+memory into `WindowShortcutSession`. Owner UI properties and `windows.shortcuts`
+remain unchanged. Host admission/readiness and explicit queued-layout cancellation
+remain in `WindowPositions`; verified writes still use the existing execution module.
+See [ownership and primitive registration seam](../architecture/window-execution.md#shortcut-session).
+
+`Tests/WindowShortcutTests.swift` retains the original 36 checks and adds production
+session/preset coverage. Every nth-key failure checks exact cleanup order, both
+without and with a resource returned on failure. Install failure, successful stop,
+retry and idempotent cleanup use the low-level deterministic adapter. Session checks
+cover stale callbacks after successful re-registration, failed move/restore memory,
+changed-display restore, the 64-frame cap with lexical rather than insertion-order
+eviction, stop/restart and invalidation during discovery. Owner checks retain manual
+movement superseding queued layouts, closed-host guards and stopped-owner refusal.
+
+No default test installs live global shortcuts. Native Carbon event delivery, real
+focus races and multi-app AX movement remain acceptance gaps; no app launch or live
+keyboard/window action is authorized by these results.
+
+Validation on this uncommitted candidate-2 tree:
+
+- `bash test.sh`: **5,007 isolated checks**, **10 policy tests in three suites**,
+  **160 diagnostics**, **31 reader**, **39 permission-context**, **190 Bluetooth
+  observation**, C gesture checks, signed app build, packaging/build fixtures and
+  **13 installer scenarios** passed. Includes the original shortcut checks and
+  candidate-1 verified-execution tests.
+- Pinned lint and format checks, script syntax and `git diff --check` passed.
+- Logs: `build/candidate2-test-final.log`, `build/candidate2-lint.log`,
+  `build/candidate2-format.log`, `build/candidate2-diff-check.log`.
+- The earlier `build/candidate2-test.log` stopped at the compiler's input-modified
+  check because a test file was edited during compilation. It is not a full-suite
+  pass. The final run used frozen sources. SwiftPM's existing `--build-system native`
+  deprecation warnings remain.
+
+No branch, worktree, folder, vendor, alternate build root or commit was created.
+Build/signing used the existing `build/` path; no app launch or live registration.

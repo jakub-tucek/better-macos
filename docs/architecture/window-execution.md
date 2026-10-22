@@ -32,9 +32,35 @@ Existing coordinator tests and read-only native-constructor regressions remain.
 ## Ownership and unchanged limits
 
 Host admission stays host-owned. `WindowPositions` retains saved-layout matching,
-collision-free planning, exclusions, display/readiness/generation guards, queued
-turns and shortcut lifecycle. This slice does not extract shortcut sessions or
-change Bluetooth, preferences, source packages or vendors.
+collision-free planning, exclusions, display/readiness/generation guards and queued
+turns. The shortcut session below uses the same backend, without duplicating its
+geometry correlation, identity checks or verified write policies. Bluetooth,
+preferences, source packages and vendors remain unchanged.
+
+## Shortcut session
+
+`WindowShortcutSession` owns registration attempt suppression, explicit retry,
+registration generations and stale callback rejection together with action outcome
+state and original-frame lifetime. It remembers the first frame before an attempted
+move, even a failed/partial one. At 64 entries it evicts the lexically smallest token,
+preserving the previous deterministic policy rather than introducing LRU. Successful
+restore consumes the frame; invalidation keeps frames; stop clears them. Destination
+and changed-display fitting still use `WindowShortcutAction.destination`.
+
+`WindowPositions` keeps the existing UI properties, opt-in preference and constructor.
+It projects session state, supplies current host/readiness/permission admission and
+exclusions, and explicitly cancels queued layout restoration immediately before a
+manual move. The session rechecks admission and its generation after discovery;
+re-registering does not authorize an old callback or an invalidated action.
+
+`WindowShortcutPresetRegistration<Native>` owns the all-or-nothing preset, acquisition
+order and cleanup: clear callback, release acquired keys in registration order, then
+remove the handler. Even a resource returned with a failing status is cleaned up.
+`CarbonWindowShortcutAccess` owns only Carbon primitives and the C event trampoline.
+The existing `WindowShortcutRegistration()` name specializes that production
+orchestration for Carbon. A deterministic primitive adapter exercises the same
+orchestration in tests, with no live key registration. The existing whole-registration
+owner fake remains useful for host integration tests.
 
 Whole-desktop fail-closed discovery remains deliberate, including unreadable apps
 that the coordinator later excludes. Discovery retains its original deferred

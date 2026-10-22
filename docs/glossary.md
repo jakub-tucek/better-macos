@@ -15,3 +15,6 @@ _Avoid_: UI disabled state
 **Verified window movement**:
 A requested position and size change whose resulting geometry has been read back and matches the request. Failure does not imply that the window stayed unchanged.
 _Avoid_: Atomic window move
+
+**Shortcut session**:
+The loaded feature's keyboard-control lifetime, including its reserved shortcuts and original window frames retained for explicit restore. Readiness loss releases the shortcuts but keeps originals; stopping the feature ends the session and discards them.
