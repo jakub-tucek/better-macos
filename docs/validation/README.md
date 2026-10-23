@@ -7,6 +7,7 @@ For current controls and defaults, use the [usage guide](../usage.md).
 
 | Recent work | Recorded result | Still open |
 | --- | --- | --- |
+| [Unified Quick actions styling](ui-window-shortcuts.md#unified-quick-action-styling--2026-10-23) | 5,168 isolated checks, supporting suites, 13 installer scenarios; lint/format/whitespace and rendered fixtures passed | Live interaction, VoiceOver, hardware |
 | [Opposite-half entry across neighboring displays](ui-window-shortcuts.md#opposite-half-entry-correction) | 5,168 isolated checks, supporting suites, 13 installer scenarios; lint/format/whitespace passed | Live multi-display movement |
 | [Keep awake palette and shared layout](ui-window-shortcuts.md#keep-awake-palette-and-shared-layout--2026-10-23) | 5,159 isolated checks plus supporting suites; injected assertions and native panel fixtures | Physical sleep, live interaction, VoiceOver |
 | [Retained right-click panel](ui-window-shortcuts.md#right-click-panel-redesign--2026-10-23) | 5,149 isolated checks plus supporting suites | User-reported compositing smoothness |

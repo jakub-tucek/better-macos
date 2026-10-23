@@ -1,6 +1,6 @@
 # Development roadmap
 
-Plan started at `2620a32` (2026-10-15); current source checked through `1434620`
+Plan started at `2620a32` (2026-10-15); current source checked through `d6b216f`
 on 2026-10-23. Implementation status is separated from acceptance below.
 Pinned developer tooling, the first Clipboard policy SwiftPM slice and partial static
 built-in registration, mechanical source organization and a CI workflow are available;
@@ -12,6 +12,8 @@ acceptance/failures in [validation](validation/README.md). No release date or ta
 ## Recent implemented work
 
 - Tabbed Settings and a quieter editable popup, with responsive Displays/Windows layout.
+- Shared headings, neutral cards, icon badges and launch rows across Quick actions,
+  Settings, setup, right-click menu and palettes; adaptive widget galleries.
 - Opt-in Rectangle-style window shortcuts and a captured-target Window actions palette.
   Repeated left/right halves now traverse neighboring displays with opposite-half entry.
 - A retained right-click panel and Keep awake palette using shared presentation/tiles.

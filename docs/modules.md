@@ -1,6 +1,6 @@
 # Built-in modules and source map
 
-Current source map, checked against `1434620` on 2026-10-23. For controls, defaults,
+Current source map, checked against `d6b216f` on 2026-10-23. For controls, defaults,
 installation and privacy, use the [usage guide](usage.md). For test results and open
 release gates, use [validation](validation/README.md). Directory organization is
 not a completed lifecycle refactor; see [move evidence](validation/source-organization.md).

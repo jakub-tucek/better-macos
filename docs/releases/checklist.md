@@ -5,7 +5,7 @@ Status: preparation in progress. No release tag or publication authorized yet.
 ## Current status · 2026-10-23
 
 `Info.plist` still declares **0.4 / build 4**; “1.0” is a release goal. Current
-source through `1434620` includes tabbed Settings, Window actions and Keep awake
+source through `d6b216f` includes shared Quick actions styling, tabbed Settings, Window actions and Keep awake
 palettes, foreground-only shortcut discovery, and opposite-half cross-display
 tiling. See [recent recorded checks](../validation/README.md#current-reading-order--2026-10-23).
 The older integration records below are historical, not final-candidate proof.

@@ -2,7 +2,7 @@
 
 [Overview and install command](../README.md) · [All documentation](README.md)
 
-Current behavior checked against `1434620` on 2026-10-23. These are usage
+Current behavior checked against `d6b216f` on 2026-10-23. These are usage
 instructions, not a new live acceptance run. [Known validation gaps](validation/README.md).
 
 ## Start here
