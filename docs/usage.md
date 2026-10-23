@@ -2,7 +2,7 @@
 
 [Overview and install command](../README.md) · [All documentation](README.md)
 
-Current behavior checked against `d6b216f` on 2026-10-23. These are usage
+Updated for the onboarding feedback changes on 2026-10-23. These are usage
 instructions, not a new live acceptance run. [Known validation gaps](validation/README.md).
 
 ## Start here
@@ -67,11 +67,19 @@ widgets never preview copied content.
 
 Setup starts from current choices. It introduces one feature at a time: what it
 does, what enabling it can change, and which access it needs. **Enable & configure**
-opens that feature's settings; **Skip this feature** stages it off and continues.
+checks required access before opening its settings; **Skip this feature** stages it off and continues.
 Back keeps configuration drafts. Access cards offer a direct Settings/request button
 and refresh when you return to the app. Accessibility is needed for window actions,
 or enabled edge-matching, hold-to-quit and desktop-switching controls. Missing access
-can be set up later. A final access summary precedes quick actions and review.
+blocks progression until granted or the feature is skipped. A final access summary precedes quick actions and review.
+
+**Easy setup · enable all** selects every feature, then opens the access summary.
+New, unsaved choices recommend window shortcuts/restoration, edge matching, automatic
+audio routing, Bluetooth reconnect/audio switching, Hold to quit, animation controls,
+compact menu spacing and automatic Clipboard recording. Chevron/icon hiding and disk
+history default off. Saved choices prefill repeat setup, including explicit Off values;
+selecting Hold to quit explicitly turns it on. Suggested actions start with Keep awake,
+Displays and Clipboard. Window tiling and pointer previews explain the behavior.
 
 Setup opens centered on the screen under the pointer, up to 1040 × 844 points,
 with wider content and a screen-bounded frame. The app shows one primary surface
@@ -82,14 +90,14 @@ from the review page without another confirmation dialog.
 Only **Finish** applies configuration; Cancel
 discards drafts, not macOS permission grants. Setup does not move windows, rearrange
 displays, apply Mouse tuning, or start timed awake sessions. Enabling features can
-start reviewed app-awake rules, Bluetooth reconnect, or automatic audio routing;
+start reviewed app-awake rules, Bluetooth reconnect, automatic audio routing or Clipboard recording;
 animation changes may restart Dock/Finder. Finish reports per-feature outcomes
 and pending access/hardware. Mouse still requires explicit **Apply**.
 
 ## Window shortcuts
 
 Enable **Displays → Window positions → Window keyboard shortcuts**. Shortcuts
-default off and need Accessibility plus host/display readiness. Rectangle is not
+are recommended on during new setup and need Accessibility plus host/display readiness. Rectangle is not
 required; these are first-party controls using a Rectangle-style preset.
 
 | Keys | Action |
@@ -131,9 +139,9 @@ snapping, custom bindings, full-screen control, or Space assignments are provide
   changes require confirmation; changes last for the login session. Recovery does
   not depend on a ready watchdog, but new display disabling does.
 - **Saved window layouts:** named layouts are stored in preferences, including
-  window titles. Automatic wake/reconnect restoration defaults off. Missing,
+  window titles. Setup recommends automatic wake/reconnect restoration on. Missing,
   ambiguous, excluded, unsupported, and failed windows are reported separately.
-- **Audio:** automatic routing starts off and polls device changes every two
+- **Audio:** setup recommends automatic routing on; it polls device changes every two
   seconds. Manual changes pause that direction until a device-list change or Resume.
 - **Bluetooth:** choose paired targets in Sound & connections. Native macOS
   inventory can be shown when helper reads disagree, but cannot authorize a
@@ -145,7 +153,7 @@ snapping, custom bindings, full-screen control, or Space assignments are provide
   Ending permits normal sleep, not immediate sleep. Timed sessions do not survive
   relaunch. Lid-closed operation is not promised.
 - **Clipboard:** select an entry, then press Return or click **Copy** to copy and
-  dismiss without pasting. Capture starts paused each launch; see privacy below.
+  dismiss without pasting. Capture follows the saved automatic-recording choice; see privacy below.
 - **Hold to quit:** default three seconds, configurable from 1–99. Releasing early,
   switching apps, or clicking cancels. It requests normal quit, preserving save
   prompts; other quit commands remain unchanged.
@@ -156,13 +164,16 @@ snapping, custom bindings, full-screen control, or Space assignments are provide
 - **Animations:** turning the preset off restores prior settings. Effects vary by
   app and do not suppress all Mission Control/Control Center motion. Fast desktop
   switching targets horizontal Space gestures, not the Mission Control overview.
-- **Menu bar:** spacing and hiding start off. ⌘-drag the divider left of the chevron
+- **Menu bar:** setup recommends compact spacing on and chevron/icon hiding off. ⌘-drag the divider left of the chevron
   and extra icons left of the divider. Click the chevron to hide/reveal; quitting
   reveals icons. Spacing may require app relaunch/logout. No notch-overflow panel.
 
 ## Clipboard privacy and retention
 
-Capture starts **paused each launch**. History defaults to memory-only, with at most
+**Record automatically when Clipboard starts** controls startup capture and is recommended
+on in new setup. Finish applies this choice; browsing setup never starts capture.
+Pausing the current session does not change the saved startup choice. Starting capture
+skips preexisting clipboard contents. History defaults to memory-only, with at most
 100 entries, UTF-8 text up to **64 KiB**, and **PNG only**, up to **4 MiB per image**
 and **32 MiB total image bytes**. Pins bypass age expiry, not hard caps.
 

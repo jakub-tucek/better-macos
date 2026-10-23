@@ -68,6 +68,7 @@ private final class UIWindows: WindowPositionBackend {
 }
 
 func runUITests() throws {
+    runSetupRecommendationTests()
     try runBluetoothErrorRecoveryTests()
     runBuiltinCatalogTests()
     try runRegisteredOwnerChoiceTests()
@@ -124,9 +125,14 @@ func runUITests() throws {
     let draft = SetupDraft(current: model, defaults: defaults)
     draft.step = .feature(.windows)
     draft.choose(.windows, enabled: true)
-    expect(draft.step == .configure(.windows) && draft.selected.contains(.windows),
-           "onboarding Yes leads directly to that feature's staged configuration")
-    draft.back(); draft.choose(.windows, enabled: false)
+    expect(draft.step == .access(.windows) && draft.selected.contains(.windows),
+           "onboarding Yes requests required access before configuration")
+    draft.next()
+    expect(draft.step == .access(.windows), "missing required access cannot advance to configuration")
+    draft.accessibilityGranted = true; draft.next()
+    expect(draft.step == .configure(.windows), "granted access advances to feature configuration")
+    draft.back(); draft.back()
+    draft.choose(.windows, enabled: false)
     expect(draft.step == .feature(.monitors) && !draft.selected.contains(.windows),
            "onboarding Skip leaves the feature disabled in the draft and skips its configuration")
     expect(liveMutations == 0 && model.enabledModules.isEmpty,
@@ -190,7 +196,8 @@ func runUITests() throws {
     clipboardOnly.widgets.add(.clipboard)
     var finished: [String] = []
     hostModel.onFinishSetup(clipboardOnly) { finished = $0 }
-    expect(!finished.isEmpty && !history.recording && !history.persistent && board.reads == 0 && archive.writes == 0, "actual host Finish selecting Clipboard and its widget never captures or enables persistence")
+    expect(!finished.isEmpty && history.recording && !history.persistent && board.reads == 0 && archive.writes == 0,
+           "actual host Finish enables reviewed automatic recording without reading old clipboard contents or enabling disk storage")
     expect(defaults.integer(forKey: UISettingsStore.completionKey) == 1 && hostModel.widgetLayout.entries.first?.known == .clipboard, "actual Finish persists completion independently from features and widget layout")
     history.setRecording(true)
     let entriesBeforeRemoval = history.entries
@@ -233,6 +240,44 @@ func runUITests() throws {
     runSetupDesktopPermissionTests()
 }
 
+private func runSetupRecommendationTests() {
+    let suite = "better-macos.setup-recommendations.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let model = DashboardModel()
+    let draft = SetupDraft(current: model, defaults: defaults)
+    let value = draft.configuration
+    expect(value.windowsAutomatic && !value.windowsPaused && value.windowsShortcuts == true && value.matchEdges,
+           "new setup recommends window shortcuts, automatic restore and edge matching")
+    expect(value.audioAutomatic && value.bluetoothAutomatic && value.switchAudio && value.quitGuard && value.animations && value.spaces,
+           "new setup recommends the selected features' useful operating policies")
+    expect(value.compactMenu && !value.hideMenu && value.clipboardAutomaticRecording == true && !value.clipboardPersistence,
+           "recommendations keep chevron off and clipboard disk storage off independently of automatic recording")
+    draft.easySetup()
+    expect(draft.selected == Set(AppModule.allCases) && draft.step == .permissions && !draft.controls.clipboardRecording,
+           "Easy setup selects every feature but remains a draft at the access gate")
+    draft.next()
+    expect(draft.step == .permissions, "Easy setup cannot continue until required access is granted or features skipped")
+    draft.accessibilityGranted = true; draft.bluetoothGranted = true; draft.next()
+    expect(draft.step == .widgets, "granted access unlocks the Easy setup review flow")
+    defaults.set(false, forKey: "audio.automatic"); defaults.set(false, forKey: "windows.auto")
+    defaults.set(true, forKey: "menuBar.hiding"); defaults.set(9, forKey: "clipboard.days")
+    let again = SetupDraft(current: model, defaults: defaults)
+    expect(!again.configuration.audioAutomatic && !again.configuration.windowsAutomatic && again.configuration.hideMenu && again.configuration.clipboardDays == 9,
+           "repeat setup prefills saved values including explicit Off instead of resetting to recommendations")
+    let board = UIClipboard(), archive = UIArchive()
+    let history = ClipboardHistory(board: board, archive: archive, source: { "fixture" })
+    let owner = ClipboardModule(defaults: defaults, history: history)
+    owner.setAutomaticRecording(true)
+    expect(owner.automaticRecording && history.recording && board.reads == 0, "automatic recording saves its startup choice without capturing the preexisting clipboard")
+    board.changeCount += 1; history.poll()
+    expect(history.entries.count == 1 && archive.writes == 0 && !history.persistent,
+           "automatic recording captures subsequent copies in memory without disk opt-in")
+    owner.setAutomaticRecording(false)
+    owner.acceptsActions = { false }; owner.setAutomaticRecording(true)
+    expect(!owner.automaticRecording && !history.recording, "automatic-recording changes obey host admission and retain Off")
+}
+
 private func runBuiltinCatalogTests() {
     expect(BuiltinFeatures.definitions.map(\.module) == AppModule.allCases, "catalog registers every stable feature exactly once without changing setup order")
     expect(AppModule.allCases.map(\.rawValue) == ["monitors", "arrangement", "bluetooth", "audio", "spaces", "menuBar", "quitGuard", "keepAwake", "windows", "clipboard", "mouse"], "feature persistence IDs remain stable")
@@ -242,7 +287,7 @@ private func runBuiltinCatalogTests() {
     expect(AppModule.allCases.map(\.dashboardFeature) == destinations, "catalog preserves shared display and keyboard navigation")
     expect(Set(BuiltinFeatures.widgets.map(\.kind)) == Set(WidgetKind.allCases) && BuiltinFeatures.widgets.count == 6, "catalog registers each widget exactly once")
     expect(WidgetKind.allCases.map(\.rawValue) == ["keepAwake", "audio", "displays", "windows", "clipboard", "bluetooth"], "widget persistence IDs remain stable")
-    expect(WidgetLayout.suggested(for: Set(AppModule.allCases)).entries.map(\.kind) == ["keepAwake", "audio", "displays", "windows", "clipboard", "bluetooth"], "catalog preserves suggestion order independently of feature order")
+    expect(WidgetLayout.suggested(for: Set(AppModule.allCases)).entries.map(\.kind) == ["keepAwake", "displays", "clipboard", "audio", "windows", "bluetooth"], "catalog prioritizes Keep awake, Displays and Clipboard before other actions")
     expect(WidgetKind.allCases.map(\.module) == [.keepAwake, .audio, .monitors, .windows, .clipboard, .bluetooth], "widgets retain distinct owning feature choices")
     expect(WidgetKind.windows.title == "Window layouts" && WidgetKind.displays.title == "Displays", "widget labels are not inferred from feature titles")
     expect(WidgetLayout.suggested(for: [.arrangement]).entries.isEmpty, "arrangement alone does not imply the monitor widget")
@@ -447,10 +492,12 @@ func renderReleaseUIFixtures(directory: String? = nil) throws {
         let wizard = mount(AnyView(SetupWizard(model: model, draft: draft, close: {})), dark: dark)
         try snapshot(wizard, "wizard-audio-empty-\(suffix)"); wizard.orderOut(nil)
         draft.selected = Set(AppModule.allCases); draft.syncSelection()
-        for (name, step) in [("welcome", SetupDraft.Step.welcome), ("feature", .feature(.windows)),
-                             ("configure", .configure(.monitors)), ("permissions", .permissions), ("review", .review)] {
+        for (name, step) in [("welcome", SetupDraft.Step.welcome), ("feature", .feature(.windows)), ("pointer", .feature(.arrangement)),
+                             ("configure", .configure(.monitors)), ("access", .access(.bluetooth)), ("permissions", .permissions), ("review", .review), ("results", .results)] {
             draft.step = step
-            let screen = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 700), styleMask: [.titled], backing: .buffered, defer: false)
+            draft.outcomes = Dictionary(uniqueKeysWithValues: AppModule.allCases.map { ($0, FeatureSetupOutcome.applied("Ready.")) })
+            draft.outcomes[.windows] = .pendingHardware("Save your first layout in Displays settings.")
+            let screen = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1040, height: 820), styleMask: [.titled], backing: .buffered, defer: false)
             screen.contentView = NSHostingView(rootView: SetupWizard(model: model, draft: draft, close: {}))
             screen.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
             settle(screen)
@@ -1192,6 +1239,7 @@ private func runNativeUIInteractionTests() {
            "actual repeated Run setup action reuses the existing native setup session")
     draft.next(); draft.setSelected(.spaces, enabled: true)
     draft.controls.onAnimationsChanged(true)
+    draft.controls.onSpacesChanged(false) // This fixture exercises animation Apply, not permission-gated input.
     draft.step = .review
     expect(draft.finish(using: model.onFinishSetup), "production confirmed Finish action admits the real host application sequence")
     let startDeadline = Date().addingTimeInterval(2)

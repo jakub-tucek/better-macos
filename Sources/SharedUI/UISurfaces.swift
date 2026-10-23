@@ -89,6 +89,11 @@ struct WidgetLayout: Codable, Equatable {
         var seen = Set<String>()
         entries = entries.filter { !$0.kind.isEmpty && seen.insert($0.kind).inserted }
     }
+    mutating func prioritizeBasics() {
+        let priority: [WidgetKind] = [.keepAwake, .displays, .clipboard]
+        let first = priority.compactMap { kind in entries.first { $0.known == kind } }
+        entries = first + entries.filter { entry in !first.contains { $0.id == entry.id } }
+    }
     mutating func add(_ kind: WidgetKind) {
         guard !entries.contains(where: { $0.kind == kind.rawValue }) else { return }
         entries.append(WidgetEntry(kind))

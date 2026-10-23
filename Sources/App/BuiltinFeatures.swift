@@ -28,17 +28,17 @@ enum BuiltinFeatures {
         .init(module: .quitGuard, title: "Hold to quit", detail: "Hold ⌘Q before quitting, with the app name and a countdown.", feature: .keyboard, settings: .input, settingsOrder: 0),
         .init(module: .keepAwake, title: "Keep awake", detail: "Timed and app-based awake sessions, with optional display wake.", feature: .keepAwake, settings: .system, settingsOrder: 2),
         .init(module: .windows, title: "Window positions", detail: "Keyboard tiling and named layouts with optional reconnect and wake restoration.", feature: .windows, settings: .displays, settingsOrder: 2),
-        .init(module: .clipboard, title: "Clipboard", detail: "Local history, search, pins, and optional disk retention. Recording starts paused.", feature: .clipboard, settings: .clipboard, settingsOrder: 0),
+        .init(module: .clipboard, title: "Clipboard", detail: "Local history, search, pins, automatic recording and optional disk retention.", feature: .clipboard, settings: .clipboard, settingsOrder: 0),
         .init(module: .mouse, title: "Mouse", detail: "Opt-in mouse acceleration and tracking, with runtime restoration.", feature: .mouse, settings: .input, settingsOrder: 1)
     ]
 
     // Persisted-layout migration / Restore suggested order, independent of enum order.
     static let widgets: [BuiltinWidgetDefinition] = [
         .init(kind: .keepAwake, module: .keepAwake, title: "Keep awake", detail: "Start or stop an idle-sleep prevention session."),
-        .init(kind: .audio, module: .audio, title: "Audio", detail: "Switch output and microphone without opening Settings."),
         .init(kind: .displays, module: .monitors, title: "Displays", detail: "Switch monitors, arrange screens, and restore windows."),
-        .init(kind: .windows, module: .windows, title: "Window layouts", detail: "Restore named layouts on compatible displays."),
         .init(kind: .clipboard, module: .clipboard, title: "Clipboard", detail: "Open private history; copied content is never previewed here."),
+        .init(kind: .audio, module: .audio, title: "Audio", detail: "Switch output and microphone without opening Settings."),
+        .init(kind: .windows, module: .windows, title: "Window layouts", detail: "Restore named layouts on compatible displays."),
         .init(kind: .bluetooth, module: .bluetooth, title: "Bluetooth", detail: "Connect chosen devices and see reconnect status.")
     ]
 

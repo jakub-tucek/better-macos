@@ -195,6 +195,8 @@ final class DashboardModel: ObservableObject {
     var onKeepAwakeResume: () -> Void = {}
     @Published var keepDisplayAwake = false
     @Published var clipboardRecording = false
+    @Published var clipboardAutomaticRecording = false
+    var onClipboardAutomaticRecording: (Bool) -> Void = { _ in }
     @Published var clipboardCount = 0
     @Published var clipboardPersistence = false
     @Published var clipboardStoragePending = false
@@ -562,8 +564,10 @@ struct DashboardView: View {
                 Button("Open history", action: model.onClipboardOpen)
                 Button("Clear history…", role: .destructive, action: model.onClipboardClear)
             }
-            Text("Starts paused each launch. Select an entry, then press Return or click Copy. Copying never pastes.").font(.caption).foregroundStyle(.secondary)
-            } else { Text("Selecting Clipboard does not start recording or enable disk history. Start recording explicitly from the widget or Clipboard settings after Finish.").font(.caption) }
+            Text("Select an entry, then press Return or click Copy. Copying never pastes.").font(.caption).foregroundStyle(.secondary)
+            }
+            DashboardSwitchRow(title: "Record automatically when Clipboard starts", isOn: Binding(get: { model.clipboardAutomaticRecording }, set: model.onClipboardAutomaticRecording))
+            Text(draftMode ? "Recording begins after Finish if enabled. History stays in memory unless you separately enable disk storage." : "You can pause the current session without changing this startup choice.").font(.caption).foregroundStyle(.secondary)
             if model.clipboardStoragePending {
                 Text("Disk cleanup/save pending — retrying. Old disk entries may remain until storage recovers; keep the module enabled.").font(.caption).foregroundStyle(.orange)
             }

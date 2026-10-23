@@ -8,6 +8,23 @@ The final shortcut-session extraction section retains its earlier candidate scop
 
 ## UI source audit
 
+### Onboarding feedback · 2026-10-23
+
+Feedback changes based on `59b6558`: window/pointer previews, access-before-configuration,
+Easy setup, saved-choice-aware recommendations, automatic memory-only Clipboard capture,
+and per-feature results. Chevron hiding remains off by recommendation.
+
+`build/setup-feedback-verified-test.log`: **5,191 isolated checks**, supporting suites
+and **13 installer scenarios** passed. Pinned lint/format and whitespace checks passed.
+Hidden release fixtures passed six layout/navigation checks; window preview, pointer
+preview, Bluetooth gate and results snapshots were inspected across light/dark appearances.
+A singular result-heading copy correction followed fixture inspection.
+
+Earlier attempts caught an initialization-order compiler error and an animation-only
+Finish fixture that unintentionally requested Accessibility-gated desktop input. The
+fixture now disables desktop input explicitly; production permission checks remain intact.
+Live permission-flow, VoiceOver, hardware and animation smoothness acceptance remain open.
+
 Reviewed the Settings shell, quick-action popup/editor, shared feature controls,
 guided setup, and window-layout view against the existing host-owned action paths.
 

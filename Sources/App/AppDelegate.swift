@@ -298,6 +298,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.onAudioPreferences = { [weak self] values, direction in self?.actionHost?.audio?.setPreferences(values, direction: direction) }
         model.onAudioFallback = { [weak self] uid, direction in self?.actionHost?.audio?.setFallback(uid, direction: direction) }
         model.onClipboardRecording = { [weak self] in self?.actionHost?.clipboard?.history.setRecording($0) }
+        model.onClipboardAutomaticRecording = { [weak self] in self?.actionHost?.clipboard?.setAutomaticRecording($0) }
         model.onClipboardOpen = { [weak self] in self?.actionHost?.popover.performClose(nil); self?.actionHost?.clipboard?.show() }
         model.onClipboardClear = { [weak self] in self?.actionHost?.clipboard?.clear() }
         model.onClipboardPersistence = { [weak self] in self?.actionHost?.clipboard?.setPersistence($0) }
@@ -696,6 +697,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func refreshClipboard() {
         model.clipboardRecording = clipboard?.history.recording ?? false
+        model.clipboardAutomaticRecording = clipboard?.automaticRecording ?? preferences.bool(forKey: "clipboard.automaticRecording")
         model.clipboardCount = clipboard?.history.entries.count ?? 0
         model.clipboardPersistence = clipboard?.persistence ?? false
         model.clipboardStoragePending = clipboard?.history.storagePending ?? false
@@ -1013,7 +1015,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 setupDesktopReconciliationPending = false
                 _ = model.onSaveWidgets(requestedWidgets)
                 uiStore.complete(); draft.discardCheckpoint()
-                completion(results + ["Quick-action layout saved. No timed session, clipboard capture, window capture, or pointer Apply was started."])
+                completion(results + ["Quick-action layout saved. Your selected policies are ready; no timed awake session, window capture, or pointer Apply was started."])
                 return
             }
             let module = AppModule.allCases[index]
@@ -1096,9 +1098,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if value.clipboardExclusions != old.clipboardExclusions { model.onClipboardExclusions(value.clipboardExclusions) }
             if value.clipboardPersistence != old.clipboardPersistence { model.onClipboardPersistence(value.clipboardPersistence) }
             if clipboard!.history.storagePending { completion(.failed("Disk cleanup/save is pending; keep Clipboard enabled and retry in Settings.")); return }
-            note = "Recording was not started or changed by setup."
+            if let automatic = value.clipboardAutomaticRecording, automatic != clipboard!.automaticRecording {
+                clipboard!.setAutomaticRecording(automatic)
+            }
+            note = clipboard!.automaticRecording ? "Automatic recording enabled. Disk storage is a separate choice." : "Automatic recording is off."
         case .mouse:
             model.mouseAcceleration = value.mouseAcceleration; model.mouseTracking = value.mouseTracking
+            preferences.set(value.mouseAcceleration, forKey: "mouse.proposedAcceleration")
+            preferences.set(value.mouseTracking, forKey: "mouse.proposedTracking")
             note = "No pointer settings applied. Use explicit Apply in Input settings."
         case .windows:
             if let windowPositions {
@@ -1106,6 +1113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 if value.windowsSelected != old.windowsSelected { windowPositions.selected = value.windowsSelected }
                 if value.windowsExclusions != old.windowsExclusions { windowPositions.exclusions = value.windowsExclusions }
                 if value.windowsAutomatic != old.windowsAutomatic { windowPositions.automatic = value.windowsAutomatic }
+                if let shortcuts = value.windowsShortcuts, shortcuts != windowPositions.shortcutsEnabled { windowPositions.shortcutsEnabled = shortcuts }
                 if !windowPositions.permitted { completion(.pendingAccess("Accessibility is required before saving or restoring windows.")); return }
                 if !value.windowsSelected.isEmpty && !windowPositions.layouts.contains(where: { $0.id == value.windowsSelected }) {
                     completion(.pendingHardware("Chosen window layout is unavailable; its target is preserved.")); return

@@ -157,7 +157,11 @@ gates remain open.
 
 ## Deferred scope
 
-Keep clipboard JSON storage until profiling shows a need for SQLite. If justified,
+Keep clipboard JSON storage until profiling shows a need for SQLite.
+Keychain-backed encryption for opt-in disk history is TBD; key lifecycle, recovery and
+existing archive handling need a separate design. Current disk history is unencrypted.
+
+If a SQLite change is justified,
 use the existing `ClipboardPersistence` seam, with migration, crash durability,
 clear/retention deletion and unload/quit veto tests; do not introduce a generic DB layer.
 Wheel attribution, per-device mouse controls, cross-Space/full-screen restoration

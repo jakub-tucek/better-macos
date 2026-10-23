@@ -268,6 +268,13 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
     var onError: (String) -> Void = { _ in }
     // The switch reflects user intent even while startup recovery is pending.
     var persistence: Bool { history.requestedPersistence }
+    var automaticRecording: Bool { defaults.bool(forKey: "clipboard.automaticRecording") }
+    func setAutomaticRecording(_ enabled: Bool) {
+        guard acceptsActions() else { return }
+        defaults.set(enabled, forKey: "clipboard.automaticRecording")
+        history.setRecording(enabled)
+        onChange()
+    }
     var days: Int { history.ageDays }
     var exclusions: String { history.exclusions.sorted().joined(separator: ", ") }
 
@@ -301,7 +308,7 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
             try history.configurePersistence(defaults.bool(forKey: "clipboard.persistence"),
                 ageDays: defaults.object(forKey: "clipboard.days") as? Int ?? 7, load: true)
         } catch { onError("Clipboard archive could not be loaded or cleaned up.") }
-        // Recording is an explicit per-launch opt-in, never restored from defaults.
+        history.setRecording(automaticRecording)
         resumeMonitoring()
         var type = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let status = InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
