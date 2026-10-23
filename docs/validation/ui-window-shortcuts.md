@@ -189,6 +189,37 @@ generated light/dark previews; inactive light, active dark, editing light and
 recovery light were inspected. Logs: `build/popup-open-{fixtures,lint,format}.log`.
 Restart is authorized; live device operations and VoiceOver remain unverified.
 
+## Window actions palette and quick menu · 2026-10-23
+
+Adds first/middle/last thirds (⌃⌥D/F/G), first/last two-thirds (⌃⌥E/T), and
+almost maximize (⌃⌥M, five-percent inset on each side). Existing raw action IDs
+and chords remain stable. Odd-sized thirds partition usable bounds without gaps.
+
+⌃⌥⌘Space opens Window actions when global shortcuts are enabled. The extra Command
+modifier avoids macOS's next-input-source chord. The popup footer and Windows widget
+also open the palette, including when global shortcuts are off. Right-clicking the
+menu-bar icon opens a native quick menu: Window actions, Quick actions, Settings,
+Quit. Left-click retains the popup.
+
+The native nonactivating panel centers on the target window's screen, with a
+system-material translucent background, illustrated actions, key labels and hover
+preview. Arrows/Tab select, Return/Space apply, Escape closes. Smaller screens scroll
+the grid. Preview animation respects Reduce Motion. The panel captures a target;
+changing focus, display geometry, exclusions or admission cannot redirect a click
+to another window. Retry/failure messages remain visible without claiming success.
+
+Full `bash test.sh`: **5,141 isolated checks**, supporting suites and **13 installer
+scenarios** passed (`build/window-palette-final.log`). Tests cover thirds geometry,
+hotkey uniqueness and atomic rollback, captured-target refusal, menu-only action
+admission, shared originals, native Right/Return and Escape, and native quick-menu
+Settings dispatch. `--window-palette-fixtures build` renders full and constrained
+light/dark panels with fake windows; inspected output is in
+`build/window-palette-{full,compact}-{light,dark}.png`. Material snapshots do not
+prove live desktop compositing. Lint, format and whitespace checks passed.
+The final palette chord/label adjustment was followed by focused shortcut checks.
+Live global-key delivery, menu-to-app focus return and VoiceOver remain acceptance
+gaps pending user use after restart.
+
 ## Shortcut-session extraction · 2026-10-22
 
 The candidate-2 working tree based on `ff1e046` moves registration attempt/generation,

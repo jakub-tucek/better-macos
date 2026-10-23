@@ -114,7 +114,14 @@ func runPresentationDisplayRefreshTests() {
                 Monitor(uuid: "fixture-second", name: "Second", id: 2, enabled: true, isMain: false, disabledByApp: false)
             ]
             model.activeMonitorCount = 2; model.displaySupported = true
-        }, loginService: PresentationLogin(), diagnostics: Diagnostics())
+         }, loginService: PresentationLogin(), diagnostics: Diagnostics())
+    let quickMenu = host.makeStatusQuickMenu()
+    expect(quickMenu.items.first?.isEnabled == false, "right-click menu disables window actions when its owner is absent")
+    if let settingsItem = quickMenu.items.first(where: { $0.title == "Settings…" }), let action = settingsItem.action {
+        let before = windows.count
+        NSApp.sendAction(action, to: settingsItem.target, from: settingsItem)
+        expect(windows.count == before + 1, "native quick-menu Settings action reaches the production host presentation")
+    } else { expect(false, "right-click quick menu exposes Settings") }
     let anchorWindow = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 60, height: 30), styleMask: [.borderless], backing: .buffered, defer: false)
     anchorWindow.isReleasedWhenClosed = false; anchorWindow.alphaValue = 0
     let anchor = NSView(frame: NSRect(x: 0, y: 0, width: 60, height: 30))

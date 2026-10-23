@@ -176,13 +176,18 @@ claim that the baseline's release blockers are fixed.
   decodes native facts and preserves the `AXWindowPositionBackend` entry point.
   See [execution depth and interface](architecture/window-execution.md).
 - **UI:** Displays settings via [WindowPositionsView.swift](../Sources/Features/Windows/WindowPositionsView.swift);
-  Window layouts widget and optional Displays restore controls. Accessibility required.
+  Window layouts widget and optional Displays restore controls. The translucent
+  [WindowActionPalette.swift](../Sources/Features/Windows/WindowActionPalette.swift)
+  panel presents illustrated actions without activating the app. Host popup and
+  right-click status menu open it; session-owned captured targets gate execution.
+  Accessibility required for window actions.
 - **Resources/cleanup:** saved layout/configuration data in preferences, wake/sleep
   observers and generation-checked queued moves. `stop()` invalidates work and removes
   observers/connection registration; it keeps saved layouts. Host display settling
   gates restoration; full-screen windows and Space assignments remain outside scope.
 - **Keyboard tiling:** [WindowShortcuts.swift](../Sources/Features/Windows/WindowShortcuts.swift)
-  provides opt-in Rectangle-style halves, quarters, maximize, center, restore and
+  provides opt-in Rectangle-style halves, quarters, thirds, two-thirds, maximize,
+  almost maximize, center, restore and
   display movement without another vendor. [WindowShortcutSession.swift](../Sources/Features/Windows/WindowShortcutSession.swift)
   owns registration generations/retry, action outcomes and bounded original-frame
   lifetime. Production preset orchestration handles rollback over a low-level Carbon

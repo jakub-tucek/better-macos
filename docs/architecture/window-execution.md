@@ -102,3 +102,22 @@ Live log selection found no retained verified GUI startup. The user's exact focu
 app and real shortcut outcome remain to be confirmed after restart. The separate
 `isResidencyContractEligible` string was not found in repository sources; its origin
 and relationship to the failure are unverified.
+
+## Visual action palette
+
+`WindowShortcutSession.Target` captures a verified window, display snapshot and
+session generation. Palette actions re-read the focused window and require the
+same token/app and display snapshot before entering the shared movement path.
+Current host readiness, exclusions, generation, native focus and readback checks
+still apply. Original frames are shared between palette and keyboard actions.
+Opening, previewing or dismissing does not write window geometry.
+
+Menu admission is independent of global shortcut registration. A stable, disabled
+registration no longer invalidates a menu target on every reconciliation; actual
+readiness loss, explicit retry, stop and setting changes still invalidate it.
+`WindowActionPaletteController` owns the nonactivating panel and removes its local
+and global mouse observers on dismissal. Application activation changes dismiss it.
+Owner invalidation closes it; selecting an action closes it before verified writes.
+The host guards queued presentation against replaced/stopped owners and canceled
+requests. Popup/menu presentation returns focus only to the app recorded when the
+menu opened, and refuses capture if that app is no longer foreground.

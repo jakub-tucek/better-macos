@@ -5,6 +5,7 @@ import Carbon
 enum WindowShortcutAction: UInt32, CaseIterable, Identifiable {
     case left = 1, right, top, bottom, topLeft, topRight, bottomLeft, bottomRight
     case maximize, center, previousDisplay, nextDisplay, restore
+    case firstThird, middleThird, lastThird, firstTwoThirds, lastTwoThirds, almostMaximize, showActions
     var id: UInt32 { rawValue }
     var title: String {
         switch self {
@@ -21,6 +22,13 @@ enum WindowShortcutAction: UInt32, CaseIterable, Identifiable {
         case .previousDisplay: return "Previous display"
         case .nextDisplay: return "Next display"
         case .restore: return "Restore original size"
+        case .firstThird: return "First third"
+        case .middleThird: return "Middle third"
+        case .lastThird: return "Last third"
+        case .firstTwoThirds: return "First two thirds"
+        case .lastTwoThirds: return "Last two thirds"
+        case .almostMaximize: return "Almost maximize"
+        case .showActions: return "Window actions"
         }
     }
     var key: UInt32 {
@@ -37,11 +45,18 @@ enum WindowShortcutAction: UInt32, CaseIterable, Identifiable {
         case .maximize: code = kVK_Return
         case .center: code = kVK_ANSI_C
         case .restore: code = kVK_Delete
+        case .firstThird: code = kVK_ANSI_D
+        case .middleThird: code = kVK_ANSI_F
+        case .lastThird: code = kVK_ANSI_G
+        case .firstTwoThirds: code = kVK_ANSI_E
+        case .lastTwoThirds: code = kVK_ANSI_T
+        case .almostMaximize: code = kVK_ANSI_M
+        case .showActions: code = kVK_Space
         }
         return UInt32(code)
     }
     var modifiers: UInt32 {
-        UInt32(controlKey | optionKey | ((self == .previousDisplay || self == .nextDisplay) ? cmdKey : 0))
+        UInt32(controlKey | optionKey | ((self == .previousDisplay || self == .nextDisplay || self == .showActions) ? cmdKey : 0))
     }
     var shortcut: String {
         let keyName: String
@@ -57,8 +72,15 @@ enum WindowShortcutAction: UInt32, CaseIterable, Identifiable {
         case .maximize: keyName = "↩"
         case .center: keyName = "C"
         case .restore: keyName = "⌫"
+        case .firstThird: keyName = "D"
+        case .middleThird: keyName = "F"
+        case .lastThird: keyName = "G"
+        case .firstTwoThirds: keyName = "E"
+        case .lastTwoThirds: keyName = "T"
+        case .almostMaximize: keyName = "M"
+        case .showActions: keyName = "Space"
         }
-        return "⌃⌥" + ((self == .previousDisplay || self == .nextDisplay) ? "⌘" : "") + keyName
+        return "⌃⌥" + ((self == .previousDisplay || self == .nextDisplay || self == .showActions) ? "⌘" : "") + keyName
     }
 
     /// AX coordinates: origin at top left; bounds already exclude Dock/menu bar.
@@ -66,7 +88,7 @@ enum WindowShortcutAction: UInt32, CaseIterable, Identifiable {
         func valid(_ rect: CGRect) -> Bool {
             [rect.origin.x, rect.origin.y, rect.width, rect.height].allSatisfy(\.isFinite) && rect.width > 0 && rect.height > 0
         }
-        guard valid(frame), !displays.isEmpty, displays.allSatisfy({ valid($0.bounds) }) else { return nil }
+        guard self != .showActions, valid(frame), !displays.isEmpty, displays.allSatisfy({ valid($0.bounds) }) else { return nil }
         let ordered = displays.sorted {
             if $0.bounds.minX != $1.bounds.minX { return $0.bounds.minX < $1.bounds.minX }
             if $0.bounds.minY != $1.bounds.minY { return $0.bounds.minY < $1.bounds.minY }
@@ -99,6 +121,15 @@ enum WindowShortcutAction: UInt32, CaseIterable, Identifiable {
                               width: frame.width, height: frame.height), in: bounds)
         }
         if self == .maximize { return bounds }
+        if self == .almostMaximize {
+            return bounds.insetBy(dx: floor(bounds.width * 0.05), dy: floor(bounds.height * 0.05))
+        }
+        if [.firstThird, .middleThird, .lastThird, .firstTwoThirds, .lastTwoThirds].contains(self) {
+            let first = floor(bounds.width / 3), second = floor(bounds.width * 2 / 3)
+            let start: CGFloat = self == .middleThird || self == .lastTwoThirds ? first : self == .lastThird ? second : 0
+            let end: CGFloat = self == .firstThird ? first : self == .middleThird || self == .firstTwoThirds ? second : bounds.width
+            return CGRect(x: bounds.minX + start, y: bounds.minY, width: end - start, height: bounds.height)
+        }
         let halfWidth = floor(bounds.width / 2), halfHeight = floor(bounds.height / 2)
         let right = [.right, .topRight, .bottomRight].contains(self)
         let bottom = [.bottom, .bottomLeft, .bottomRight].contains(self)

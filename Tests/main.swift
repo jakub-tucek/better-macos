@@ -14,6 +14,16 @@ if CommandLine.arguments.contains("--window-execution-tests") {
     exit(0)
 }
 
+if CommandLine.arguments.contains("--window-shortcut-tests") {
+    runWindowShortcutTests()
+    exit(0)
+}
+
+if let index = CommandLine.arguments.firstIndex(of: "--window-palette-fixtures"), index + 1 < CommandLine.arguments.count {
+    try renderWindowActionPaletteFixtures(directory: CommandLine.arguments[index + 1])
+    exit(0)
+}
+
 if let index = CommandLine.arguments.firstIndex(of: "--login-ui-fixtures"), index + 1 < CommandLine.arguments.count {
     try renderLoginUIFixtures(directory: CommandLine.arguments[index + 1])
     exit(0)

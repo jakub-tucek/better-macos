@@ -339,6 +339,11 @@ struct QuickActionsView: View {
                  Button { model.onOpenSettings(nil) } label: { Label("Settings", systemImage: "gearshape") }
                      .help("Open Settings")
                  Spacer()
+                 if model.enabledModules.contains(.windows) {
+                     Button(action: model.onWindowActions) { Label("Window actions", systemImage: "rectangle.split.2x2") }
+                         .help("Show window layouts and shortcuts (\(WindowShortcutAction.showActions.shortcut))")
+                     Spacer()
+                 }
                  Button("Quit", action: model.onQuit).disabled(model.monitorBusy)
              }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(.secondary)
                  .padding(.horizontal, 16).padding(.vertical, 12)
@@ -643,9 +648,12 @@ struct QuickWidget: View {
             }
         }
     }
-    @ViewBuilder private var windows: some View {
-        if model.enabledModules.contains(.windows), let module = model.windowPositions {
-            WindowRestoreWidget(module: module, expanded: entry.expanded, target: entry.windowLayoutID)
+     @ViewBuilder private var windows: some View {
+         if model.enabledModules.contains(.windows), let module = model.windowPositions {
+             Button(action: model.onWindowActions) {
+                 Label("Window actions…", systemImage: "rectangle.split.2x2")
+             }.help("Browse all window actions (\(WindowShortcutAction.showActions.shortcut))")
+             WindowRestoreWidget(module: module, expanded: entry.expanded, target: entry.windowLayoutID)
         } else {
             Text("Window layouts are off.").font(.caption)
             Button("Set up window layouts") { model.onOpenSettings(.displays) }

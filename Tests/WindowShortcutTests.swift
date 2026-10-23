@@ -30,8 +30,103 @@ private final class ShortcutTestBackend: WindowPositionBackend {
     }
 }
 
+func renderWindowActionPaletteFixtures(directory: String) throws {
+    _ = NSApplication.shared
+    let domain = "window-palette-fixtures-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: domain)!
+    defer { defaults.removePersistentDomain(forName: domain) }
+    let owner = WindowPositions(backend: ShortcutTestBackend(), defaults: defaults, shortcuts: ShortcutTestRegistration())
+    owner.reconcile(ready: true, settled: true)
+    let controller = WindowActionPaletteController()
+    let root = URL(fileURLWithPath: directory, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    for dark in [false, true] {
+        for compact in [false, true] {
+            let panel = controller.show(owner: owner, target: owner.captureActionTarget(), orderFront: false)
+            panel.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            if compact { panel.setContentSize(NSSize(width: 600, height: 420)) }
+            for _ in 0..<4 {
+                panel.contentView?.layoutSubtreeIfNeeded()
+                RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+            }
+            let view = panel.contentView!
+            guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { throw CocoaError(.fileWriteUnknown) }
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            try bitmap.representation(using: .png, properties: [:])!.write(to: root.appendingPathComponent("window-palette-\(compact ? "compact" : "full")-\(dark ? "dark" : "light").png"))
+            controller.dismiss()
+        }
+    }
+    owner.stop()
+}
+
+private func runWindowActionPaletteTests() {
+    let domain = "window-palette-tests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: domain)!
+    defer { defaults.removePersistentDomain(forName: domain) }
+    let backend = ShortcutTestBackend(), registration = ShortcutTestRegistration()
+    let owner = WindowPositions(backend: backend, defaults: defaults, shortcuts: registration, schedule: { $0() })
+    expect(WindowActionPaletteState.actions.count == WindowShortcutAction.allCases.count - 1 &&
+           Set(WindowActionPaletteState.actions) == Set(WindowShortcutAction.allCases.filter { $0 != .showActions }),
+           "palette exposes every movement action exactly once")
+    expect(owner.captureActionTarget() == nil, "palette target requires host readiness")
+    owner.reconcile(ready: true, settled: true)
+    let original = backend.focused!.frame
+    let target = owner.captureActionTarget()!
+    expect(!owner.shortcutsEnabled && backend.writes.isEmpty, "menu palette captures a target without enabling hotkeys or moving windows")
+    owner.reconcile(ready: true, settled: true)
+    expect(owner.applyAction(.firstThird, to: target), "menu palette can apply through owner while global hotkeys are off")
+    owner.shortcutsEnabled = true
+    owner.performShortcut(.restore)
+    expect(backend.writes.last == original, "keyboard Restore shares original geometry with palette actions")
+    var openings = 0
+    owner.onShowActions = { openings += 1 }
+    let count = backend.writes.count
+    registration.callback?(.showActions)
+    expect(openings == 1 && backend.writes.count == count, "registered palette hotkey requests presentation without moving a window")
+    let captured = owner.captureActionTarget()!
+    backend.focused?.token = "other"
+    expect(!owner.applyAction(.right, to: captured) && backend.writes.count == count, "palette never substitutes a newly focused window")
+    backend.focused?.token = captured.window.token
+    backend.screens[0].bounds.size.width += 1
+    expect(!owner.applyAction(.right, to: captured) && backend.writes.count == count, "palette refuses a changed display snapshot")
+    backend.screens = captured.displays
+    owner.acceptsActions = { false }
+    expect(!owner.applyAction(.right, to: captured) && backend.writes.count == count, "host closure blocks captured palette actions")
+    owner.acceptsActions = { true }
+    owner.exclusions = "test.app"
+    expect(!owner.applyAction(.right, to: captured) && backend.writes.count == count, "palette respects current exclusions after opening")
+    owner.exclusions = ""
+    owner.invalidate(); owner.reconcile(ready: true, settled: true)
+    expect(!owner.applyAction(.right, to: captured) && backend.writes.count == count, "readiness recovery cannot revive an old palette target")
+
+    let controller = WindowActionPaletteController()
+    let panel = controller.show(owner: owner, target: owner.captureActionTarget(), orderFront: false)
+    expect(panel.styleMask.contains(.nonactivatingPanel) && panel.canBecomeKey && !panel.canBecomeMain,
+           "palette uses a key-capable nonactivating native panel")
+    func key(_ code: UInt16, _ characters: String) {
+        let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                    windowNumber: panel.windowNumber, context: nil, characters: characters, charactersIgnoringModifiers: characters,
+                                    isARepeat: false, keyCode: code)!
+        panel.sendEvent(event)
+    }
+    key(124, "\u{f703}")
+    expect(backend.writes.count == count, "palette arrow-key preview performs no window write")
+    key(36, "\r")
+    expect(backend.writes.last == WindowShortcutAction.right.destination(for: original, displays: backend.screens),
+           "native palette Right then Return executes the selected action through the owner")
+    let afterApply = backend.writes.count
+    let canceled = controller.show(owner: owner, target: owner.captureActionTarget(), orderFront: false)
+    expect(controller.isPresented, "Escape fixture starts with an owned palette presentation")
+    canceled.keyDown(with: NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                          windowNumber: canceled.windowNumber, context: nil, characters: "\u{1b}",
+                                          charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53)!)
+    expect(backend.writes.count == afterApply && !controller.isPresented, "Escape dismisses the palette without a move")
+    owner.stop()
+}
+
 func runWindowShortcutTests() {
     runShortcutSessionTests()
+    runWindowActionPaletteTests()
     let main = WindowDisplay(id: "main", bounds: CGRect(x: 0, y: 25, width: 1201, height: 801))
     let left = WindowDisplay(id: "left", bounds: CGRect(x: -900, y: -500, width: 900, height: 700))
     let frame = CGRect(x: 100, y: 100, width: 600, height: 400)
@@ -67,7 +162,18 @@ func runWindowShortcutTests() {
     let restored = WindowShortcutAction.restore.destination(for: frame, displays: [main], original: left.bounds)!
     expect(main.bounds.contains(restored), "restore clamps to remaining display after disconnect")
     expect(Set(WindowShortcutAction.allCases.map { "\($0.key):\($0.modifiers)" }).count == WindowShortcutAction.allCases.count,
-           "window shortcut preset contains no internal conflicts")
+            "window shortcut preset contains no internal conflicts")
+    let thirds = [WindowShortcutAction.firstThird, .middleThird, .lastThird].compactMap { $0.destination(for: frame, displays: [main]) }
+    expect(thirds.count == 3 && thirds[0].maxX == thirds[1].minX && thirds[1].maxX == thirds[2].minX && thirds.reduce(CGRect.null) { $0.union($1) } == main.bounds,
+           "thirds partition odd-sized work areas exactly without gaps or overlap")
+    expect(WindowShortcutAction.firstTwoThirds.destination(for: frame, displays: [main]) == thirds[0].union(thirds[1]) &&
+           WindowShortcutAction.lastTwoThirds.destination(for: frame, displays: [main]) == thirds[1].union(thirds[2]),
+           "two-thirds actions use the same exact partition boundaries")
+    let almost = WindowShortcutAction.almostMaximize.destination(for: frame, displays: [main])!
+    expect(main.bounds.contains(almost) && almost.midX == main.bounds.midX && almost.midY == main.bounds.midY && almost.width < main.bounds.width,
+           "almost maximize leaves centered margins inside usable screen bounds")
+    expect(WindowShortcutAction.showActions.destination(for: frame, displays: [main]) == nil,
+           "opening the action palette has no window movement destination")
 
     let domain = "window-shortcut-tests-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: domain)!

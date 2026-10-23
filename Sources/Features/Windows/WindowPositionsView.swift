@@ -19,6 +19,8 @@ struct WindowPositionsView: View {
                     .font(.headline)
                 Text("Move the focused window with Rectangle-style shortcuts.")
                     .font(.caption).foregroundStyle(.secondary)
+                Text("\(WindowShortcutAction.showActions.shortcut) opens the visual action palette. You can also choose Window actions from the menu-bar popup.")
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: openSections ? 2 : 4), spacing: 12) {
                     ForEach([WindowShortcutAction.left, .right, .maximize, .center]) { action in
                         WindowShortcutTile(action: action)

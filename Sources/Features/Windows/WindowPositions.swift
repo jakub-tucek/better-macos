@@ -137,6 +137,8 @@ final class WindowPositions: ObservableObject {
     private var wakeObserver: NSObjectProtocol?
     private var sleepObserver: NSObjectProtocol?
     var onWake: (() -> Void)?
+    var onShowActions: () -> Void = {}
+    var onDismissActions: () -> Void = {}
 
     init(backend: WindowPositionBackend = AXWindowPositionBackend(), defaults: UserDefaults = .standard,
          shortcuts: WindowShortcutRegistering = WindowShortcutRegistration(),
@@ -153,11 +155,15 @@ final class WindowPositions: ObservableObject {
             layouts = (try? JSONDecoder().decode([WindowLayout].self, from: data)) ?? []
         }
         shortcutSession.admitsAction = { [weak self] in self.map { $0.shortcutsEnabled && $0.canCapture } ?? false }
+        shortcutSession.admitsPalette = { [weak self] in self?.canCapture ?? false }
+        shortcutSession.onShowActions = { [weak self] in self?.onShowActions() }
+        shortcutSession.onInvalidate = { [weak self] in self?.onDismissActions() }
         shortcutSession.isExcluded = { [weak self] app in self?.excluded.contains(app) ?? true }
         shortcutSession.beforeMove = { [weak self] in
             // Manual movement supersedes queued layout restoration, without reopening admission.
             guard let self else { return }
             self.pending = false; self.generation += 1
+            self.onDismissActions()
         }
         shortcutSession.onChange = { [weak self] in
             guard let self else { return }
@@ -217,6 +223,10 @@ final class WindowPositions: ObservableObject {
         shortcutSession.reconcile(enabled: shortcutsEnabled, admitted: canCapture)
     }
     func performShortcut(_ action: WindowShortcutAction) { shortcutSession.perform(action) }
+    func captureActionTarget() -> WindowShortcutSession.Target? { shortcutSession.captureTarget() }
+    func applyAction(_ action: WindowShortcutAction, to target: WindowShortcutSession.Target) -> Bool {
+        shortcutSession.apply(action, to: target)
+    }
     func canRestore(_ id: String) -> Bool {
         guard canCapture, let layout = layouts.first(where: { $0.id == id }) else { return false }
         return layout.displays.map(\.id).sorted() == backend.displays().map(\.id).sorted()

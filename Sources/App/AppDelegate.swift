@@ -26,6 +26,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var menuBar: MenuBarModule?
     private var quitGuard: QuitGuard?
     private var windowPositions: WindowPositions?
+    private let windowActionPalette = WindowActionPaletteController()
+    private var windowActionRequest = UUID()
+    private var popupSourceApp: NSRunningApplication?
     private var clipboard: ClipboardModule?
     private let injectedMouseLifecycle: MouseLifecycle?
     private lazy var mouseLifecycle = injectedMouseLifecycle ?? MouseLifecycle(settings: modules)
@@ -198,6 +201,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         item.button?.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "Fix macOS")
         item.button?.target = self
         item.button?.action = #selector(toggleDashboard)
+        item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         configurePopover()
         updateModules()
         if animations.recoveryRequired {
@@ -268,6 +272,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func configureActions() {
         model.onOpenSettings = { [weak self] group in self?.actionHost?.showSettings(group) }
+        model.onWindowActions = { [weak self] in self?.showWindowActions(fromPopup: true) }
         model.onOpenActivity = { [weak self] in self?.actionHost?.showActivity() }
         model.onRunSetup = { [weak self] in self?.actionHost?.showSetup() }
         model.onSaveWidgets = { [weak self] layout in
@@ -492,6 +497,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             windowPositions = nil
         }
         model.windowPositions = windowPositions
+        windowPositions?.onShowActions = { [weak self] in self?.showWindowActions(fromPopup: false) }
+        windowPositions?.onDismissActions = { [weak self] in
+            self?.windowActionRequest = UUID()
+            self?.windowActionPalette.dismiss()
+        }
         if !modules.enabled.isDisjoint(with: [.audio, .bluetooth]) {
             if audio == nil {
                 let module = makeAudio()
@@ -694,9 +704,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func toggleDashboard() {
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            guard transactions.acceptsActions, let button = item.button else { return }
+            popupSourceApp = NSWorkspace.shared.frontmostApplication
+            popover.performClose(nil)
+            let menu = makeStatusQuickMenu()
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.minY), in: button)
+            return
+        }
         if popover.isShown { popover.performClose(nil) }
         else { model.launchWidget = nil; refreshPreferences(); showDashboard() }
     }
+
+    func makeStatusQuickMenu() -> NSMenu {
+        let menu = NSMenu(); menu.autoenablesItems = false
+        func add(_ title: String, _ symbol: String, _ selector: Selector, enabled: Bool = true) {
+            let entry = NSMenuItem(title: title, action: selector, keyEquivalent: "")
+            entry.target = self; entry.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+            entry.isEnabled = enabled && transactions.acceptsActions
+            menu.addItem(entry)
+        }
+        add("Window actions…", "rectangle.split.2x2", #selector(statusWindowActions), enabled: windowPositions != nil)
+        add("Quick actions", "slider.horizontal.3", #selector(statusQuickActions))
+        add("Settings…", "gearshape", #selector(statusSettings))
+        menu.addItem(.separator())
+        add("Quit Fix macOS", "power", #selector(statusQuit))
+        return menu
+    }
+    @objc private func statusWindowActions() { showWindowActions(fromPopup: true) }
+    @objc private func statusQuickActions() {
+        guard transactions.acceptsActions else { return }
+        model.launchWidget = nil; refreshPreferences(); showDashboard()
+    }
+    @objc private func statusSettings() { showSettings(nil) }
+    @objc private func statusQuit() { model.onQuit() }
 
     private func displayConfigurationChanged() {
         displayRefresh.requestRefresh()
@@ -728,6 +769,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @discardableResult
     func presentDashboard(relativeTo button: NSView) -> NSView? {
         guard !popover.isShown else { return popover.contentViewController?.view }
+        popupSourceApp = NSWorkspace.shared.frontmostApplication
         configurePopover()
         model.popupHeight = max(1, (button.window?.screen?.visibleFrame.height ?? 700) - 80)
         popover.contentSize.height = min(popover.contentSize.height, model.popupHeight, 650)
@@ -754,6 +796,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard modules.needsDisplays || needsDisplayRecovery, !recovering else { return }
         configureDisplayRefresh()
         displayRefresh.requestRefreshForPresentation(snapshotIsFresh: layoutFresh)
+    }
+
+    private func showWindowActions(fromPopup: Bool) {
+        guard transactions.acceptsActions, let owner = windowPositions else { return }
+        if windowActionPalette.isPresented { windowActionPalette.dismiss(); return }
+        let source = fromPopup ? popupSourceApp : NSWorkspace.shared.frontmostApplication
+        popover.performClose(nil)
+        let ticket = UUID(); windowActionRequest = ticket
+        if fromPopup, let source, source.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+           NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier {
+            source.activate()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + (fromPopup ? 0.08 : 0)) { [weak self, weak owner] in
+            guard let self, let owner, self.windowActionRequest == ticket,
+                  self.windowPositions === owner, self.transactions.acceptsActions else { return }
+            let sameApp = source?.processIdentifier == NSWorkspace.shared.frontmostApplication?.processIdentifier
+            let target = sameApp ? owner.captureActionTarget() : nil
+            let message: String?
+            if !owner.canCapture { message = "Window actions need Accessibility access and stable displays. Check Displays settings." }
+            else if !sameApp { message = "The focused app changed. Focus your window and press \(WindowShortcutAction.showActions.shortcut)." }
+            else { message = nil }
+            self.windowActionPalette.show(owner: owner, target: target, message: message)
+        }
     }
 
     private func showActivity() {

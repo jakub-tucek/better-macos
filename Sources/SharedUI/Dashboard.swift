@@ -243,6 +243,7 @@ final class DashboardModel: ObservableObject {
     var onKeepDisabled: (String) -> Void = { _ in }
     var onRestoreAll: () -> Void = {}
     var onArrangeDisplays: () -> Void = {}
+    var onWindowActions: () -> Void = {}
     var onKeepArrangement: () -> Void = {}
     var onAutoDeviceChanged: (String, Bool) -> Void = { _, _ in }
     var onManualConnection: (String) -> Void = { _ in }
