@@ -366,8 +366,15 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
             do { try self.history.clear() } catch { self.onError("Clipboard disk history could not be removed. Retry Clear.") }
         }
     }
+    var onWillShow: () -> Void = {}
+    func dismiss() {
+        panel?.orderOut(nil)
+        ageTimer?.invalidate(); ageTimer = nil
+        thumbnails.cancelRequests()
+    }
     func show() {
         guard acceptsActions() else { return }
+        onWillShow()
         _ = makePanel()
         search.stringValue = ""; reload(resetSelection: true)
         panel?.center()

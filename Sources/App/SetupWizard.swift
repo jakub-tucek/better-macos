@@ -376,7 +376,6 @@ struct SetupWizard: View {
     @ObservedObject var model: DashboardModel
     @ObservedObject var draft: SetupDraft
     let close: () -> Void
-    @StoredState private var confirmFinish = false
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -396,7 +395,7 @@ struct SetupWizard: View {
                 }
                 Spacer()
                 if draft.step == .results { Button("Close", action: close) }
-                else if draft.step == .review { Button("Finish") { confirmFinish = true }.buttonStyle(.borderedProminent) }
+                else if draft.step == .review { Button("Finish") { draft.finish(using: model.onFinishSetup) }.buttonStyle(.borderedProminent) }
                 else if case .feature(let module) = draft.step {
                     Button("Skip this feature") { draft.choose(module, enabled: false) }
                     Button("Enable & configure") { draft.choose(module, enabled: true) }.buttonStyle(.borderedProminent)
@@ -417,19 +416,13 @@ struct SetupWizard: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in draft.onRetryPermissions() }
             .interactiveDismissDisabled(draft.applying)
-            .alert("Apply these choices?", isPresented: $confirmFinish) {
-                Button("Finish") {
-                    draft.finish(using: model.onFinishSetup)
-                }
-                Button("Back to review", role: .cancel) {}
-            } message: { Text("Only Finish applies feature and configuration changes. Results are reported independently; failures do not roll back successful features. See the review for side effects.") }
     }
     private var stepContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 AppHeading(title: title, subtitle: subtitle)
                 content
-            }.frame(maxWidth: 560, alignment: .leading).padding(32).frame(maxWidth: .infinity, alignment: .top)
+            }.frame(maxWidth: 720, alignment: .leading).padding(40).frame(maxWidth: .infinity, alignment: .top)
         }.id(draft.step).disabled(draft.applying)
     }
     private var progressLabel: String {

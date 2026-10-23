@@ -365,6 +365,21 @@ The first executable run (`build/onboarding-passed-test.log`) exposed a scroll t
 that expected the former long selection page. It now scrolls the actual long review
 page before switching steps, preserving its nonzero-offset/reset assertion.
 
+### Larger setup and single-surface presentation
+
+Setup now uses a centered, visible-frame-bounded 1040 × 844 native window and
+720-point content column. Host presentation hides other owned primary windows and
+dismisses transient panels, including Clipboard through its show callback so the
+global shortcut uses the same path. Hidden setup retains its draft and window;
+new presentations invalidate pending window-palette requests. Review's Finish
+button applies directly without a second confirmation dialog.
+
+`build/setup-single-surface-test.log`: **5,179 isolated checks**, supporting suites
+and **13 installer scenarios** passed. Four native-host checks verify exclusive
+setup/Settings/popup visibility, exact centered screen-bounded geometry and reuse
+of the same setup window. Pinned lint, format and whitespace passed. This does not
+claim live VoiceOver acceptance or control over macOS permission windows.
+
 ## Shortcut-session extraction · 2026-10-22
 
 The candidate-2 working tree based on `ff1e046` moves registration attempt/generation,

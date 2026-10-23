@@ -245,6 +245,22 @@ func runPresentationDisplayRefreshTests() {
         expect(model.settingsGroup == .sound, "native keyboard navigation acts immediately after stable popup-to-Settings handoff")
     } else { expect(false, "production Settings exposes its native category tabs") }
 
+    settings.alphaValue = 0; settings.orderFront(nil)
+    model.onRunSetup()
+    let setup = windows.last!
+    expect(setup !== settings && !settings.isVisible && stable.window?.isVisible != true,
+           "opening setup hides Settings and the popup instead of stacking windows")
+    let setupScreen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main!
+    let visible = setupScreen.visibleFrame
+    expect(abs(setup.frame.midX - visible.midX) < 1 && abs(setup.frame.midY - visible.midY) < 1 &&
+           setup.frame.width == min(1040, visible.width - 48) && setup.frame.height == min(844, visible.height - 48),
+           "setup opens larger at the exact center of the active screen, bounded by its usable frame")
+    setup.alphaValue = 0; setup.orderFront(nil)
+    model.onOpenSettings(.general)
+    expect(!setup.isVisible && windows.last === settings, "switching to Settings hides setup and reuses the existing Settings window")
+    model.onRunSetup()
+    expect(windows.last === setup, "returning to setup reuses its existing window and draft")
+
     NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
     expect(model.displaySettling, "an actual screen-change observer still invalidates the settled snapshot")
     RunLoop.main.run(until: Date().addingTimeInterval(0.9))

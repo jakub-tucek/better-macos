@@ -150,7 +150,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
          configureActions()
           windowPositions?.acceptsActions = { [weak self] in self?.transactions.acceptsActions == true }
           windowPositions?.activity = activity
-         clipboard?.acceptsActions = { [weak self] in self?.transactions.acceptsActions == true }
+          clipboard?.acceptsActions = { [weak self] in self?.transactions.acceptsActions == true }
+          clipboard?.onWillShow = { [weak self] in self?.prepareSurface(keepClipboard: true) }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -523,6 +524,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 let module = ClipboardModule(defaults: preferences)
                 clipboard = module
                 module.acceptsActions = { [weak self] in self?.transactions.acceptsActions == true }
+                module.onWillShow = { [weak self] in self?.prepareSurface(keepClipboard: true) }
                 module.onChange = { [weak self] in self?.refreshClipboard() }
                 module.onError = { [weak self] in self?.model.errorMessage = $0 }
                 module.start()
@@ -716,6 +718,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @discardableResult
     func presentStatusQuickMenu(relativeTo anchor: NSView, orderFront: Bool = true) -> NSPanel? {
         guard transactions.acceptsActions else { return nil }
+        prepareSurface()
         windowActionRequest = UUID()
         popupSourceApp = NSWorkspace.shared.frontmostApplication
         popover.performClose(nil)
@@ -731,6 +734,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case .windows: showWindowActions(fromPopup: true)
         case .quickActions: model.launchWidget = nil; refreshPreferences(); showDashboard()
         case .keepAwake:
+            prepareSurface()
             windowActionRequest = UUID()
             windowActionPalette.dismiss()
             popover.performClose(nil)
@@ -769,6 +773,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// the application, watchdog, feature owners or a real status item.
     @discardableResult
     func presentDashboard(relativeTo button: NSView) -> NSView? {
+        if !popover.isShown { prepareSurface() }
         statusQuickMenu.dismiss()
         keepAwakePalette.dismiss()
         windowActionRequest = UUID()
@@ -809,6 +814,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         keepAwakePalette.dismiss()
         if windowActionPalette.isPresented { windowActionPalette.dismiss(); return }
         let source = fromPopup ? popupSourceApp : NSWorkspace.shared.frontmostApplication
+        prepareSurface()
         popover.performClose(nil)
         let ticket = UUID(); windowActionRequest = ticket
         if fromPopup, let source, source.processIdentifier != ProcessInfo.processInfo.processIdentifier,
@@ -830,6 +836,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func showActivity() {
         guard transactions.acceptsActions else { return }
+        prepareSurface(keeping: activityWindow)
         if activityWindow == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 560), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
             window.title = "Better macOS — Activity"
@@ -843,6 +850,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func showSettings(_ group: SettingsGroup? = nil) {
         guard transactions.acceptsActions else { return }
+        prepareSurface(keeping: settingsWindow)
         statusQuickMenu.dismiss()
         keepAwakePalette.dismiss()
         refreshLoginStatus()
@@ -863,9 +871,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func showSetup() {
         guard transactions.acceptsActions else { return }
-        popover.performClose(nil)
-        if let setupWindow, activeSetupDraft != nil { presentWindow(setupWindow); return }
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 700), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        prepareSurface(keeping: setupWindow)
+        if let setupWindow, activeSetupDraft != nil {
+            centerSetup(setupWindow); presentWindow(setupWindow); return
+        }
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1040, height: 820), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.title = "Set up Better macOS"
         window.isReleasedWhenClosed = false
         let draft = SetupDraft(current: model, defaults: preferences)
@@ -873,8 +883,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         configureSetup(draft)
         window.contentViewController = NSHostingController(rootView: SetupWizard(model: model, draft: draft, close: { [weak window] in window?.close() }))
         window.minSize = NSSize(width: 640, height: 480)
-        window.center(); setupWindow = window
+        centerSetup(window); setupWindow = window
         presentWindow(window)
+    }
+
+    /// One primary app surface at a time. Hiding retains drafts and owner state.
+    private func prepareSurface(keeping window: NSWindow? = nil, keepClipboard: Bool = false) {
+        windowActionRequest = UUID()
+        popover.performClose(nil)
+        statusQuickMenu.dismiss(); windowActionPalette.dismiss(); keepAwakePalette.dismiss()
+        if !keepClipboard { clipboard?.dismiss() }
+        for other in [settingsWindow, activityWindow, setupWindow, arrangementWindow].compactMap({ $0 }) where other !== window {
+            other.orderOut(nil)
+        }
+    }
+
+    private func centerSetup(_ window: NSWindow) {
+        let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
+        guard let visible = screen?.visibleFrame else { window.center(); return }
+        let size = NSSize(width: min(1040, visible.width - 48), height: min(844, visible.height - 48))
+        window.setFrame(NSRect(x: visible.midX - size.width / 2, y: visible.midY - size.height / 2,
+                               width: size.width, height: size.height), display: false)
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -1458,6 +1487,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard modules.enabled.contains(.arrangement), controlState.inputReady,
               model.disabledMonitorCount == 0, model.currentLayout.count > 1,
               let main = model.monitors.first(where: \.isMain)?.uuid else { return }
+        prepareSurface()
         arrangementWindow?.close()
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 500),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)

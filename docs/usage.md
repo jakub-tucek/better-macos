@@ -73,6 +73,12 @@ and refresh when you return to the app. Accessibility is needed for window actio
 or enabled edge-matching, hold-to-quit and desktop-switching controls. Missing access
 can be set up later. A final access summary precedes quick actions and review.
 
+Setup opens centered on the screen under the pointer, up to 1040 × 844 points,
+with wider content and a screen-bounded frame. The app shows one primary surface
+at a time: opening setup, Settings, Activity, a palette, Clipboard or a popup hides
+the previous surface. Returning to setup keeps its draft. Finish applies directly
+from the review page without another confirmation dialog.
+
 Only **Finish** applies configuration; Cancel
 discards drafts, not macOS permission grants. Setup does not move windows, rearrange
 displays, apply Mouse tuning, or start timed awake sessions. Enabling features can
