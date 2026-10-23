@@ -271,6 +271,25 @@ after snapshot inspection. Logs: `build/awake-palette-{fixtures,lint,format}.log
 images: `build/keep-awake-palette-{idle,active}-{light,dark}.png`. These are isolated
 fixtures, not physical sleep or live VoiceOver acceptance.
 
+## Repeated directional halves · 2026-10-23
+
+Left half and Right half first snap within the current display. If the current
+verified frame already matches that half exactly, the same action continues to
+the nearest display in that horizontal direction and snaps to its corresponding
+half. Vertically overlapping displays take precedence over diagonal candidates;
+horizontal center distance, then vertical center distance and display ID break
+ties. Outermost displays stop rather than wrap. Existing Previous/Next display
+actions retain their explicit cycling behavior. An app-constrained frame that
+never reached the requested half does not accidentally advance to another display.
+
+`bash test.sh` passed **5,168 isolated checks**, supporting suites and **13 installer
+scenarios** (`build/directional-halves-test.log`). Added coverage walks three
+mixed-size, negative-origin displays both ways; checks odd-width remainder, edges,
+single/stacked displays and side-by-side preference; and exercises real shortcut
+session callbacks plus Restore across the complete three-display sequence.
+Pinned lint, format and whitespace passed. Real multi-monitor movement remains
+for user confirmation after restart; all movement tests use injected windows.
+
 ## Shortcut-session extraction · 2026-10-22
 
 The candidate-2 working tree based on `ff1e046` moves registration attempt/generation,

@@ -130,6 +130,28 @@ enum WindowShortcutAction: UInt32, CaseIterable, Identifiable {
             let end: CGFloat = self == .firstThird ? first : self == .middleThird || self == .firstTwoThirds ? second : bounds.width
             return CGRect(x: bounds.minX + start, y: bounds.minY, width: end - start, height: bounds.height)
         }
+        if self == .left || self == .right {
+            func half(in display: CGRect) -> CGRect {
+                let split = floor(display.width / 2)
+                return CGRect(x: self == .left ? display.minX : display.minX + split, y: display.minY,
+                              width: self == .left ? split : display.width - split, height: display.height)
+            }
+            let snapped = half(in: bounds)
+            guard frame == snapped else { return snapped }
+            // Continue in the physical direction only after reaching that half.
+            // Prefer a side-by-side neighbor over a diagonally placed display.
+            let candidates = ordered.filter { self == .left ? $0.bounds.midX < bounds.midX : $0.bounds.midX > bounds.midX }
+            func rank(_ display: WindowDisplay) -> [CGFloat] {
+                let rect = display.bounds
+                let overlapsVertically = min(rect.maxY, bounds.maxY) > max(rect.minY, bounds.minY)
+                return [overlapsVertically ? 0 : 1, abs(rect.midX - bounds.midX), abs(rect.midY - bounds.midY)]
+            }
+            let neighbor = candidates.min { lhs, rhs in
+                let left = rank(lhs), right = rank(rhs)
+                return left == right ? lhs.id < rhs.id : left.lexicographicallyPrecedes(right)
+            }
+            return neighbor.map { half(in: $0.bounds) } ?? snapped
+        }
         let halfWidth = floor(bounds.width / 2), halfHeight = floor(bounds.height / 2)
         let right = [.right, .topRight, .bottomRight].contains(self)
         let bottom = [.bottom, .bottomLeft, .bottomRight].contains(self)
