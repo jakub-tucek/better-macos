@@ -274,7 +274,7 @@ final class ClipboardModule: NSObject, NSTableViewDataSource, NSTableViewDelegat
     init(defaults: UserDefaults = .standard, history: ClipboardHistory? = nil) {
         self.defaults = defaults
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Fix macOS/Clipboard", isDirectory: true)
+            .appendingPathComponent("Better macOS/Clipboard", isDirectory: true)
         self.history = history ?? ClipboardHistory(board: SystemClipboard(), archive: ClipboardArchive(directory: directory),
                                    source: { NSWorkspace.shared.frontmostApplication?.bundleIdentifier })
         super.init()

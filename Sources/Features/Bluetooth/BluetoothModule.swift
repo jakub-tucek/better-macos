@@ -525,7 +525,7 @@ final class BluetoothModule: NSObject, CBCentralManagerDelegate {
     }
 
     var reconnectSummary: String {
-        if permissionRequired { return "Bluetooth access required — allow Fix macOS in Privacy & Security → Bluetooth" }
+        if permissionRequired { return "Bluetooth access required — allow Better macOS in Privacy & Security → Bluetooth" }
         if pendingManual != nil { return "Manual request queued; waiting for the current attempt" }
         if busy, let activity { return activity }
         if let summary = currentReadback?.summary { return summary }

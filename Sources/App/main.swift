@@ -20,6 +20,20 @@ let launchMode = ApplicationLaunchMode(arguments: CommandLine.arguments)
 
 func runGUI(_ mode: ApplicationLaunchMode) {
     let application = NSApplication.shared
+    if mode != .bluetoothReadOnlyProbe {
+        do {
+            guard NSRunningApplication.runningApplications(withBundleIdentifier: BrandMigration.oldDomain).isEmpty else {
+                throw ToggleError(message: "Quit the previous app before starting Better macOS so its recovery and settings can be migrated safely.")
+            }
+            try BrandMigration.run(home: FileManager.default.homeDirectoryForCurrentUser, defaults: .standard)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Better macOS migration needs attention"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+            return
+        }
+    }
     let delegate = mode.delegate(normal: { AppDelegate() }, probe: { BluetoothReadOnlyProbeDelegate() })
     application.setActivationPolicy(.accessory)
     application.delegate = delegate
@@ -52,7 +66,7 @@ if launchMode == .bluetoothReadOnlyProbe {
     }
     print(String(decoding: data, as: UTF8.self))
 } else if let index = CommandLine.arguments.firstIndex(of: "--test-bluetooth-connect"), index + 1 < CommandLine.arguments.count {
-    let domain = "mac-utils.bluetooth-test.\(UUID().uuidString)"
+    let domain = "better-macos.bluetooth-test.\(UUID().uuidString)"
     let preferences = UserDefaults(suiteName: domain)!
     preferences.set(false, forKey: "bluetooth.autoEnabled")
     preferences.set([], forKey: "bluetooth.autoAddresses")

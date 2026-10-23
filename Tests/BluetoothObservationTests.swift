@@ -251,7 +251,7 @@ private func runBluetoothReadOnlyLaunchTests() throws {
     }, diagnostics: logger)
     var scheduled: (() -> Void)?, presentations = [String](), normalConstructions = 0
     let probe = BluetoothReadOnlyProbeDelegate(run: run, work: { scheduled = $0 }, present: { presentations.append($0) })
-    let mode = ApplicationLaunchMode(arguments: ["fix-mac-os", "--bluetooth-readonly-probe", "--test-connect-in-gui", "--enable-login", "--watchdog"])
+    let mode = ApplicationLaunchMode(arguments: ["better-macos", "--bluetooth-readonly-probe", "--test-connect-in-gui", "--enable-login", "--watchdog"])
     let selected = mode.delegate(normal: { normalConstructions += 1; return ProbeLaunchDelegateFixture() }, probe: { probe })
     expect(mode == .bluetoothReadOnlyProbe && selected === probe && normalConstructions == 0,
            "typed read-only GUI route bypasses normal host construction even with mutating command flags")
@@ -359,7 +359,7 @@ func runBluetoothAutomaticPresentationTests() throws {
     let first = BluetoothDevice(address: "aa-bb-cc-dd-ee-01", name: "First", connected: false)
     let second = BluetoothDevice(address: "aa-bb-cc-dd-ee-02", name: "Second", connected: false)
     for mode in ["success", "known-failure", "unknown-failure"] {
-        let suite = "fix-mac-os.observation-auto.\(UUID().uuidString)"
+        let suite = "better-macos.observation-auto.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         let registered = defaults.volatileDomain(forName: UserDefaults.registrationDomain)
         defer { defaults.setVolatileDomain(registered, forName: UserDefaults.registrationDomain); defaults.removePersistentDomain(forName: suite) }
@@ -403,7 +403,7 @@ func runBluetoothAutomaticPresentationTests() throws {
 func runBluetoothIdentityTests() throws {
     let raw = "aa-bb-cc-dd-ee-01", saved = "AA:BB:CC:DD:EE:01"
     for mode in ["automatic", "manual", "duplicate", "invalid"] {
-        let suite = "fix-mac-os.observation-identity.\(UUID().uuidString)"
+        let suite = "better-macos.observation-identity.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         let registered = defaults.volatileDomain(forName: UserDefaults.registrationDomain)
         defer { defaults.setVolatileDomain(registered, forName: UserDefaults.registrationDomain); defaults.removePersistentDomain(forName: suite) }
@@ -456,7 +456,7 @@ func runBluetoothIdentityTests() throws {
 func runBluetoothMergedAdmissionTests() throws {
     let off = try JSONSerialization.data(withJSONObject: profilerFixture(power: "attrib_off"))
     for revoke in [false, true] {
-        let suite = "fix-mac-os.merged-admission.\(UUID().uuidString)"
+        let suite = "better-macos.merged-admission.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(false, forKey: "bluetooth.autoEnabled")
@@ -502,7 +502,7 @@ func runBluetoothMergedAdmissionTests() throws {
 }
 
 private func runBluetoothIdleExpiryAndAuthorizationTests(_ off: Data) throws {
-    let suite = "fix-mac-os.merged-expiry.\(UUID().uuidString)"
+    let suite = "better-macos.merged-expiry.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     defaults.set(false, forKey: "bluetooth.autoEnabled")
@@ -548,7 +548,7 @@ private func runBluetoothIdleExpiryAndAuthorizationTests(_ off: Data) throws {
 func runBluetoothMergedManualTests() throws {
     let first = BluetoothDevice(address: "aa-bb-cc-dd-ee-01", name: "Manual fixture", connected: false)
     for unknown in [false, true] {
-        let suite = "fix-mac-os.merged-manual.\(UUID().uuidString)"
+        let suite = "better-macos.merged-manual.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(false, forKey: "bluetooth.autoEnabled")
@@ -581,7 +581,7 @@ func runBluetoothMergedManualTests() throws {
 }
 
 private func runBluetoothObservationModuleFixture(_ nativeData: Data, logger: Diagnostics) throws {
-    let suite = "fix-mac-os.observation.\(UUID().uuidString)", runner = ObservationRunner()
+    let suite = "better-macos.observation.\(UUID().uuidString)", runner = ObservationRunner()
     let defaults = UserDefaults(suiteName: suite)!
     let registered = defaults.volatileDomain(forName: UserDefaults.registrationDomain)
     defer { defaults.setVolatileDomain(registered, forName: UserDefaults.registrationDomain); defaults.removePersistentDomain(forName: suite) }

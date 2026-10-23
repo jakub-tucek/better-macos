@@ -45,7 +45,7 @@ bash scripts/dev bootstrap
 bash scripts/dev lint
 bash scripts/dev format-check
 bash scripts/dev-tools-test.sh
-MAC_UTILS_SIGNING_IDENTITY=- bash test.sh
+BETTER_MACOS_SIGNING_IDENTITY=- bash test.sh
 bash Scripts/ci-whitespace-test.sh
 bash Scripts/ci-whitespace.sh # event environment supplied by the workflow
 ```

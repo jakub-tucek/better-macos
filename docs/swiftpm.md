@@ -91,7 +91,7 @@ On 2026-10-15, Apple Swift 6.4:
 
 - Standalone CLT: clean release archive; clean/debug and release Swift Testing
   suites; incremental repeat debug suites — all 10 tests in 3 suites passed.
-- Selected Xcode: `MAC_UTILS_SIGNING_IDENTITY=- bash test.sh` passed, including the
+- Selected Xcode: `BETTER_MACOS_SIGNING_IDENTITY=- bash test.sh` passed, including the
   same named tests, 4,220 existing isolated checks and shell installer/build tests.
 - Actual arm64 signed bundle: complete notices, no dynamic ClipboardPolicy/Testing
   dependency, and signature/plist/notices retained after relocation, without launch.

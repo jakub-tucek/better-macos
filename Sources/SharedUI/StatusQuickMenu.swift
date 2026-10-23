@@ -80,7 +80,7 @@ final class StatusQuickMenuController {
         panel.isOpaque = false; panel.backgroundColor = .clear; panel.hasShadow = true
         panel.level = .popUpMenu; panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
-        panel.title = "Fix macOS quick menu"
+        panel.title = "Better macOS quick menu"
         let backdrop = NSVisualEffectView(frame: NSRect(origin: .zero, size: Self.size))
         backdrop.material = .popover; backdrop.blendingMode = .behindWindow; backdrop.state = .active
         backdrop.wantsLayer = true; backdrop.layer?.cornerRadius = 12; backdrop.layer?.masksToBounds = true
@@ -132,7 +132,7 @@ struct StatusQuickMenuView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Fix macOS").font(.system(size: 12, weight: .semibold))
+                Text("Better macOS").font(.system(size: 12, weight: .semibold))
                 Spacer()
                 Text("Quick menu").font(.system(size: 10)).foregroundStyle(.secondary)
             }.padding(.horizontal, 16).frame(height: 36)

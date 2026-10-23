@@ -89,7 +89,7 @@ failure, and a successful power action cannot resolve a failed device connection
 A verified retry of that same connection can resolve its banner. Disable neither
 mutates Bluetooth nor clears an unrelated storage error.
 
-First `MAC_UTILS_SIGNING_IDENTITY=- bash test.sh` run: all nine diagnostic
+First `BETTER_MACOS_SIGNING_IDENTITY=- bash test.sh` run: all nine diagnostic
 assertions passed, with the exact screenshot text and stale-after-success state.
 The overall runner subsequently failed the existing fresh-install-detection
 assertion because the newly inserted diagnostic ran before it and registered
@@ -121,7 +121,7 @@ Validated the implementation working tree based on `e58dfe9`, before committing:
 
 - Red: the real host/CLI regression failed at **verified successful retry clears
   only its owned Bluetooth failure banner** before production changes.
-- Green: complete `MAC_UTILS_SIGNING_IDENTITY=- bash test.sh` passed **4,395
+- Green: complete `BETTER_MACOS_SIGNING_IDENTITY=- bash test.sh` passed **4,395
   isolated checks**, **10 Swift Testing tests / three suites**, **13 mocked
   installer scenarios**, state/compiler, four build fixture groups, complete
   notices, strict ad-hoc signature and real/relocated-bundle checks.
@@ -135,7 +135,7 @@ Validated the implementation working tree based on `e58dfe9`, before committing:
   including checks incorrectly entering generated SwiftPM sources. No baseline,
   rules, production sources or tooling scripts were changed to accommodate this.
   Checks instead ran against a byte-compared Sources/Tests/scripts/config snapshot
-  at `/Users/jakubtucek/Projects/others/fix-macos-bt-tools.vz7dZk`, with the same
+  at `/Users/jakubtucek/Projects/others/better-macos-bt-tools.vz7dZk`, with the same
   checksum-verified pinned tools. Logs: `bluetooth-tooling-{lint,format,fixtures}.log`.
 - `bash -n test.sh` and `git diff --check` passed.
 

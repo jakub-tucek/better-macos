@@ -8,7 +8,7 @@ final class BluetoothCycleDelivery: @unchecked Sendable {
         let delivery: (@escaping () -> Void) -> Void
 
         static func live() -> Scheduling {
-            let queue = DispatchQueue(label: "mac-utils.bluetooth", qos: .utility)
+            let queue = DispatchQueue(label: "better-macos.bluetooth", qos: .utility)
             return Scheduling(worker: { queue.async(execute: DispatchWorkItem(block: $0)) },
                               delivery: { DispatchQueue.main.async(execute: $0) })
         }

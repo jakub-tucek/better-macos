@@ -9,7 +9,7 @@ private final class LevelSink: DiagnosticSink {
 func runLevelChild(directory: String, domain: String) -> Bool {
     let logger = Diagnostics(sink: RotatingDiagnosticSink(directory: URL(fileURLWithPath: directory), session: UUID().uuidString, pid: getpid()),
         loadConfiguration: {
-            DiagnosticConfiguration.resolve(environment: ProcessInfo.processInfo.environment["MAC_UTILS_LOG_LEVEL"],
+            DiagnosticConfiguration.resolve(environment: ProcessInfo.processInfo.environment["BETTER_MACOS_LOG_LEVEL"],
                 preference: UserDefaults(suiteName: domain)?.string(forKey: DiagnosticConfiguration.preferenceKey))
         })
     logger.emit("process", "startup", fields: ["process_role": "command_or_helper"])
@@ -76,7 +76,7 @@ func runLevelRegressions() throws {
         (vetoed?["fields"] as? [String: String])?["reason"] == "busy", "host rejection logs correlated warning with closed busy reason")
     let root = try temporaryRoot()
     defer { try? FileManager.default.removeItem(at: root) }
-    let suite = "fixmacos.logging-child.\(UUID().uuidString)"
+    let suite = "bettermacos.logging-child.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defaults.set("all", forKey: DiagnosticConfiguration.preferenceKey)
     defer { defaults.removePersistentDomain(forName: suite) }
@@ -86,7 +86,7 @@ func runLevelRegressions() throws {
         child.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
         child.arguments = ["--logging-child", directory.path, suite]
         var environment = ProcessInfo.processInfo.environment
-        environment["MAC_UTILS_LOG_LEVEL"] = override
+        environment["BETTER_MACOS_LOG_LEVEL"] = override
         child.environment = environment
         try child.run(); child.waitUntilExit()
         try check(child.terminationStatus == 0, "isolated child drains inherited \(override) configuration")

@@ -2,7 +2,7 @@
 # Compile with the selected CLT; no Python, jq or Homebrew dependency.
 set -euo pipefail
 SOURCE="$(cd "$(dirname "$0")" && pwd)/diagnostics.swift"
-ROOT="$(mktemp -d "${TMPDIR:-/tmp}/fixmacos-log-reader.XXXXXX")"
+ROOT="$(mktemp -d "${TMPDIR:-/tmp}/bettermacos-log-reader.XXXXXX")"
 trap 'rm -rf "$ROOT"' EXIT
 xcrun swiftc -swift-version 5 -parse-as-library "$SOURCE" -o "$ROOT/reader"
 "$ROOT/reader" "$@"

@@ -38,7 +38,7 @@ enum SafetyWatchdog {
                 let heartbeat = text.flatMap(Double.init) ?? 0
                 if WatchdogPolicy.shouldStop(parentIsAlive: true, now: ProcessInfo.processInfo.systemUptime,
                                              heartbeat: heartbeat, timeout: session.timeout) {
-                    defaults.set("UI heartbeat stopped; the watchdog terminated Fix macOS.", forKey: "safety.lastIncident")
+                    defaults.set("UI heartbeat stopped; the watchdog terminated Better macOS.", forKey: "safety.lastIncident")
                     defaults.set(false, forKey: "spaces.enabled")
                     try Data("UI heartbeat expired".utf8).write(to: directory.appendingPathComponent("tripped"), options: .atomic)
                     // Re-check parentage immediately before signaling. PID reuse
@@ -90,11 +90,11 @@ final class SafetySupervisor {
         onStatusChanged?(status)
     }
 
-    init(domain: String = "io.github.jakub-tucek.mac-utils", timeout: TimeInterval = 8, root: URL? = nil) {
+    init(domain: String = "io.github.jakub-tucek.better-macos", timeout: TimeInterval = 8, root: URL? = nil) {
         self.domain = domain
         defaults = safetyPreferences(domain)
         self.timeout = timeout
-        self.root = root ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Mac Utils/Safety", isDirectory: true)
+        self.root = root ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Better macOS/Safety", isDirectory: true)
     }
 
     func start() throws {

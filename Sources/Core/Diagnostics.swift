@@ -197,7 +197,7 @@ final class RotatingDiagnosticSink: DiagnosticSink {
          retainedFiles: Int = 24, files: DiagnosticFiles = LocalDiagnosticFiles()) {
         self.directory = directory; self.limit = max(1024, limit); self.retainedFiles = max(3, retainedFiles)
         self.files = files
-        prefix = "fixmacos-\(pid)-\(session)"
+        prefix = "bettermacos-\(pid)-\(session)"
     }
     private func file(_ index: Int) -> URL { directory.appendingPathComponent("\(prefix)-\(index).jsonl", isDirectory: false) }
     func write(_ line: Data) throws {
@@ -209,7 +209,7 @@ final class RotatingDiagnosticSink: DiagnosticSink {
         // Count, eviction, rotation and creation share the directory lock. Never
         // append a new file first and hope a subsequent cleanup can make room.
         var owned = try files.files(directory).filter { url in
-            url.lastPathComponent.range(of: #"^fixmacos-[0-9]+-[A-Fa-f0-9-]{36}-[012]\.jsonl$"#, options: .regularExpression) != nil
+            url.lastPathComponent.range(of: #"^bettermacos-[0-9]+-[A-Fa-f0-9-]{36}-[012]\.jsonl$"#, options: .regularExpression) != nil
         }
         let currentSize = try files.size(file(0))
         let rotating = currentSize > limit - line.count
@@ -239,7 +239,7 @@ final class RotatingDiagnosticSink: DiagnosticSink {
 final class Diagnostics {
     // Tests do not initialize the production sink: main.swift explicitly installs it.
     static var shared = Diagnostics()
-    private let queue = DispatchQueue(label: "Fix macOS diagnostics", qos: .utility)
+    private let queue = DispatchQueue(label: "Better macOS diagnostics", qos: .utility)
     private let admission = NSCondition()
     private struct Pending {
         let date: Date
@@ -351,13 +351,13 @@ final class Diagnostics {
     static func install(revision: String, sourceState: String) {
         let session = UUID().uuidString
         let sink = DeferredDiagnosticSink {
-            let directory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Fix macOS", isDirectory: true)
+            let directory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Better macOS", isDirectory: true)
             return RotatingDiagnosticSink(directory: directory, session: session, pid: getpid())
         }
         let logger = Diagnostics(sink: sink, session: session,
                                  startupMetadata: { startupMetadata(revision: revision, sourceState: sourceState) },
                                  loadConfiguration: {
-                                     DiagnosticConfiguration.resolve(environment: ProcessInfo.processInfo.environment["MAC_UTILS_LOG_LEVEL"],
+                                     DiagnosticConfiguration.resolve(environment: ProcessInfo.processInfo.environment["BETTER_MACOS_LOG_LEVEL"],
                                                                      preference: UserDefaults.standard.string(forKey: DiagnosticConfiguration.preferenceKey))
                                  })
         shared = logger
@@ -380,10 +380,10 @@ final class Diagnostics {
                        "process_role": processRole(arguments: ProcessInfo.processInfo.arguments),
                       "bundle_location": path.contains("/build/") ? "build" : (path.contains("/Applications/") ? "applications" : "other"),
                       "executable_path_hash": identity(ProcessInfo.processInfo.arguments.first ?? ""),
-                       "bundle_revision_observed_on_worker": bundle.object(forInfoDictionaryKey: "FixMacOSRevision") as? String ?? "absent",
+                       "bundle_revision_observed_on_worker": bundle.object(forInfoDictionaryKey: "BetterMacOSRevision") as? String ?? "absent",
                        "version_observed_on_worker": bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "absent",
                       "preferences_domain": bundle.bundleIdentifier ?? "absent",
-                      "clipboard_storage_identity": identity(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Fix macOS/Clipboard/history.json").path)]
+                      "clipboard_storage_identity": identity(FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Better macOS/Clipboard/history.json").path)]
         var code: SecCode?
         let signingStatus = SecCodeCopySelf([], &code)
         fields["signing_self_status"] = String(signingStatus)

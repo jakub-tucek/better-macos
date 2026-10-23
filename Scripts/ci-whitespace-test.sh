@@ -2,7 +2,7 @@
 # Offline disposable Git histories; no app, network or live preferences.
 set -euo pipefail
 CHECK="$(cd "$(dirname "$0")" && pwd)/ci-whitespace.sh"
-ROOT="$(mktemp -d "${TMPDIR:-/tmp}/fix-macos-ci-whitespace.XXXXXX")"
+ROOT="$(mktemp -d "${TMPDIR:-/tmp}/better-macos-ci-whitespace.XXXXXX")"
 trap 'rm -rf "$ROOT"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM

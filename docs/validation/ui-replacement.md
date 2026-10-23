@@ -199,12 +199,12 @@ a new run in this pass. No production code changed and the full suite was not re
 
 ### Completed
 
-- Sent normal AppleScript Quit to bundle ID `io.github.jakub-tucek.mac-utils`.
-  It returned successfully; `pgrep -fl 'fix-mac-os|Fix macOS'` then found neither
+- Sent normal AppleScript Quit to bundle ID `io.github.jakub-tucek.better-macos`.
+  It returned successfully; `pgrep -fl 'better-macos|Better macOS'` then found neither
   the GUI nor watchdog process. No kill, forced quit, or veto bypass was used.
 - Ran `bash build.sh` from the main checkout at the reviewed revision. Compilation
   with warnings as errors, signing, and strict signature verification succeeded.
-- Relaunched `build/Fix macOS.app --show-dashboard`. Read-only
+- Relaunched `build/Better macOS.app --show-dashboard`. Read-only
   `NSRunningApplication`/bundle inspection confirmed the checkout's app and embedded
   revision `7e3974cd51e156c000101346f3068a44b868e800`.
 - After a second successful normal quit and process-exit verification, launched with

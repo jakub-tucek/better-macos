@@ -41,6 +41,10 @@ for the broader lifecycle work that remains proposed.
 
 ## Find the UI first
 
+- [BrandMigration.swift](../Sources/App/BrandMigration.swift): first normal GUI
+  launch imports old-brand preferences and data before feature owners initialize.
+  Conflict failures stop startup and retain retryable data; probe launches skip it.
+
 - [AppStyle.swift](../Sources/SharedUI/AppStyle.swift): shared headings, neutral
   surfaces, contrast-aware borders, icon badges and compact launch rows. Used by
   Quick actions, Settings, setup, the right-click menu and action palettes.

@@ -25,7 +25,7 @@ private final class FakeLoginService: LoginServicing {
 }
 
 func runLoginServiceTests() {
-    let suite = "fix-mac-os.login.\(UUID().uuidString)"
+    let suite = "better-macos.login.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     for module in AppModule.allCases { ModuleSettings(defaults: defaults).set(module, enabled: false) }

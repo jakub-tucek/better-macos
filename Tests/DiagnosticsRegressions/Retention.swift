@@ -3,7 +3,7 @@ import Darwin
 
 private func ownedLogs(_ directory: URL) throws -> [URL] {
     try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).filter {
-        $0.lastPathComponent.range(of: #"^fixmacos-[0-9]+-[A-Fa-f0-9-]{36}-[012]\.jsonl$"#, options: .regularExpression) != nil
+        $0.lastPathComponent.range(of: #"^bettermacos-[0-9]+-[A-Fa-f0-9-]{36}-[012]\.jsonl$"#, options: .regularExpression) != nil
     }
 }
 
@@ -23,7 +23,7 @@ private final class RetentionFixture {
         try? FileManager.default.removeItem(at: root)
     }
     func seed(immutable: Bool, oldest: Bool = false, owned: Bool = true) throws -> URL {
-        let name = owned ? "fixmacos-2147483647-\(UUID().uuidString)-0.jsonl" : "unrelated-\(UUID().uuidString).txt"
+        let name = owned ? "bettermacos-2147483647-\(UUID().uuidString)-0.jsonl" : "unrelated-\(UUID().uuidString).txt"
         let file = logs.appendingPathComponent(name, isDirectory: false)
         try Data("fixture sentinel\n".utf8).write(to: file)
         try FileManager.default.setAttributes([.posixPermissions: 0o600, .modificationDate: Date(timeIntervalSince1970: oldest ? 1 : 2)], ofItemAtPath: file.path)
@@ -102,8 +102,8 @@ private func rotationCapacity() throws {
     let bytes = Data(repeating: 97, count: 800)
     try sink.write(bytes)
     try sink.write(bytes)
-    let current = fixture.logs.appendingPathComponent("fixmacos-\(getpid())-\(session)-0.jsonl")
-    let previous = fixture.logs.appendingPathComponent("fixmacos-\(getpid())-\(session)-1.jsonl")
+    let current = fixture.logs.appendingPathComponent("bettermacos-\(getpid())-\(session)-0.jsonl")
+    let previous = fixture.logs.appendingPathComponent("bettermacos-\(getpid())-\(session)-1.jsonl")
     try check(try ownedLogs(fixture.logs).count == 3 && Data(contentsOf: current) == bytes && Data(contentsOf: previous) == bytes,
               "rotation reserves room before creating new current file at capacity")
     try check(!FileManager.default.fileExists(atPath: evictable.path) && (try fixture.unchanged(oldest)), "rotation skips immutable candidate and evicts another eligible session")

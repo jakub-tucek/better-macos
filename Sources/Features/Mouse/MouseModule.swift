@@ -66,7 +66,7 @@ final class MouseModule {
 
     convenience init() {
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Fix macOS", isDirectory: true)
+            .appendingPathComponent("Better macOS", isDirectory: true)
         self.init(backend: SystemMouseBackend(), recovery: MouseFileRecoveryStore(url: directory.appendingPathComponent("mouse-recovery.json")))
     }
 

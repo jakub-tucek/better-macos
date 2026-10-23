@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "FixMacOSPolicy",
+    name: "BetterMacOSPolicy",
     platforms: [.macOS(.v15)],
     products: [.library(name: "ClipboardPolicy", type: .static, targets: ["ClipboardPolicy"])],
     targets: [

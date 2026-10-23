@@ -111,7 +111,7 @@ integration approval.
 
 On macOS 26.6.2 (`25G83`), arm64, with scoped Xcode 27.0 (`27A266a`), Apple Swift
 6.4 (`swiftlang-6.4.0.34.1`), SDK 27.0 and Swift 5 language mode, with `SDKROOT`
-explicitly unset and `MAC_UTILS_SIGNING_IDENTITY=-`:
+explicitly unset and `BETTER_MACOS_SIGNING_IDENTITY=-`:
 
 - Full `bash test.sh` passed: **4,366 legacy isolated checks** (31 more than the
   reviewed base), **10 Swift Testing tests in three suites**, **13 mocked installer

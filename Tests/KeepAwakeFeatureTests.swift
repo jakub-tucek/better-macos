@@ -34,7 +34,7 @@ func runKeepAwakeFeatureTests() {
 }
 
 private func runKeepAwakePaletteTests() {
-    let suite = "fix-mac-os.awake-palette.\(UUID().uuidString)"
+    let suite = "better-macos.awake-palette.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     let power = FeaturePower()
@@ -92,7 +92,7 @@ private func runKeepAwakePaletteTests() {
 }
 
 private func runAwakeFeatureOwnershipTests() {
-    let suite = "fix-mac-os.awake-feature-ownership.\(UUID().uuidString)"
+    let suite = "better-macos.awake-feature-ownership.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     let power = FeaturePower()
@@ -182,7 +182,7 @@ private func runAwakeFeatureOwnershipTests() {
 }
 
 private func runAwakeFeatureFailureOrderingTests() {
-    let suite = "fix-mac-os.awake-feature-errors.\(UUID().uuidString)"
+    let suite = "better-macos.awake-feature-errors.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     let power = FeaturePower()
@@ -223,7 +223,7 @@ private func runAwakeFeatureFailureOrderingTests() {
 }
 
 private func runAwakeFeatureHostAdmissionTests() {
-    let suite = "fix-mac-os.awake-feature-host.\(UUID().uuidString)"
+    let suite = "better-macos.awake-feature-host.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     let settings = ModuleSettings(defaults: defaults)
@@ -281,7 +281,7 @@ private func runAwakeFeatureHostAdmissionTests() {
 }
 
 private func runAwakeFeatureLifetimeTests() {
-    let suite = "fix-mac-os.awake-feature-lifetime.\(UUID().uuidString)"
+    let suite = "better-macos.awake-feature-lifetime.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     let power = FeaturePower()

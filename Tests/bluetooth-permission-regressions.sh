@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-ROOT="$(mktemp -d "${TMPDIR:-/tmp}/fixmacos-bluetooth-permission.XXXXXX")"
+ROOT="$(mktemp -d "${TMPDIR:-/tmp}/bettermacos-bluetooth-permission.XXXXXX")"
 trap 'rm -rf "$ROOT"' EXIT
 xcrun swiftc -swift-version 5 -warnings-as-errors -target arm64-apple-macos15.0 \
     Sources/Core/Diagnostics.swift Sources/Core/CommandRunner.swift Sources/Core/ActivityJournal.swift \

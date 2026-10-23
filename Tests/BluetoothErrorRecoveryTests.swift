@@ -55,7 +55,7 @@ func runBluetoothErrorRecoveryTests() throws {
     """
     try script.write(to: executable, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
-    let suite = "fix-mac-os.bluetooth-exit75.\(UUID().uuidString)"
+    let suite = "better-macos.bluetooth-exit75.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     let registeredDefaults = defaults.volatileDomain(forName: UserDefaults.registrationDomain)
     defer { defaults.setVolatileDomain(registeredDefaults, forName: UserDefaults.registrationDomain) }
@@ -291,7 +291,7 @@ private func bluetoothPopupLabels(_ model: DashboardModel) -> [String] {
 }
 
 private func runBluetoothNativePresentationTests() throws {
-    let suite = "fix-mac-os.native-presentation.\(UUID().uuidString)"
+    let suite = "better-macos.native-presentation.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     let registered = defaults.volatileDomain(forName: UserDefaults.registrationDomain)
     defer { defaults.setVolatileDomain(registered, forName: UserDefaults.registrationDomain); defaults.removePersistentDomain(forName: suite) }
@@ -404,7 +404,7 @@ private func runBluetoothBlockedDisableTests() throws {
     esac
     """.write(to: executable, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
-    let suite = "fix-mac-os.bluetooth-drain.\(UUID().uuidString)"
+    let suite = "better-macos.bluetooth-drain.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     let registered = defaults.volatileDomain(forName: UserDefaults.registrationDomain)
     defer { defaults.setVolatileDomain(registered, forName: UserDefaults.registrationDomain); defaults.removePersistentDomain(forName: suite) }

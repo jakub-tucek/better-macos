@@ -1,11 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-REPOSITORY="https://github.com/jakub-tucek/fix-mac-os.git"
-STATE="${FIX_MACOS_HOME:-$HOME/Library/Application Support/Fix macOS}"
+REPOSITORY="https://github.com/jakub-tucek/better-macos.git"
+STATE="${BETTER_MACOS_HOME:-${FIX_MACOS_HOME:-$HOME/Library/Application Support/Better macOS}}"
 SOURCE="$STATE/source"
-APP_DIR="${FIX_MACOS_APP_DIR:-$HOME/Applications}"
-APP="$APP_DIR/Fix macOS.app"
+APP_DIR="${BETTER_MACOS_APP_DIR:-${FIX_MACOS_APP_DIR:-$HOME/Applications}}"
+APP="$APP_DIR/Better macOS.app"
+LEGACY_APP="$APP_DIR/Fix macOS.app"
+PREVIOUS="$APP"
 FORCE=0
 OPEN=1
 for arg in "$@"; do
@@ -15,7 +17,7 @@ for arg in "$@"; do
         *) echo "Usage: bash install.sh [--force] [--no-open]" >&2; exit 2 ;;
     esac
 done
-fail() { echo "Fix macOS: $*" >&2; exit 1; }
+fail() { echo "Better macOS: $*" >&2; exit 1; }
 [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] || fail "Requires Apple Silicon macOS (run outside Rosetta)."
 [[ "$(sw_vers -productVersion | cut -d. -f1)" -ge 15 ]] || fail "Requires macOS 15 or newer."
 xcrun --find swiftc >/dev/null 2>&1 || fail "Install Xcode Command Line Tools with: xcode-select --install; then rerun."
@@ -32,7 +34,7 @@ cleanup() {
     local result=$?
     if [[ -n "$STAGE" && -d "$STAGE" ]]; then
         if [[ -d "$STAGE/previous.app" && ! -e "$APP" ]]; then
-            mv "$STAGE/previous.app" "$APP" || echo "Previous app remains at $STAGE/previous.app" >&2
+            mv "$STAGE/previous.app" "$PREVIOUS" || echo "Previous app remains at $STAGE/previous.app" >&2
         fi
         # Keep a previous app if rollback failed, rather than deleting it.
         if [[ ! -d "$STAGE/previous.app" || -d "$APP" ]]; then rm -rf "$STAGE"; fi
@@ -46,7 +48,12 @@ trap 'exit 143' TERM
 
 if [[ -e "$SOURCE" ]]; then
     [[ -d "$SOURCE/.git" ]] || fail "$SOURCE exists but is not an installer checkout."
-    [[ "$(git -C "$SOURCE" remote get-url origin)" == "$REPOSITORY" ]] || fail "Source checkout has a different origin; leaving it untouched."
+    ORIGIN="$(git -C "$SOURCE" remote get-url origin)"
+    if [[ "$ORIGIN" == https://github.com/jakub-tucek/fix-mac-os.git ]]; then
+        git -C "$SOURCE" remote set-url origin "$REPOSITORY"
+    else
+        [[ "$ORIGIN" == "$REPOSITORY" ]] || fail "Source checkout has a different origin; leaving it untouched."
+    fi
     [[ "$(git -C "$SOURCE" symbolic-ref --short HEAD)" == main ]] || fail "Source checkout is not on main; leaving it untouched."
     [[ -z "$(git -C "$SOURCE" status --porcelain)" ]] || fail "Source checkout has local changes; commit or move them before updating."
     git -C "$SOURCE" fetch origin main
@@ -59,13 +66,18 @@ fi
 REVISION="$(git -C "$SOURCE" rev-parse HEAD)"
 # Save an explicit selection even when the revision is unchanged. A changed
 # selection always rebuilds; an unchanged selection must also match the bundle.
-CONFIGURED_IDENTITY="$(git -C "$SOURCE" config --local --get macutils.signingIdentity || true)"
-IDENTITY_CHANGED=0
-if [[ -n "${MAC_UTILS_SIGNING_IDENTITY:-}" ]]; then
-    if [[ "$MAC_UTILS_SIGNING_IDENTITY" != "$CONFIGURED_IDENTITY" ]]; then IDENTITY_CHANGED=1; fi
-    git -C "$SOURCE" config --local macutils.signingIdentity "$MAC_UTILS_SIGNING_IDENTITY"
+CONFIGURED_IDENTITY="$(git -C "$SOURCE" config --local --get bettermacos.signingIdentity || true)"
+if [[ -z "$CONFIGURED_IDENTITY" ]]; then
+    CONFIGURED_IDENTITY="$(git -C "$SOURCE" config --local --get macutils.signingIdentity || true)"
+    if [[ -n "$CONFIGURED_IDENTITY" ]]; then git -C "$SOURCE" config --local bettermacos.signingIdentity "$CONFIGURED_IDENTITY"; fi
 fi
-SIGNING_IDENTITY="${MAC_UTILS_SIGNING_IDENTITY:-${CONFIGURED_IDENTITY:--}}"
+BETTER_MACOS_SIGNING_IDENTITY="${BETTER_MACOS_SIGNING_IDENTITY:-${MAC_UTILS_SIGNING_IDENTITY:-}}"
+IDENTITY_CHANGED=0
+if [[ -n "${BETTER_MACOS_SIGNING_IDENTITY:-}" ]]; then
+    if [[ "$BETTER_MACOS_SIGNING_IDENTITY" != "$CONFIGURED_IDENTITY" ]]; then IDENTITY_CHANGED=1; fi
+    git -C "$SOURCE" config --local bettermacos.signingIdentity "$BETTER_MACOS_SIGNING_IDENTITY"
+fi
+SIGNING_IDENTITY="${BETTER_MACOS_SIGNING_IDENTITY:-${CONFIGURED_IDENTITY:--}}"
 CERTIFICATE_HASH=""
 if [[ "$SIGNING_IDENTITY" != - ]]; then
     IDENTITIES="$(security find-identity -v -p codesigning)" || fail "Cannot inspect signing certificates."
@@ -91,12 +103,17 @@ signature_matches() {
     fi
 }
 PLIST="$APP/Contents/Info.plist"
-if [[ -e "$APP" ]]; then
-    [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST" 2>/dev/null || true)" == io.github.jakub-tucek.mac-utils ]] || fail "Destination contains a different app: $APP"
+if [[ -e "$LEGACY_APP" ]]; then
+    [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$LEGACY_APP/Contents/Info.plist" 2>/dev/null || true)" == io.github.jakub-tucek.mac-utils ]] || fail "Legacy destination contains a different app: $LEGACY_APP"
+    [[ ! -e "$APP" ]] || fail "Both old and new apps exist; move the old app aside before updating."
+    PREVIOUS="$LEGACY_APP"
 fi
-INSTALLED="$(/usr/libexec/PlistBuddy -c 'Print :FixMacOSRevision' "$PLIST" 2>/dev/null || true)"
-MANAGED="$(/usr/libexec/PlistBuddy -c 'Print :FixMacOSSourceInstall' "$PLIST" 2>/dev/null || true)"
-INSTALLED_SOURCE="$(/usr/libexec/PlistBuddy -c 'Print :FixMacOSSourceDirectory' "$PLIST" 2>/dev/null || true)"
+if [[ -e "$APP" ]]; then
+    [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST" 2>/dev/null || true)" == io.github.jakub-tucek.better-macos ]] || fail "Destination contains a different app: $APP"
+fi
+INSTALLED="$(/usr/libexec/PlistBuddy -c 'Print :BetterMacOSRevision' "$PLIST" 2>/dev/null || true)"
+MANAGED="$(/usr/libexec/PlistBuddy -c 'Print :BetterMacOSSourceInstall' "$PLIST" 2>/dev/null || true)"
+INSTALLED_SOURCE="$(/usr/libexec/PlistBuddy -c 'Print :BetterMacOSSourceDirectory' "$PLIST" 2>/dev/null || true)"
 if [[ "$FORCE" == 0 && "$IDENTITY_CHANGED" == 0 && "$INSTALLED" == "$REVISION" && "$MANAGED" == true && "$INSTALLED_SOURCE" == "$SOURCE" ]] && signature_matches "$APP"; then
     echo "Already up to date (${REVISION:0:7}). Use --force to rebuild."
     if [[ "$OPEN" == 1 ]]; then open "$APP"; fi
@@ -104,10 +121,10 @@ if [[ "$FORCE" == 0 && "$IDENTITY_CHANGED" == 0 && "$INSTALLED" == "$REVISION" &
 fi
 
 brew install blueutil switchaudio-osx
-echo "Building Fix macOS from ${REVISION:0:7}…"
-MAC_UTILS_SIGNING_IDENTITY="$SIGNING_IDENTITY" FIX_MACOS_SOURCE_INSTALL=1 FIX_MACOS_INSTALL_DESTINATION="$APP" bash "$SOURCE/build.sh"
-STAGE="$(mktemp -d "$APP_DIR/.fix-macos-install.XXXXXX")"
-ditto "$SOURCE/build/Fix macOS.app" "$STAGE/new.app"
+echo "Building Better macOS from ${REVISION:0:7}…"
+BETTER_MACOS_SIGNING_IDENTITY="$SIGNING_IDENTITY" BETTER_MACOS_SOURCE_INSTALL=1 BETTER_MACOS_INSTALL_DESTINATION="$APP" bash "$SOURCE/build.sh"
+STAGE="$(mktemp -d "$APP_DIR/.better-macos-install.XXXXXX")"
+ditto "$SOURCE/build/Better macOS.app" "$STAGE/new.app"
 signature_matches "$STAGE/new.app" || fail "Built app does not match the selected signing identity."
 
 # Quit via the app's normal recovery/drain path. Never kill a busy GUI.
@@ -116,15 +133,18 @@ with timeout of 30 seconds
     if application id "io.github.jakub-tucek.mac-utils" is running then
         tell application id "io.github.jakub-tucek.mac-utils" to quit
     end if
+    if application id "io.github.jakub-tucek.better-macos" is running then
+        tell application id "io.github.jakub-tucek.better-macos" to quit
+    end if
 end timeout
 APPLESCRIPT
 for ((attempt = 0; attempt < 60; attempt++)); do
-    if ! pgrep -x fix-mac-os >/dev/null; then break; fi
+    if ! pgrep -x 'better-macos|fix-mac-os' >/dev/null; then break; fi
     sleep 0.5
 done
-if pgrep -x fix-mac-os >/dev/null; then fail "The app is still busy. Finish its current operation and rerun the installer."; fi
+if pgrep -x 'better-macos|fix-mac-os' >/dev/null; then fail "The app is still busy. Finish its current operation and rerun the installer."; fi
 
-if [[ -e "$APP" ]]; then mv "$APP" "$STAGE/previous.app"; fi
+if [[ -e "$PREVIOUS" ]]; then mv "$PREVIOUS" "$STAGE/previous.app"; fi
 mv "$STAGE/new.app" "$APP"
 echo "Installed $APP (${REVISION:0:7})."
 if [[ "$OPEN" == 1 ]]; then open "$APP"; fi

@@ -1,12 +1,12 @@
 # Local operational diagnostics
 
 Instrumented builds, once started, admit best-effort newline-delimited JSON to
-`~/Library/Logs/Fix macOS/`. No upload service or logging opt-in is involved.
+`~/Library/Logs/Better macOS/`. No upload service or logging opt-in is involved.
 The [initial integration record](#main-integration--2026-10-15) and
 [later level/reader integration](#log-level-main-integration--2026-10-18) record
 source/isolated checks, not current running-process identity. Building a new bundle
 does not reconfigure or replace an already-running process.
-Each process/session has `fixmacos-<pid>-<session>-0.jsonl` (current), then `-1`
+Each process/session has `bettermacos-<pid>-<session>-0.jsonl` (current), then `-1`
 and `-2` (older). Logger-created files are capped at 512 KiB; sessions in one
 validated directory share a 24-file budget (12 MiB). Old files, including old
 live-session files, can be evicted.
@@ -50,7 +50,7 @@ writer. Regular files must be owned by this user and have exactly one hard link.
 Levels, most to least verbose: `trace`, `debug`, `info`, `warning`, `error`.
 `all` aliases `trace`. Normal builds default to `info`; building never embeds a
 machine's local verbosity or changes its preferences. Each process resolves once:
-valid `MAC_UTILS_LOG_LEVEL` environment override, then the app's `diagnostics.level`
+valid `BETTER_MACOS_LOG_LEVEL` environment override, then the app's `diagnostics.level`
 preference, then `info`. Invalid values fall through to the next source. Parsing
 ignores case and surrounding whitespace. There is no redaction bypass or `off` mode.
 
@@ -58,14 +58,14 @@ For **all logs on this Mac on the next launch**, including LaunchServices/login
 launches and same-bundle helpers, write only the logging preference:
 
 ```sh
-defaults write io.github.jakub-tucek.mac-utils diagnostics.level -string all
-defaults read io.github.jakub-tucek.mac-utils diagnostics.level
+defaults write io.github.jakub-tucek.better-macos diagnostics.level -string all
+defaults read io.github.jakub-tucek.better-macos diagnostics.level
 ```
 
 To return to the normal default, delete only that key:
 
 ```sh
-defaults delete io.github.jakub-tucek.mac-utils diagnostics.level
+defaults delete io.github.jakub-tucek.better-macos diagnostics.level
 ```
 
 These commands do not relaunch an app. Already-running processes retain their
@@ -75,7 +75,7 @@ direct development launch, use the executable rather than assuming `open` forwar
 the shell environment:
 
 ```sh
-MAC_UTILS_LOG_LEVEL=all "build/Fix macOS.app/Contents/MacOS/fix-mac-os"
+BETTER_MACOS_LOG_LEVEL=all "build/Better macOS.app/Contents/MacOS/better-macos"
 ```
 
 Child processes inherit the launch environment unless their launcher replaces it;
@@ -140,17 +140,17 @@ build merely because its on-disk bundle was replaced.
 Find current files (helpers have distinct PIDs and sessions):
 
 ```sh
-ls -lt "$HOME/Library/Logs/Fix macOS/"/*.jsonl
+ls -lt "$HOME/Library/Logs/Better macOS/"/*.jsonl
 ```
 
 Pick the GUI process's `-0.jsonl` using its `process/startup` record, then:
 
 ```sh
-tail -F "$HOME/Library/Logs/Fix macOS/fixmacos-<pid>-<session>-0.jsonl"
+tail -F "$HOME/Library/Logs/Better macOS/bettermacos-<pid>-<session>-0.jsonl"
 jq -c 'select(.category == "bluetooth" or .category == "login")' \
-  "$HOME/Library/Logs/Fix macOS/"/*.jsonl
+  "$HOME/Library/Logs/Better macOS/"/*.jsonl
 jq -c 'select(.category == "clipboard_storage" or .category == "settings" or .category == "popover")' \
-  "$HOME/Library/Logs/Fix macOS/"/*.jsonl
+  "$HOME/Library/Logs/Better macOS/"/*.jsonl
 ```
 
 `jq` is optional; `tail` works without installing anything. Record the time of
@@ -240,7 +240,7 @@ Implementation `c555a888eea76790479233e4e359dd155ad4a19c`, based on `e58dfe9`:
 findings below.** These passing checks had coverage gaps and did not establish
 repeat-launch logging, nonblocking caller delivery or parent-replacement safety.
 
-- `MAC_UTILS_SIGNING_IDENTITY=- DEVELOPER_DIR=/Library/Developer/CommandLineTools bash test.sh`
+- `BETTER_MACOS_SIGNING_IDENTITY=- DEVELOPER_DIR=/Library/Developer/CommandLineTools bash test.sh`
   passed: **4,395 legacy checks**, **10 policy tests / 3 suites**, **13 mocked
   installer scenarios**, compiler/build fixtures, real and relocated bundle
   notices/signatures/metadata. Built plist revision matches that implementation.
@@ -309,7 +309,7 @@ passing checks did not cover immutable eviction failures.
 Frozen implementation/test revision
 `a993b423c52b03fa061ed0b8f46351e4de6550c8` passed:
 
-- `MAC_UTILS_SIGNING_IDENTITY=- DEVELOPER_DIR=/Library/Developer/CommandLineTools bash test.sh`:
+- `BETTER_MACOS_SIGNING_IDENTITY=- DEVELOPER_DIR=/Library/Developer/CommandLineTools bash test.sh`:
   **61 diagnostic review regression checks** plus the safety-entry source guard,
   **4,401 legacy checks**, **10 policy tests / 3 suites**, **13 mocked installer
   scenarios**, compiler/build fixtures and real/relocated bundle checks. The built
@@ -367,7 +367,7 @@ Focused green evidence: `diagnostics-retention-green.log`.
 
 Frozen implementation/test revision
 `82aea5b4e25d849ee257f35f5f4bddadc7bdaaec` passed one complete
-`MAC_UTILS_SIGNING_IDENTITY=- DEVELOPER_DIR=/Library/Developer/CommandLineTools bash test.sh`
+`BETTER_MACOS_SIGNING_IDENTITY=- DEVELOPER_DIR=/Library/Developer/CommandLineTools bash test.sh`
 run: **81 diagnostic regressions** plus the safety-entry source guard,
 **4,401 legacy checks**, **10 policy tests / 3 suites**, **13 mocked installer
 scenarios**, compiler/build fixtures and real/relocated bundle checks. The built
@@ -493,7 +493,7 @@ modified during compilation. Their ignored logs remain local; none is a passing
 full-suite result.
 
 Frozen `76aa5e94d275526aed397d99610fd5cedbefcfe5` then passed one complete
-`DEVELOPER_DIR=/Library/Developer/CommandLineTools MAC_UTILS_SIGNING_IDENTITY=- bash test.sh`
+`DEVELOPER_DIR=/Library/Developer/CommandLineTools BETTER_MACOS_SIGNING_IDENTITY=- bash test.sh`
 run: **4,805 legacy checks**, **160 separate diagnostics**, **13 reader fixtures**,
 **152 observation**, **39 permission-context**, **114 C safety checks**,
 **10 policy tests / 3 suites**, **13 mocked installer scenarios**, build fixtures
@@ -546,7 +546,7 @@ permissions or devices were accessed or changed during this follow-up; all input
 were isolated fixtures. **Independent re-review remains required before merge.**
 
 The authorized machine-local change was only
-`io.github.jakub-tucek.mac-utils` → `diagnostics.level=all`, verified by reading
+`io.github.jakub-tucek.better-macos` → `diagnostics.level=all`, verified by reading
 that one key. No feature preference, permission, device, app installation or running
 app was changed. The read-only live viewer refused automatic selection because
 retained logs did not provide a verified live GUI startup; it did not guess a

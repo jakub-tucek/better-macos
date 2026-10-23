@@ -190,7 +190,7 @@ that existing cleanup is part of the approval, not performed by the probe.
 After the existing process has exited gracefully:
 
 ```sh
-open "/Users/jakubtucek/Projects/others/fix-mac-os/build/Fix macOS.app" --args --bluetooth-readonly-probe
+open "/Users/jakubtucek/Projects/others/better-macos/build/Better macOS.app" --args --bluetooth-readonly-probe
 ```
 
 Keep the result window open. Use its exact **Session** value to collect retained
@@ -221,7 +221,7 @@ OpenCode temporary directory.
 
 The initial lint/format errors above were path-sensitive tooling artifacts in the
 temporary worktree (`/private/var` versus `/var` alias). After moving the same
-isolated worktree to `/Users/jakubtucek/Projects/others/fix-mac-os-bt-qualified`,
+isolated worktree to `/Users/jakubtucek/Projects/others/better-macos-bt-qualified`,
 normal pinned lint and format checks pass without Windows, baseline or configuration
 edits. The old failures remain recorded rather than being recast as source fixes.
 Final explicit-launch full-suite evidence and independent re-review remain required.
@@ -243,7 +243,7 @@ Implementation/test revision: **`178942c41aa3eb1bfc294a960b21d59061bf0ae6`**.
 One complete sequential run passed:
 
 ```sh
-DEVELOPER_DIR=/Library/Developer/CommandLineTools MAC_UTILS_SIGNING_IDENTITY=- bash test.sh
+DEVELOPER_DIR=/Library/Developer/CommandLineTools BETTER_MACOS_SIGNING_IDENTITY=- bash test.sh
 ```
 
 | Runner | Result |
@@ -261,7 +261,7 @@ DEVELOPER_DIR=/Library/Developer/CommandLineTools MAC_UTILS_SIGNING_IDENTITY=- b
 These are separate, overlapping totals. Pinned lint and format passed across 71
 Swift files after the full run. CLT Apple Swift 6.4 (`swiftlang-6.4.0.34.1`), Swift
 5 language mode, arm64/macOS 15 deployment target. The built plist's
-`FixMacOSRevision` was read back as the exact full revision above without executing
+`BetterMacOSRevision` was read back as the exact full revision above without executing
 the app. The later documentation-only evidence commit does not rebuild that bundle.
 
 Preserved failed attempt: the first full run at the same frozen source stopped
@@ -302,7 +302,7 @@ read-only and cannot grant control. The explicit launch path takes precedence
 over all other flags and lazily constructs only the probe delegate, with no normal
 AppDelegate/bootstrap/cleanup, helper command or feature automation.
 
-The built main artifact is **`build/Fix macOS.app`** in the main checkout, not the
+The built main artifact is **`build/Better macOS.app`** in the main checkout, not the
 earlier branch's build directory. The authorized-invocation example above now
 points to that main artifact. Its exact tested compiled revision and signature
 are recorded with the completed checks below; the later docs-only evidence commit
@@ -371,7 +371,7 @@ executing it. The later evidence-only commit does not change that artifact's SHA
 
 Parent handoff artifact:
 
-- Bundle: `/Users/jakubtucek/Projects/others/fix-mac-os/build/Fix macOS.app`.
+- Bundle: `/Users/jakubtucek/Projects/others/better-macos/build/Better macOS.app`.
 - Compiled source: `0beb7505a9d5bce0af8339b7ec22848b1434a166`.
 - Signing: existing configured **Apple Development** certificate, strict verification
   passed; **TeamIdentifier `QEC369PJFV`**, matching prior main's recorded team.

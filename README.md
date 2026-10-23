@@ -1,8 +1,8 @@
-# Fix macOS
+# Better macOS
 
 **A menu-bar app for window layouts, displays, audio, clipboard history, and everyday macOS annoyances.**
 
-Snap a window across monitors. Keep your Mac awake during a task. Pick speakers and microphone separately. Find something you copied earlier. Fix macOS puts these controls in one app, with each feature enabled separately.
+Snap a window across monitors. Keep your Mac awake during a task. Pick speakers and microphone separately. Find something you copied earlier. Better macOS puts these controls in one app, with each feature enabled separately.
 
 Fresh installs start with features off. Choose what you need in guided setup or Settings, then add your everyday controls to the menu-bar popup.
 
@@ -35,10 +35,10 @@ Window and Keep awake palettes offer larger, keyboard-navigable controls. Openin
 Requires **Apple Silicon, macOS 15+, Xcode Command Line Tools** (`xcode-select --install`), and [Homebrew](https://brew.sh). Intel Macs are not supported. [Tested toolchains](docs/development.md#host-and-compiler).
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jakub-tucek/fix-mac-os/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jakub-tucek/better-macos/main/install.sh | bash
 ```
 
-This runs a source installer: it downloads the repository, installs `blueutil` and `switchaudio-osx`, builds locally, and opens `~/Applications/Fix macOS.app`. During an update it asks the running app to quit normally before replacement. [Installer options and signing](docs/usage.md#source-installation-and-signing).
+This runs a source installer: it downloads the repository, installs `blueutil` and `switchaudio-osx`, builds locally, and opens `~/Applications/Better macOS.app`. During an update it asks the running app to quit normally before replacement. [Installer options and signing](docs/usage.md#source-installation-and-signing).
 
 **Update:** rerun the command, or use **Settings → General → Updates → Install update…** for installer-managed copies. Updates build latest `main`, not a pinned release. Ad-hoc-signed updates may require renewed macOS permission grants. No notarized binary release is provided.
 
@@ -54,7 +54,7 @@ This runs a source installer: it downloads the repository, installs `blueutil` a
 From a checkout on the supported Mac/toolchain:
 
 ```sh
-bash build.sh  # build and sign build/Fix macOS.app; does not launch
+bash build.sh  # build and sign build/Better macOS.app; does not launch
 bash test.sh   # isolated tests, build/packaging checks, installer fixtures
 ```
 

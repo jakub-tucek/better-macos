@@ -34,7 +34,7 @@ private final class UnexpectedDisplayRunner: CommandRunning {
 private func runDisplayWatchdogAdmissionTests() {
     runDelayedDisplayAuthorizationTests()
     for initiallyReady in [false, true] {
-        let suite = "fix-mac-os.display-watchdog-admission.\(UUID().uuidString)"
+        let suite = "better-macos.display-watchdog-admission.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = ModuleSettings(defaults: defaults)
@@ -55,7 +55,7 @@ private func runDisplayWatchdogAdmissionTests() {
 
 private func runDelayedDisplayAuthorizationTests() {
     for action in ["off", "on", "restore"] {
-        let suite = "fix-mac-os.delayed-display-authorization.\(UUID().uuidString)"
+        let suite = "better-macos.delayed-display-authorization.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = ModuleSettings(defaults: defaults)
@@ -122,8 +122,8 @@ private func runUnreadableDisplayJournalTests() {
     // cannot query graphics state during the red run.
     for legacy in [false, true] {
         for invalid: Any in [Data("broken journal".utf8), Data("{}".utf8), "wrong preference type"] {
-            let suite = "fix-mac-os.unreadable-display-journal.\(UUID().uuidString)"
-            let legacySuite = "fix-mac-os.unreadable-legacy-display-journal.\(UUID().uuidString)"
+            let suite = "better-macos.unreadable-display-journal.\(UUID().uuidString)"
+            let legacySuite = "better-macos.unreadable-legacy-display-journal.\(UUID().uuidString)"
             let defaults = UserDefaults(suiteName: suite)!
             let legacyDefaults = UserDefaults(suiteName: legacySuite)!
             defer {
@@ -157,8 +157,8 @@ private func runUnreadableDisplayJournalTests() {
     }
 
     for legacy in [false, true] {
-        let suite = "fix-mac-os.valid-display-loader.\(UUID().uuidString)"
-        let legacySuite = "fix-mac-os.valid-legacy-display-loader.\(UUID().uuidString)"
+        let suite = "better-macos.valid-display-loader.\(UUID().uuidString)"
+        let legacySuite = "better-macos.valid-legacy-display-loader.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         let legacyDefaults = UserDefaults(suiteName: legacySuite)!
         defer {
@@ -180,7 +180,7 @@ private func runUnreadableDisplayJournalTests() {
     }
 
     for action in ["quit", "module"] {
-        let suite = "fix-mac-os.unreadable-journal-host.\(UUID().uuidString)"
+        let suite = "better-macos.unreadable-journal-host.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let bytes = Data("unreadable display records".utf8)
@@ -221,7 +221,7 @@ private func runUnreadableDisplayJournalTests() {
 
 private func runDisplayJournalReloadTests() {
     for invalid: Any in [Data("damaged after initialization".utf8), Data("{}".utf8), "non-Data after initialization"] {
-        let suite = "fix-mac-os.display-journal-reload.\(UUID().uuidString)"
+        let suite = "better-macos.display-journal-reload.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         do {
@@ -266,7 +266,7 @@ private func runDisplayJournalReloadTests() {
         } catch { expect(false, "isolated production reload fixture failed: \(error)") }
     }
 
-    let suite = "fix-mac-os.invalid-arrangement-journal-type.\(UUID().uuidString)"
+    let suite = "better-macos.invalid-arrangement-journal-type.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     do {
@@ -281,7 +281,7 @@ private func runDisplayJournalReloadTests() {
 
 private func runDisplayOwnershipTests() {
     for scenario in ["quit", "quit-failure", "module", "module-failure", "keep", "helper-failure", "quit-watchdog-lost", "module-watchdog-lost"] {
-        let suite = "fix-mac-os.display-ownership.\(UUID().uuidString)"
+        let suite = "better-macos.display-ownership.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = ModuleSettings(defaults: defaults)
@@ -356,7 +356,7 @@ private func runDisplayOwnershipTests() {
         withExtendedLifetime(host) {}
     }
 
-    let suite = "fix-mac-os.display-journal.\(UUID().uuidString)"
+    let suite = "better-macos.display-journal.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     expect(!DisplayController.hasPendingRecovery(defaults: defaults), "empty isolated journal owns no recovery")
@@ -532,7 +532,7 @@ private func runRegisteredDisplayChoiceTests() {
     for module in [AppModule.monitors, .arrangement] {
         for setup in [false, true] {
             for fails in [false, true] {
-                let suite = "fix-mac-os.registered-displays.\(UUID().uuidString)"
+                let suite = "better-macos.registered-displays.\(UUID().uuidString)"
                 let defaults = UserDefaults(suiteName: suite)!
                 defer { defaults.removePersistentDomain(forName: suite) }
                 let settings = ModuleSettings(defaults: defaults)

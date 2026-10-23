@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 45
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
-      MAC_UTILS_SIGNING_IDENTITY: '-'
+      BETTER_MACOS_SIGNING_IDENTITY: '-'
     defaults:
       run:
         shell: bash --noprofile --norc -euo pipefail {0}

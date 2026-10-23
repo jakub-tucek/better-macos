@@ -1,4 +1,5 @@
 import AppKit
+// Temporary home and preference suites only; no live migration in tests.
 import SwiftUI
 import CStrafe
 import CoreBluetooth
@@ -441,6 +442,7 @@ displaySetDefaults.removePersistentDomain(forName: displaySetDomain)
 runHostTransactionsTests()
 runLoginServiceTests()
 runKeepAwakeFeatureTests()
+runBrandMigrationTests()
 try runDiagnosticsTests()
 try runActivityTests()
 try runUITests()
@@ -587,7 +589,7 @@ do {
     expect(poweredOff.connections.isEmpty, "A powered-off Bluetooth radio never starts connection attempts")
 } catch { fputs("Unexpected failure: \(error)\n", stderr); exit(1) }
 
-let testDomain = "mac-utils.tests.\(UUID().uuidString)"
+let testDomain = "better-macos.tests.\(UUID().uuidString)"
 let testDefaults = UserDefaults(suiteName: testDomain)!
 testDefaults.set([speaker.address], forKey: "bluetooth.autoAddresses")
 testDefaults.set(false, forKey: "bluetooth.autoEnabled")
@@ -713,7 +715,7 @@ do {
 } catch { expect(false, "Saved topology decode failed: \(error)") }
 
 let safeSpaces = SpacesModule()
-let moduleSettingsDomain = "fix-macos.modules-test.\(UUID().uuidString)"
+let moduleSettingsDomain = "better-macos.modules-test.\(UUID().uuidString)"
 let modulePreferences = UserDefaults(suiteName: moduleSettingsDomain)!
 let moduleSettings = ModuleSettings(defaults: modulePreferences)
 expect(moduleSettings.enabled == Set(AppModule.allCases), "Modules are available by default")
@@ -742,7 +744,7 @@ final class DelayedBluetoothRunner: CommandRunning {
     }
 }
 let delayed = DelayedBluetoothRunner()
-let stoppingDomain = "fix-macos.stopping-test.\(UUID().uuidString)"
+let stoppingDomain = "better-macos.stopping-test.\(UUID().uuidString)"
 let stoppingPreferences = UserDefaults(suiteName: stoppingDomain)!
 stoppingPreferences.set(true, forKey: "bluetooth.autoEnabled")
 stoppingPreferences.set([speaker.address], forKey: "bluetooth.autoAddresses")
@@ -787,7 +789,7 @@ expect(!safeSpaces.isAvailable && !safeSpaces.isEnabled, "Gesture interception s
 do { try safeSpaces.setEnabled(true); expect(false, "Space interception must remain blocked") }
 catch { expect(!safeSpaces.isEnabled, "Attempting to enable Space interception fails closed") }
 safeSpaces.stop()
-let safeDisplaySuite = "fix-mac-os.safe-display-controller.\(UUID().uuidString)"
+let safeDisplaySuite = "better-macos.safe-display-controller.\(UUID().uuidString)"
 let safeDisplayDefaults = UserDefaults(suiteName: safeDisplaySuite)!
 let safeDisplays = try DisplayController(defaults: safeDisplayDefaults, legacyDefaults: nil, discoverDisplays: { _ in })
 safeDisplayDefaults.removePersistentDomain(forName: safeDisplaySuite)
@@ -812,8 +814,8 @@ expect(!WatchdogPolicy.shouldStop(parentIsAlive: true, now: 100, heartbeat: 99, 
 expect(WatchdogPolicy.shouldStop(parentIsAlive: true, now: 100, heartbeat: 90, timeout: 8), "Expired UI heartbeat triggers watchdog")
 expect(!WatchdogPolicy.shouldStop(parentIsAlive: false, now: 100, heartbeat: 90, timeout: 8), "An exited/reparented process is never targeted")
 for bundled in [false, true] { do {
-    let domain = "mac-utils.watchdog-tests.\(UUID().uuidString)"
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("opencode/mac-utils-watchdog-\(UUID().uuidString)", isDirectory: true)
+    let domain = "better-macos.watchdog-tests.\(UUID().uuidString)"
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("opencode/better-macos-watchdog-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let fixture = Process()
     let original = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL
@@ -875,7 +877,7 @@ if let index = CommandLine.arguments.firstIndex(of: "--preview"), index + 1 < Co
         dashboardModel.settingsGroup = group
         try render("settings-\(group.id)", AnyView(SettingsView(model: dashboardModel)), width: 860, height: 680)
     }
-    let fixtureSuite = "fix-mac-os.preview.\(UUID().uuidString)"
+    let fixtureSuite = "better-macos.preview.\(UUID().uuidString)"
     let fixtureDefaults = UserDefaults(suiteName: fixtureSuite)!
     let setup = SetupDraft(current: dashboardModel, defaults: fixtureDefaults)
     for (name, step) in [("selection", SetupDraft.Step.selection), ("configure-audio", .configure(.sound)), ("permissions", .permissions), ("widgets", .widgets), ("review", .review)] {
@@ -979,7 +981,7 @@ let sideEdges = [DisplayPosition(uuid: "L", x: 0, y: 0, width: 2000, height: 140
 let edgeRight = ScreenEdges.destination(from: CGPoint(x: 1995, y: 1300), to: CGPoint(x: 1999, y: 1300), delta: CGPoint(x: 8, y: 0), layout: sideEdges)
 expect(edgeRight != nil && edgeRight!.x == 2002 && edgeRight!.y < 900, "Mismatched side edges map into the shorter neighbor")
 
-let animationSuite = "fix-mac-os.animation-tests.\(UUID().uuidString)"
+let animationSuite = "better-macos.animation-tests.\(UUID().uuidString)"
 let animationDefaults = UserDefaults(suiteName: animationSuite)!
 var animationValues: [String: Any] = ["com.apple.dock/autohide-time-modifier": 0.25, "unrelated": "keep"]
 var failAnimationWrites = false
@@ -1020,7 +1022,7 @@ try recreatedAnimations.setEnabled(false)
 expect(animationValues["com.apple.dock/mineffect"] as? String == "genie", "Disabling an old preset leaves never-managed keys untouched")
 animationDefaults.removePersistentDomain(forName: animationSuite)
 
-let spaceSuite = "fix-mac-os.spaces-tests.\(UUID().uuidString)"
+let spaceSuite = "better-macos.spaces-tests.\(UUID().uuidString)"
 let spacePreferences = UserDefaults(suiteName: spaceSuite)!
 spacePreferences.set(true, forKey: "spaces.enabled")
 spacePreferences.set(TransitionSpeed.instant.rawValue, forKey: "spaces.speed")
@@ -1073,7 +1075,7 @@ controlState.watchdogReady = true
 try lifecycle.reconcile(controlState)
 expect(!cursorActive, "Disabled arrangement module cannot restart its cursor handler")
 
-let watchdogReviewDomain = "fix-macos.watchdog-status.\(UUID().uuidString)"
+let watchdogReviewDomain = "better-macos.watchdog-status.\(UUID().uuidString)"
 let statusSupervisor = SafetySupervisor(domain: watchdogReviewDomain)
 var statusReports = 0
 var statusRefreshes = 0
@@ -1090,7 +1092,7 @@ expect(statusReports == 2, "A changed watchdog status still reaches the host")
 statusGate.cancel()
 UserDefaults(suiteName: watchdogReviewDomain)?.removePersistentDomain(forName: watchdogReviewDomain)
 
-let failedAnimationDomain = "fix-macos.animation-recovery.\(UUID().uuidString)"
+let failedAnimationDomain = "better-macos.animation-recovery.\(UUID().uuidString)"
 let failedAnimationDefaults = UserDefaults(suiteName: failedAnimationDomain)!
 var failedAnimationValues: [String: Any] = [:]
 var rejectAnimationWrite = true
@@ -1112,7 +1114,7 @@ expect(failedAnimationValues.isEmpty && !restartedAnimations.recoveryRequired &&
 failedAnimationDefaults.removePersistentDomain(forName: failedAnimationDomain)
 
 for takeoverFails in [false, true] {
-    let takeoverDomain = "fix-macos.takeover-stop.\(UUID().uuidString)"
+    let takeoverDomain = "better-macos.takeover-stop.\(UUID().uuidString)"
     let takeoverDefaults = UserDefaults(suiteName: takeoverDomain)!
     let entered = DispatchSemaphore(value: 0)
     let release = DispatchSemaphore(value: 0)
@@ -1160,7 +1162,7 @@ final class DrainCheckingRunner: CommandRunning {
 }
 let phases = RecordingPhases()
 let drainEngine = GestureSwitchEngine(spaceInfo: { nil }, postPhase: phases.post)
-let drainDomain = "fix-macos.gesture-drain.\(UUID().uuidString)"
+let drainDomain = "better-macos.gesture-drain.\(UUID().uuidString)"
 let drainDefaults = UserDefaults(suiteName: drainDomain)!
 drainDefaults.set(TransitionSpeed.smooth.rawValue, forKey: "spaces.speed")
 let drainingSpaces = SpacesModule(defaults: drainDefaults, engine: drainEngine)
@@ -1186,7 +1188,7 @@ drainDefaults.removePersistentDomain(forName: drainDomain)
 
 let unloadPhases = RecordingPhases()
 let unloadEngine = GestureSwitchEngine(spaceInfo: { nil }, postPhase: unloadPhases.post)
-let unloadDomain = "fix-macos.gesture-unload.\(UUID().uuidString)"
+let unloadDomain = "better-macos.gesture-unload.\(UUID().uuidString)"
 let unloadDefaults = UserDefaults(suiteName: unloadDomain)!
 unloadDefaults.set(TransitionSpeed.quick.rawValue, forKey: "spaces.speed")
 let unloadingSpaces = SpacesModule(defaults: unloadDefaults, engine: unloadEngine)
@@ -1222,8 +1224,8 @@ if case .diverged = try SourceUpdateComparison.parse(comparisonJSON("diverged"),
 do { _ = try SourceUpdateComparison.parse(comparisonJSON("ahead"), headRevision: "bad;command"); expect(false, "Invalid revisions must fail") }
 catch { expect(true, "Updater rejects malformed revisions before constructing an install URL") }
 let managedInstallation = SourceInstallation(revision: sourceRevision,
-    sourceDirectory: "/Users/test/Library/Application Support/Fix macOS/source",
-    destination: "/Users/test/Applications/Fix macOS.app")
+    sourceDirectory: "/Users/test/Library/Application Support/Better macOS/source",
+    destination: "/Users/test/Applications/Better macOS.app")
 let installScript = try managedInstallation.updateScript(revision: newerRevision)
 expect(installScript.contains("/\(newerRevision)/install.sh") && installScript.contains("set -euo pipefail"),
        "Update launcher pins the downloaded installer and preserves pipeline failures")
@@ -1257,7 +1259,7 @@ final class UpdateURLProtocol: URLProtocol {
     }
     override func stopLoading() {}
 }
-let updateDomain = "fix-macos.updates-test.\(UUID().uuidString)"
+let updateDomain = "better-macos.updates-test.\(UUID().uuidString)"
 let updateDefaults = UserDefaults(suiteName: updateDomain)!
 let updateConfiguration = URLSessionConfiguration.ephemeral
 updateConfiguration.protocolClasses = [UpdateURLProtocol.self]
@@ -1287,7 +1289,7 @@ updater.stop()
 updateSession.invalidateAndCancel()
 updateDefaults.removePersistentDomain(forName: updateDomain)
 
-let spacingDomain = "fix-macos.spacing-test.\(UUID().uuidString)"
+let spacingDomain = "better-macos.spacing-test.\(UUID().uuidString)"
 let spacingDefaults = UserDefaults(suiteName: spacingDomain)!
 var spacingValues: [String: Any] = ["NSStatusItemSpacing": 12]
 var failSpacingWrites = false
@@ -1370,7 +1372,7 @@ quitHold.cancel()
 expect(quitHold.advance(now: 64, frontmost: 101, keysHeld: true) == nil && quitHold.keyUp(12),
        "Sleep, clicks, tap interruption, and configuration changes can cancel without leaking Q")
 
-let quitDefaultsDomain = "fix-macos.quit-default-test.\(UUID().uuidString)"
+let quitDefaultsDomain = "better-macos.quit-default-test.\(UUID().uuidString)"
 let quitDefaults = UserDefaults(suiteName: quitDefaultsDomain)!
 let guardDefaults = QuitGuard(defaults: quitDefaults)
 expect(guardDefaults.duration == 3, "Fresh installations use a three-second quit hold")
@@ -1429,7 +1431,7 @@ final class FakePowerAssertions: PowerAssertionBackend {
 // Setup replaces policy without replacing existing timed/app ownership.
 for reason in ["timed", "app", "timed-paused"] {
     for releaseFails in [false, true] {
-        let suite = "fix-mac-os.setup-display-assertion.\(UUID().uuidString)"
+        let suite = "better-macos.setup-display-assertion.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let power = FakePowerAssertions()
@@ -1481,7 +1483,7 @@ for reason in ["timed", "app", "timed-paused"] {
 
 // Removing display policy must not depend on successful system-assertion renewal.
 do {
-    let suite = "fix-mac-os.setup-independent-display.\(UUID().uuidString)"
+    let suite = "better-macos.setup-independent-display.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     let power = FakePowerAssertions()
@@ -1502,7 +1504,7 @@ do {
     try module.deactivate()
 }
 
-let awakeDomain = "fix-macos.keep-awake-test.\(UUID().uuidString)"
+let awakeDomain = "better-macos.keep-awake-test.\(UUID().uuidString)"
 let awakeDefaults = UserDefaults(suiteName: awakeDomain)!
 let power = FakePowerAssertions()
 var awakeTime: TimeInterval = 1000
@@ -1570,7 +1572,7 @@ expect(awake.remaining == 86400, "Session extensions stay bounded at twenty-four
 try awake.stop()
 awakeDefaults.removePersistentDomain(forName: awakeDomain)
 
-let appAwakeDomain = "fix-macos.app-awake-test.\(UUID().uuidString)"
+let appAwakeDomain = "better-macos.app-awake-test.\(UUID().uuidString)"
 let appAwakeDefaults = UserDefaults(suiteName: appAwakeDomain)!
 let appPower = FakePowerAssertions()
 var runningAwakeApps = ["test.one": "One"]
@@ -1639,7 +1641,7 @@ appAwake.tick()
 expect(idlePublications == 0, "Unchanged idle ticks do not publish redundant runtime preference writes")
 appAwakeDefaults.removePersistentDomain(forName: appAwakeDomain)
 
-let retryAwakeDomain = "fix-macos.awake-scheduled-retry.\(UUID().uuidString)"
+let retryAwakeDomain = "better-macos.awake-scheduled-retry.\(UUID().uuidString)"
 let retryAwakeDefaults = UserDefaults(suiteName: retryAwakeDomain)!
 let retryPower = FakePowerAssertions()
 let retryAwake = KeepAwakeModule(defaults: retryAwakeDefaults, backend: retryPower,

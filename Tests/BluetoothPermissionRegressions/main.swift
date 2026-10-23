@@ -51,7 +51,7 @@ case "$*" in
 esac
 """.write(to: executable, atomically: true, encoding: .utf8)
 try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
-let suite = "fix-mac-os.permission-fixture.\(UUID().uuidString)"
+let suite = "better-macos.permission-fixture.\(UUID().uuidString)"
 let defaults = UserDefaults(suiteName: suite)!
 let registered = defaults.volatileDomain(forName: UserDefaults.registrationDomain)
 defer { defaults.setVolatileDomain(registered, forName: UserDefaults.registrationDomain); defaults.removePersistentDomain(forName: suite) }

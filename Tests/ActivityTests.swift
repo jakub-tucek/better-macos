@@ -37,7 +37,7 @@ func runActivityTests() throws {
 }
 
 private func runActivityWindowOwnerTests() throws {
-    let suite = "fix-mac-os.activity-windows.\(UUID().uuidString)"
+    let suite = "better-macos.activity-windows.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     let journal = ActivityJournal()
@@ -89,7 +89,7 @@ private func runActivityWindowOwnerTests() throws {
 }
 
 private func runActivityAwakeTests() throws {
-    let suite = "fix-mac-os.activity-awake.\(UUID().uuidString)"
+    let suite = "better-macos.activity-awake.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     let backend = FakePowerAssertions()
@@ -138,7 +138,7 @@ private func runActivityAwakeTests() throws {
 
 private func runActivityNativeWindowTests() {
     _ = NSApplication.shared
-    let suite = "fix-mac-os.activity-window.\(UUID().uuidString)"
+    let suite = "better-macos.activity-window.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     let journal = ActivityJournal()
@@ -147,7 +147,7 @@ private func runActivityNativeWindowTests() {
     let host = AppDelegate(model: model, preferences: defaults, presentWindow: { presented.append($0) }, activity: journal)
     journal.record(.displayRecovery(.timeout), trigger: .recovery, result: .failed)
     model.onOpenActivity()
-    expect(presented.count == 1 && presented[0].title == "Fix macOS — Activity" && presented[0].styleMask.contains(.resizable), "activity action creates a dedicated resizable native window through injected presentation")
+    expect(presented.count == 1 && presented[0].title == "Better macOS — Activity" && presented[0].styleMask.contains(.resizable), "activity action creates a dedicated resizable native window through injected presentation")
     presented[0].close(); model.onOpenActivity()
     expect(presented.count == 2 && presented[0] === presented[1] && journal.entries.count == 1, "activity reopen reuses its native window and retains session history")
     runActivityScrollTests(journal: journal, window: presented[0])
@@ -176,7 +176,7 @@ private final class ActivityBluetoothRunner: CommandRunning {
 }
 
 private func runActivityBluetoothTests() {
-    let suite = "fix-mac-os.activity-bluetooth.\(UUID().uuidString)"
+    let suite = "better-macos.activity-bluetooth.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     let registered = defaults.volatileDomain(forName: UserDefaults.registrationDomain)
     defer { defaults.setVolatileDomain(registered, forName: UserDefaults.registrationDomain) }
@@ -259,7 +259,7 @@ private final class ActivityDisplayRunner: CommandRunning {
 
 private func runActivityDisplayTests() {
     for failing in [false, true] {
-        let suite = "fix-mac-os.activity-displays.\(UUID().uuidString)"
+        let suite = "better-macos.activity-displays.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         for module in AppModule.allCases { ModuleSettings(defaults: defaults).set(module, enabled: module == .monitors) }

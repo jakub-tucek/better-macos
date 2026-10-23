@@ -2,7 +2,7 @@
 
 [Project overview and install](../README.md) · [Usage guide](usage.md) · [Developer setup](development.md)
 
-## Using Fix macOS
+## Using Better macOS
 
 - [Usage, shortcuts, defaults, permissions, and Clipboard privacy](usage.md)
 - [Session Activity: outcomes, Clear, and privacy](activity.md)

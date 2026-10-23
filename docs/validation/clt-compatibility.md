@@ -36,7 +36,7 @@ observable-reference initializer semantics require a separate review.
 ## Exact-revision checks
 
 Both runs started without `build/`, using command-scoped `DEVELOPER_DIR` and
-`MAC_UTILS_SIGNING_IDENTITY=- bash test.sh`. No global `xcode-select` change or
+`BETTER_MACOS_SIGNING_IDENTITY=- bash test.sh`. No global `xcode-select` change or
 `SDKROOT` override was used.
 
 | Developer tools | Swift / SDK | Result |
@@ -105,7 +105,7 @@ only in its fake source tree; the real `test.sh` still executes the compiler fix
 
 Both complete runs tested **`dff0491fa1ad3ce32a37f6009c75ce882ccefeae`**, starting
 without `build/`, sequentially, with scoped `DEVELOPER_DIR`, explicitly unset
-`SDKROOT` and `MAC_UTILS_SIGNING_IDENTITY=-`. Pre-existing build outputs were moved
+`SDKROOT` and `BETTER_MACOS_SIGNING_IDENTITY=-`. Pre-existing build outputs were moved
 to an invocation-owned temporary directory, not deleted. No shared-build race,
 global tool selection, SDK fallback or plugin borrowing was used.
 

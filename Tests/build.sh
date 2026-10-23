@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-ROOT="$(mktemp -d "${TMPDIR:-/tmp}/fix-macos-build-test.XXXXXX")"
+ROOT="$(mktemp -d "${TMPDIR:-/tmp}/better-macos-build-test.XXXXXX")"
 trap 'rm -rf "$ROOT"' EXIT
 mkdir -p "$ROOT/source/Vendor/strafe/Swift" "$ROOT/source/Scripts" "$ROOT/source/Tests" "$ROOT/bin"
 cp build.sh test.sh Package.swift Info.plist LICENSE "$ROOT/source/"
@@ -103,16 +103,16 @@ esac
 MOCK
 chmod +x "$ROOT/bin/mock"
 for command in git xcrun codesign mv; do ln -s mock "$ROOT/bin/$command"; done
-export PATH="$ROOT/bin:$PATH" MAC_UTILS_SIGNING_IDENTITY=-
-export FIX_MACOS_SOURCE_INSTALL=1 FIX_MACOS_INSTALL_DESTINATION="$ROOT/installed/Fix macOS.app"
+export PATH="$ROOT/bin:$PATH" BETTER_MACOS_SIGNING_IDENTITY=-
+export BETTER_MACOS_SOURCE_INSTALL=1 BETTER_MACOS_INSTALL_DESTINATION="$ROOT/installed/Better macOS.app"
 run_build() { bash "$ROOT/source/build.sh" > "$ROOT/output" 2>&1; }
-APP="$ROOT/source/build/Fix macOS.app"
+APP="$ROOT/source/build/Better macOS.app"
 mkdir -p "$ROOT/source/build/objects"
 touch "$ROOT/source/build/objects/fixture-stale.o"
 run_build
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :FixMacOSSourceDirectory' "$APP/Contents/Info.plist")" == "$ROOT/source" ]]
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :FixMacOSInstallDestination' "$APP/Contents/Info.plist")" == "$FIX_MACOS_INSTALL_DESTINATION" ]]
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :FixMacOSRevision' "$APP/Contents/Info.plist")" == aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :BetterMacOSSourceDirectory' "$APP/Contents/Info.plist")" == "$ROOT/source" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :BetterMacOSInstallDestination' "$APP/Contents/Info.plist")" == "$BETTER_MACOS_INSTALL_DESTINATION" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :BetterMacOSRevision' "$APP/Contents/Info.plist")" == aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ]]
 echo 'PASS: staged build embeds repository source path, destination and HEAD, not staging paths'
 touch "$APP/Contents/Resources/fixture-stale-resource"
 cp -R "$APP" "$ROOT/previous.app"
@@ -139,7 +139,7 @@ unset MOCK_FAIL
 run_build
 [[ ! -e "$APP/Contents/Resources/fixture-stale-resource" ]]
 [[ -z "$(find "$ROOT/source/build" -maxdepth 1 -name '.bundle.*' -print)" ]]
-cmp LICENSE "$APP/Contents/Resources/Licenses/Fix-macOS-MIT.txt"
+cmp LICENSE "$APP/Contents/Resources/Licenses/Better-macOS-MIT.txt"
 cmp Vendor/strafe/LICENSE "$APP/Contents/Resources/Licenses/strafe-LICENSE.txt"
 cmp Vendor/strafe/UPSTREAM.txt "$APP/Contents/Resources/Licenses/strafe-UPSTREAM.txt"
 echo 'PASS: fresh publication removes stale resources and preserves complete notices'

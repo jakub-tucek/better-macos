@@ -80,7 +80,7 @@ existing bundle/stale objects, in addition to original package/link/rollback che
 
 Environment: macOS 26.6.2 (`25G83`), arm64, selected Xcode 27.0 (`27A266a`),
 Apple Swift 6.4 (`swiftlang-6.4.0.34.1`), SDK 27.0, Swift 5 language mode.
-`MAC_UTILS_SIGNING_IDENTITY=-` selected ad-hoc signing; global tool selection and
+`BETTER_MACOS_SIGNING_IDENTITY=-` selected ad-hoc signing; global tool selection and
 local signing configuration were not changed.
 
 At the implementation revision, from this new worktree with no previous app,

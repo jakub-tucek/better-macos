@@ -27,9 +27,9 @@ struct BluetoothReadOnlyProbeRun {
 
     static func live(diagnostics: Diagnostics = .shared) -> Self {
         Self(readValue: { key in
-            CFPreferencesCopyAppValue(key as CFString, "io.github.jakub-tucek.mac-utils" as CFString)
+            CFPreferencesCopyAppValue(key as CFString, "io.github.jakub-tucek.better-macos" as CFString)
         }, makeProbe: { .live(diagnostics: diagnostics) }, diagnostics: diagnostics, isAppBundle: {
-            Bundle.main.bundleIdentifier == "io.github.jakub-tucek.mac-utils" && Bundle.main.bundleURL.pathExtension == "app"
+            Bundle.main.bundleIdentifier == "io.github.jakub-tucek.better-macos" && Bundle.main.bundleURL.pathExtension == "app"
         })
     }
 
@@ -104,7 +104,7 @@ final class BluetoothReadOnlyProbeDelegate: NSObject, NSApplicationDelegate, NSW
         if window == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 340),
                                   styleMask: [.titled, .closable], backing: .buffered, defer: false)
-            window.title = "Fix macOS · Read-only Bluetooth probe"
+            window.title = "Better macOS · Read-only Bluetooth probe"
             window.isReleasedWhenClosed = false
             window.delegate = self
             let label = NSTextField(wrappingLabelWithString: text)

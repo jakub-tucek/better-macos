@@ -363,7 +363,7 @@ struct SetupWizard: View {
     }
     private var title: String {
         switch draft.step {
-        case .welcome: return "Welcome to Fix macOS"
+        case .welcome: return "Welcome to Better macOS"
         case .selection: return "Choose improvements"
         case .configure(let group): return "Configure · \(group.rawValue)"
         case .permissions: return "Access when you need it"

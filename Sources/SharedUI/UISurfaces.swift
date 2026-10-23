@@ -301,7 +301,7 @@ struct QuickActionsView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                AppHeading(title: editor.draft == nil ? "Quick actions" : "Edit quick actions", subtitle: "Fix macOS", compact: true)
+                AppHeading(title: editor.draft == nil ? "Quick actions" : "Edit quick actions", subtitle: "Better macOS", compact: true)
                 Spacer()
                 if editor.draft != nil {
                     Button("Cancel", action: editor.cancel)
@@ -749,7 +749,7 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             HStack(spacing: 24) {
                 if geometry.size.width >= 900 {
-                    Text("Fix macOS").font(.system(size: 14, weight: .semibold)).fixedSize()
+                    Text("Better macOS").font(.system(size: 14, weight: .semibold)).fixedSize()
                 }
                 SettingsCategoryNavigation(selection: Binding(get: { model.settingsGroup }, set: { model.settingsGroup = $0 }))
             }.frame(height: 44).frame(maxWidth: 1000)

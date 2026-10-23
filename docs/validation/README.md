@@ -1,5 +1,19 @@
 # Validation and release acceptance
 
+Naming note: the 2026-10-23 project rename updates documentation paths and branding
+to Better macOS. Historical revisions, results and open gates remain unchanged;
+their original artifacts used the previous names. Renamed paths in those records
+are not evidence that historical builds were rerun.
+
+Rename validation: `build/rename-clean-test.log` records **5,174 isolated checks**,
+supporting suites and **14 installer scenarios**, including migration conflict/retry,
+preference precedence, one-time import, menu-bar identity and old-filename rollback.
+The earlier `rename-test.log` reached 5,174 checks but failed in an installer mock
+that did not recognize the legacy signing-config lookup. The updated mock and new
+upgrade scenario pass. After moving the repository, `rename-final-test.log` hit an
+absolute-path Swift module cache error; cleaning only the SwiftPM scratch build
+resolved it. No permission-grant or live hardware acceptance is claimed by tests.
+
 ## Current reading order · 2026-10-23
 
 This index summarizes recorded evidence, not a fresh test run at current HEAD.

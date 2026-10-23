@@ -1,4 +1,4 @@
-# Working in Fix macOS
+# Working in Better macOS
 
 ## Read by task
 
@@ -40,8 +40,8 @@ SwiftPM alone compiles `Sources/Features/Clipboard/Policy`; app/legacy tests imp
 and statically link `ClipboardPolicy`, never compile its sources manually. Update
 explicit inputs in build/test scripts only for sources outside that package.
 Use `StoredState` for existing SwiftUI local state; preserve its public-wrapper semantics.
-`build.sh` produces `build/Fix macOS.app`; signing uses `MAC_UTILS_SIGNING_IDENTITY`
-or local Git `macutils.signingIdentity`, otherwise ad-hoc. Preserve bundle notices,
+`build.sh` produces `build/Better macOS.app`; signing uses `BETTER_MACOS_SIGNING_IDENTITY`
+or local Git `bettermacos.signingIdentity`, otherwise ad-hoc. Preserve bundle notices,
 strict signature verification and staged replacement/rollback.
 
 ## Safety contracts

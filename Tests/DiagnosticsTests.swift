@@ -78,7 +78,7 @@ func runDiagnosticsTests() throws {
     for index in 0..<12 { try rotating.write(Data((String(repeating: "x", count: 600) + "\(index)\n").utf8)) }
     expect(filesystem.data.count == 4 && filesystem.data.values.allSatisfy { $0.count <= 1024 }, "rotation bounds three files and leaves unrelated files untouched")
     expect(filesystem.data[unrelated] == Data("preserve".utf8), "retention never removes unrelated files")
-    let old = directory.appendingPathComponent("fixmacos-2147483647-\(UUID().uuidString)-0.jsonl")
+    let old = directory.appendingPathComponent("bettermacos-2147483647-\(UUID().uuidString)-0.jsonl")
     filesystem.data[old] = Data([1])
     try rotating.write(Data([10]))
     expect(filesystem.data[old] == nil, "global retention reaps owned dead-process logs")
@@ -89,7 +89,7 @@ func runDiagnosticsTests() throws {
     expect(failedLogger.flushForTesting(), "test-only failed preparation flush completes")
     expect(filesystem.data.count == 4, "directory preparation failure does not create logs or escape")
 
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("fixmacos-diagnostic-tests-\(UUID().uuidString)", isDirectory: true)
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("bettermacos-diagnostic-tests-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
     defer { try? FileManager.default.removeItem(at: root) }
     let localDirectory = root.appendingPathComponent("logs", isDirectory: true)
@@ -112,7 +112,7 @@ func runDiagnosticsTests() throws {
     try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: localDirectory)
     let linked = RotatingDiagnosticSink(directory: symlink, session: UUID().uuidString, pid: getpid())
     do { try linked.write(Data("{}\n".utf8)); expect(false, "symlink directory must be rejected") } catch {}
-    let unrelatedDirectory = localDirectory.appendingPathComponent("fixmacos-2147483647-\(UUID().uuidString)-0.jsonl")
+    let unrelatedDirectory = localDirectory.appendingPathComponent("bettermacos-2147483647-\(UUID().uuidString)-0.jsonl")
     try FileManager.default.createDirectory(at: unrelatedDirectory, withIntermediateDirectories: false)
     try local.write(Data("{}\n".utf8))
     expect(FileManager.default.fileExists(atPath: unrelatedDirectory.path), "retention never recursively deletes a matching directory")

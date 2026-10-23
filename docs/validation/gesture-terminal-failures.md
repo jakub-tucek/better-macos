@@ -73,7 +73,7 @@ The corrected final full run completed successfully (exit 0; existing process
 exit event and harness completion received). Command:
 
 ```sh
-MAC_UTILS_SIGNING_IDENTITY=- DEVELOPER_DIR=/Library/Developer/CommandLineTools \
+BETTER_MACOS_SIGNING_IDENTITY=- DEVELOPER_DIR=/Library/Developer/CommandLineTools \
   GESTURE_PROOF_TMPDIR=/private/var/folders/01/q8lbfsh16d9bjtl88bpwtr840000gn/T/opencode \
   bash test.sh
 ```

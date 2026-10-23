@@ -118,7 +118,7 @@ Clean detached normal-path worktree at
 explicit ad-hoc signing:
 
 ```sh
-DEVELOPER_DIR=/Library/Developer/CommandLineTools MAC_UTILS_SIGNING_IDENTITY=- bash test.sh
+DEVELOPER_DIR=/Library/Developer/CommandLineTools BETTER_MACOS_SIGNING_IDENTITY=- bash test.sh
 bash scripts/dev lint
 bash scripts/dev format-check
 bash scripts/dev-tools-test.sh

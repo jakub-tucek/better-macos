@@ -37,10 +37,10 @@ struct SourceInstallation {
     }
 
     init(bundle: Bundle = .main) {
-        revision = bundle.object(forInfoDictionaryKey: "FixMacOSRevision") as? String ?? ""
-        let managed = bundle.object(forInfoDictionaryKey: "FixMacOSSourceInstall") as? Bool == true
-        sourceDirectory = managed ? bundle.object(forInfoDictionaryKey: "FixMacOSSourceDirectory") as? String : nil
-        destination = managed ? bundle.object(forInfoDictionaryKey: "FixMacOSInstallDestination") as? String : nil
+        revision = bundle.object(forInfoDictionaryKey: "BetterMacOSRevision") as? String ?? ""
+        let managed = bundle.object(forInfoDictionaryKey: "BetterMacOSSourceInstall") as? Bool == true
+        sourceDirectory = managed ? bundle.object(forInfoDictionaryKey: "BetterMacOSSourceDirectory") as? String : nil
+        destination = managed ? bundle.object(forInfoDictionaryKey: "BetterMacOSInstallDestination") as? String : nil
     }
 
     static func shellQuote(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'" }
@@ -55,10 +55,10 @@ struct SourceInstallation {
         return """
         #!/bin/bash
         set -euo pipefail
-        export FIX_MACOS_HOME=\(Self.shellQuote(state))
-        export FIX_MACOS_APP_DIR=\(Self.shellQuote(appDirectory))
+        export BETTER_MACOS_HOME=\(Self.shellQuote(state))
+        export BETTER_MACOS_APP_DIR=\(Self.shellQuote(appDirectory))
         /usr/bin/curl --fail --silent --show-error --location --proto '=https' \\
-          'https://raw.githubusercontent.com/jakub-tucek/fix-mac-os/\(revision)/install.sh' | /bin/bash
+          'https://raw.githubusercontent.com/jakub-tucek/better-macos/\(revision)/install.sh' | /bin/bash
         """ + "\n"
     }
 }
@@ -114,14 +114,14 @@ final class SourceUpdater {
         isChecking = true
         status = "Checking source changes…"
         onChange?()
-        fetch("https://api.github.com/repos/jakub-tucek/fix-mac-os/commits/main") { [weak self] result in
+        fetch("https://api.github.com/repos/jakub-tucek/better-macos/commits/main") { [weak self] result in
             guard let self else { return }
             do {
                 struct Commit: Decodable { let sha: String }
                 let head = try JSONDecoder().decode(Commit.self, from: result.get()).sha
                 guard SourceUpdateComparison.isRevision(head) else { throw ToggleError(message: "Invalid update revision.") }
                 // Pin both requests to the same head, even if main moves during the check.
-                fetch("https://api.github.com/repos/jakub-tucek/fix-mac-os/compare/\(installation.revision)...\(head)?per_page=1") { [weak self] result in
+                fetch("https://api.github.com/repos/jakub-tucek/better-macos/compare/\(installation.revision)...\(head)?per_page=1") { [weak self] result in
                     guard let self else { return }
                     do {
                         let data = try result.get()
@@ -146,7 +146,7 @@ final class SourceUpdater {
     private func fetch(_ url: String, completion: @escaping (Result<Data, Error>) -> Void) {
         var request = URLRequest(url: URL(string: url)!, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("Fix-macOS-source-updater", forHTTPHeaderField: "User-Agent")
+        request.setValue("Better-macOS-source-updater", forHTTPHeaderField: "User-Agent")
         task = session.dataTask(with: request) { [weak self] data, response, error in
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -177,9 +177,9 @@ final class SourceUpdater {
     func install() throws {
         guard let revision = availableRevision else { return }
         let script = try installation.updateScript(revision: revision)
-        let directory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Fix macOS")
+        let directory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Better macOS")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let file = directory.appendingPathComponent("Update Fix macOS.command")
+        let file = directory.appendingPathComponent("Update Better macOS.command")
         try Data(script.utf8).write(to: file, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: file.path)
         NSWorkspace.shared.open([file], withApplicationAt: URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"), configuration: .init()) { [weak self] _, error in

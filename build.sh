@@ -1,10 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")"
-OUTPUT="$PWD/build/Fix macOS.app"
+OUTPUT="$PWD/build/Better macOS.app"
 # Local repository configuration selects a repeatable signing identity across builds.
 # An unavailable configured certificate must fail signing, never fall back silently.
-SIGNING_IDENTITY="${MAC_UTILS_SIGNING_IDENTITY:-$(git config --local --get macutils.signingIdentity || true)}"
+SIGNING_IDENTITY="${BETTER_MACOS_SIGNING_IDENTITY:-$(git config --local --get bettermacos.signingIdentity || true)}"
+if [[ -z "$SIGNING_IDENTITY" ]]; then
+    SIGNING_IDENTITY="${MAC_UTILS_SIGNING_IDENTITY:-$(git config --local --get macutils.signingIdentity || true)}"
+fi
 mkdir -p build
 STAGE="$(mktemp -d "$PWD/build/.bundle.XXXXXX")"
 cleanup() {
@@ -22,7 +25,7 @@ trap 'exit 143' TERM
 APP="$STAGE/new.app"
 mkdir -p "$APP/Contents/MacOS"
 mkdir -p "$APP/Contents/Resources/Licenses"
-cp LICENSE "$APP/Contents/Resources/Licenses/Fix-macOS-MIT.txt"
+cp LICENSE "$APP/Contents/Resources/Licenses/Better-macOS-MIT.txt"
 cp Vendor/strafe/LICENSE "$APP/Contents/Resources/Licenses/strafe-LICENSE.txt"
 cp Vendor/strafe/UPSTREAM.txt "$APP/Contents/Resources/Licenses/strafe-UPSTREAM.txt"
 cp Info.plist "$APP/Contents/Info.plist"
@@ -35,11 +38,11 @@ if SOURCE_STATUS="$(git status --porcelain --untracked-files=normal -- Sources M
     if [[ -n "$SOURCE_STATUS" ]]; then SOURCE_STATE=modified; fi
 fi
 echo "let compiledDiagnosticSourceState = \"$SOURCE_STATE\"" >> "$STAGE/DiagnosticBuild.swift"
-plutil -insert FixMacOSRevision -string "$REVISION" "$APP/Contents/Info.plist"
-if [[ "${FIX_MACOS_SOURCE_INSTALL:-0}" == 1 ]]; then
-    plutil -insert FixMacOSSourceInstall -bool YES "$APP/Contents/Info.plist"
-    plutil -insert FixMacOSSourceDirectory -string "$PWD" "$APP/Contents/Info.plist"
-    plutil -insert FixMacOSInstallDestination -string "$FIX_MACOS_INSTALL_DESTINATION" "$APP/Contents/Info.plist"
+plutil -insert BetterMacOSRevision -string "$REVISION" "$APP/Contents/Info.plist"
+if [[ "${BETTER_MACOS_SOURCE_INSTALL:-0}" == 1 ]]; then
+    plutil -insert BetterMacOSSourceInstall -bool YES "$APP/Contents/Info.plist"
+    plutil -insert BetterMacOSSourceDirectory -string "$PWD" "$APP/Contents/Info.plist"
+    plutil -insert BetterMacOSInstallDestination -string "$BETTER_MACOS_INSTALL_DESTINATION" "$APP/Contents/Info.plist"
 fi
 source Scripts/clipboard-package.sh
 clipboard_package_build release
@@ -56,6 +59,7 @@ xcrun swiftc -swift-version 5 -warnings-as-errors -O -target arm64-apple-macos15
     Sources/App/LoginService.swift Sources/Features/KeepAwake/KeepAwakeFeature.swift Sources/Features/KeepAwake/KeepAwakePresentation.swift \
     Sources/SharedUI/ActionPalette.swift Sources/Features/KeepAwake/KeepAwakePalette.swift \
     Sources/SharedUI/AppStyle.swift \
+    Sources/App/BrandMigration.swift \
     -I "$CLIPBOARD_PACKAGE_MODULES" "$CLIPBOARD_PACKAGE_ARCHIVE" \
     -I Vendor/strafe/CStrafe/include -I MouseHID Sources/SharedUI/StatusQuickMenu.swift Sources/Features/Clipboard/ClipboardModule.swift Sources/Features/Windows/WindowShortcuts.swift Sources/Features/Windows/WindowShortcutSession.swift Sources/Features/Windows/WindowPositions.swift Sources/Features/Windows/WindowExecution.swift Sources/Features/Windows/AXWindowNativeAccess.swift Sources/Features/Windows/WindowPositionsView.swift Sources/Features/Windows/WindowActionPalette.swift \
     Sources/Features/Bluetooth/BluetoothCycleDelivery.swift \
@@ -64,7 +68,7 @@ xcrun swiftc -swift-version 5 -warnings-as-errors -O -target arm64-apple-macos15
     Sources/Features/Mouse/MouseSystemBackend.swift Sources/Features/Mouse/MouseModule.swift Sources/Features/KeepAwake/KeepAwakeModule.swift Sources/Features/QuitGuard/QuitGuard.swift Sources/Features/MenuBar/MenuBarModule.swift Sources/App/SourceUpdates.swift Sources/Core/SystemControlLifecycle.swift Sources/Features/Displays/ScreenEdges.swift Sources/Features/Animations/AnimationPreferences.swift Sources/Features/Animations/SpacesModule.swift Vendor/strafe/Swift/*.swift Sources/App/main.swift \
     Sources/SharedUI/StoredState.swift Sources/SharedUI/UISurfaces.swift Sources/App/SetupWizard.swift Sources/Features/Audio/AudioModule.swift build/objects/CStrafe.o build/objects/IOHIDPayload.o build/objects/MouseHID.o -framework Carbon -framework CoreAudio -framework AppKit -framework ServiceManagement \
     -framework SwiftUI -framework CoreBluetooth -framework ApplicationServices -framework CoreGraphics -framework CoreFoundation -framework IOKit \
-    -o "$APP/Contents/MacOS/fix-mac-os"
+    -o "$APP/Contents/MacOS/better-macos"
 codesign --force --sign "${SIGNING_IDENTITY:--}" "$APP"
 codesign --verify --strict "$APP"
 if [[ -e "$OUTPUT" ]]; then mv "$OUTPUT" "$STAGE/previous.app"; fi

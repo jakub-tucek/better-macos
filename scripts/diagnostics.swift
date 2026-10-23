@@ -28,8 +28,8 @@ struct DiagnosticLogReader {
         let session: String
         let generation: Int
         init?(_ name: String) {
-            guard name.range(of: #"^fixmacos-[0-9]+-[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}-[012]\.jsonl$"#, options: .regularExpression) != nil else { return nil }
-            let pieces = name.dropFirst("fixmacos-".count)
+            guard name.range(of: #"^bettermacos-[0-9]+-[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}-[012]\.jsonl$"#, options: .regularExpression) != nil else { return nil }
+            let pieces = name.dropFirst("bettermacos-".count)
             let pidText = String(pieces.prefix(while: { $0 != "-" }))
             guard let pid = Int32(pidText), pid > 0,
                   let generation = Int(String(name.suffix(7).prefix(1))) else { return nil }
@@ -113,14 +113,14 @@ struct DiagnosticLogReader {
         let data = output.fileHandleForReading.readDataToEndOfFile(); process.waitUntilExit()
         let text = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         guard process.terminationStatus == 0, text.count > 24,
-              URL(fileURLWithPath: String(text.dropFirst(24)).trimmingCharacters(in: .whitespacesAndNewlines)).lastPathComponent == "fix-mac-os" else { return nil }
+              URL(fileURLWithPath: String(text.dropFirst(24)).trimmingCharacters(in: .whitespacesAndNewlines)).lastPathComponent == "better-macos" else { return nil }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.timeZone = TimeZone(secondsFromGMT: 0)
         formatter.dateFormat = "EEE MMM d HH:mm:ss yyyy"
         return formatter.date(from: String(text.prefix(24)))
     }
     static func run(_ arguments: [String], output: (String) -> Void = { print($0) }) throws {
-        var directory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Fix macOS").path
+        var directory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Better macOS").path
         var session: String?, pid: Int32?, since: Date?, category: String?, minimum: String?
         var all = false, limit = 60, index = 0
         while index < arguments.count {

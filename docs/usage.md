@@ -1,4 +1,4 @@
-# Using Fix macOS
+# Using Better macOS
 
 [Overview and install command](../README.md) · [All documentation](README.md)
 
@@ -6,6 +6,23 @@ Current behavior checked against `d6b216f` on 2026-10-23. These are usage
 instructions, not a new live acceptance run. [Known validation gaps](validation/README.md).
 
 ## Start here
+
+### Upgrade to Better macOS
+
+The app, executable, repository and preference domain now use the Better macOS
+name. The installer replaces the previous bundle after normal quit and restores
+its original filename if replacement fails. On first normal GUI launch, the app
+imports previous preferences, menu-bar positions, Clipboard history, Mouse recovery
+and other application-support files into the new locations. Conflicting files stop
+startup rather than overwrite either copy; fix the reported conflict and retry.
+Existing new-domain choices win, and completed migration never reimports old choices.
+The previous preference domain remains a recovery copy. Installer source checkouts
+are retained separately because they may contain local commits.
+
+macOS permissions belong to the new bundle identity. Grant Accessibility and
+Bluetooth access to **Better macOS** when requested; check **Launch at login** again
+in General. The app cannot transfer macOS permission grants from the old identity.
+Read-only diagnostic-probe launches never perform migration.
 
 Fresh installations start with features off and an empty quick-action layout.
 Existing installations keep their preferences.
@@ -143,7 +160,7 @@ Capture starts **paused each launch**. History defaults to memory-only, with at 
 and **32 MiB total image bytes**. Pins bypass age expiry, not hard caps.
 
 Optional disk retention stores an **unencrypted JSON archive**, including image
-bytes, at `~/Library/Application Support/Fix macOS/Clipboard/history.json`. Choose
+bytes, at `~/Library/Application Support/Better macOS/Clipboard/history.json`. Choose
 1–365 days for unpinned entries.
 
 | Action | Effect |
@@ -174,8 +191,8 @@ requires Apple Silicon/macOS 15+, Command Line Tools, Git, and Homebrew. Only th
 validated; the deployment target does not prove older tools can build the app.
 
 The installer keeps its checkout in
-`~/Library/Application Support/Fix macOS/source`, installs `blueutil` and
-`switchaudio-osx`, and builds `~/Applications/Fix macOS.app`. It normally opens the
+`~/Library/Application Support/Better macOS/source`, installs `blueutil` and
+`switchaudio-osx`, and builds `~/Applications/Better macOS.app`. It normally opens the
 app. Updating requests normal quit and waits before replacement; a busy app can
 refuse. It stops rather than overwriting local source changes or local commits.
 
@@ -195,7 +212,7 @@ in Terminal. Updates follow source commits, not release versions. The app downlo
 it does not guarantee the exact offered SHA.
 
 Without a certificate, builds use ad-hoc signing; macOS may require renewed permission
-grants after updates. Set `MAC_UTILS_SIGNING_IDENTITY` in the installer's environment
+grants after updates. Set `BETTER_MACOS_SIGNING_IDENTITY` in the installer's environment
 to save a local signing identity, or use `-` to persist ad-hoc signing. Unavailable or
 ambiguous certificates fail closed, even at an unchanged revision. No certificate
 or notarization service is included. This is source installation, not a notarized
@@ -211,7 +228,7 @@ bash build.sh
 Build/signing does not launch the app. When ready to run it:
 
 ```sh
-open "build/Fix macOS.app"
+open "build/Better macOS.app"
 ```
 
 Enable **Launch at login** in General if wanted. Its switch represents registration

@@ -90,20 +90,20 @@ finding establishes why this user's original click or subsequent login failed.
 ## Read-only host evidence
 
 - `ps -axo pid=,command=` showed PID 17987 running the repository's
-  `build/Fix macOS.app/Contents/MacOS/fix-mac-os --show-dashboard`, plus its watchdog.
-- Neither `/Applications/Fix macOS.app` nor `~/Applications/Fix macOS.app` existed.
+  `build/Better macOS.app/Contents/MacOS/better-macos --show-dashboard`, plus its watchdog.
+- Neither `/Applications/Better macOS.app` nor `~/Applications/Better macOS.app` existed.
 - The on-disk running-path bundle's plist reports version `0.4`, build `4`, and
-  `FixMacOSRevision=aec5532f5067eedee417b3cdbaad6a8ba266535e`.
+  `BetterMacOSRevision=aec5532f5067eedee417b3cdbaad6a8ba266535e`.
   This is disk metadata, not proof of the revision loaded by the process.
 - Its on-disk signature is Apple Development, team `QEC369PJFV`;
   `codesign --verify --strict` succeeds. This does not establish its signature
   state at the time of the reported failure.
 - Read-only `sfltool dumpbtm` showed the current user's record:
-  `Identifier: 2.io.github.jakub-tucek.mac-utils`, name `Mac Utils`, disposition
+  `Identifier: 2.io.github.jakub-tucek.better-macos`, name `Better macOS`, disposition
   `[enabled, allowed, notified] (0xb)`, generation 4, pointing to that same
   repository build bundle. This is BTM metadata, not an in-process read of
   `SMAppService.mainApp.status`, nor a successful next-login test.
-- A scoped two-hour unified-log query for this bundle/name in `fix-mac-os`,
+- A scoped two-hour unified-log query for this bundle/name in `better-macos`,
   `backgroundtaskmanagementd`, and `smd` returned no matching records. No error
   code or denial reason was recovered.
 - `git diff aec5532..e58dfe9 --` over the four relevant host/UI/entry-point files

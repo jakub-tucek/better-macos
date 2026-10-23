@@ -111,7 +111,7 @@ final class SpacesModule {
         guard !isDraining else { throw ToggleError(message: "Wait for the current desktop transition to finish.") }
         guard hasPermission else {
             if requestPermission { requestAccess() }
-            throw ToggleError(message: "Enable Fix macOS in System Settings → Privacy & Security → Accessibility, then try this switch again. Monitors and Bluetooth work without it.")
+            throw ToggleError(message: "Enable Better macOS in System Settings → Privacy & Security → Accessibility, then try this switch again. Monitors and Bluetooth work without it.")
         }
         guard !conflictingAppRunning() else {
             throw ToggleError(message: "Quit the standalone strafe app first, so two gesture interceptors do not compete.")

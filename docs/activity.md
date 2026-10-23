@@ -42,7 +42,7 @@ date/time. Outcomes are text, not color alone. Details can be expanded and selec
   unsupported, excluded and failed windows remain distinct. Invalidation and
   changed conditions record cancellation with the confirmed move count. This is
   not general window tracking and does not attribute macOS/other-app movements to
-  Fix macOS. Layout saving reports app-preference submission, not crash durability.
+  Better macOS. Layout saving reports app-preference submission, not crash durability.
 - **Keep awake:** actual timed start/extend/stop/retry outcomes, assertion
   maintenance failures/recovery, app-rule protection changes and timed expiry.
   Expiry can leave an app rule active. Failed release retains cleanup ownership;
@@ -120,7 +120,7 @@ Implementation **`0a7be84b48a2a3078069ef5190eb38ce4484a4f2`**, based on
   strict signature checks. These counts are separate, not added to the legacy total.
 
 Log: `activity-0a7be84-test.log` (ignored, local to this worktree). The built
-`FixMacOSRevision` is exactly the tested implementation above; version `0.4`,
+`BetterMacOSRevision` is exactly the tested implementation above; version `0.4`,
 build `4`, arm64/macOS 15+ remain unchanged. A subsequent read-only
 `codesign --verify --deep --strict` also passed. Host: macOS 26.6.2 (`25G83`),
 standalone CLT 27, Apple Swift 6.4, SDK 27.0, Swift 5 language mode.
@@ -180,7 +180,7 @@ passed one complete standalone-CLT run of
 - **81 separate diagnostic regressions** and the unchanged production safety
   source guard, **10 policy tests in 3 suites**, **13 mocked installer scenarios**,
   compiler/build fixtures and real/relocated bundle checks.
-- Built `FixMacOSRevision` exactly matches the correction above. Subsequent
+- Built `BetterMacOSRevision` exactly matches the correction above. Subsequent
   read-only strict signature verification passed. Version/build and deployment
   target are unchanged; the environment remains CLT 27 / Swift 6.4 / SDK 27.0.
 

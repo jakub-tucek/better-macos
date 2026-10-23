@@ -127,7 +127,7 @@ func runPresentationDisplayRefreshTests() {
     _ = NSApplication.shared
     runPresentationGateTests()
     runStatusQuickMenuTests()
-    let suite = "fix-mac-os.presentation-display-refresh.\(UUID().uuidString)"
+    let suite = "better-macos.presentation-display-refresh.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     let modules = ModuleSettings(defaults: defaults)

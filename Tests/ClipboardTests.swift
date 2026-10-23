@@ -47,7 +47,7 @@ private final class FailingClipboardArchive: ClipboardPersistence {
 /// the module's timer, reads a disk archive, or touches NSPasteboard.general.
 private func runClipboardPanelTests() throws {
     _ = NSApplication.shared
-    let suite = "fix-mac-os.clipboard-panel-fixture.\(UUID().uuidString)"
+    let suite = "better-macos.clipboard-panel-fixture.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     var date = Date()
@@ -751,7 +751,7 @@ func runClipboardTests() throws {
 }
 
 private func runClipboardClearConfirmationTests() throws {
-    let suite = "fix-mac-os.clear-confirmation.\(UUID().uuidString)"
+    let suite = "better-macos.clear-confirmation.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     let board = FakeClipboard(), archive = FailingClipboardArchive()

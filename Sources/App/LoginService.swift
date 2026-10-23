@@ -12,7 +12,7 @@ enum LoginStatus: Equatable {
         switch self {
         case .enabled: return "Enabled in macOS Login Items."
         case .notRegistered: return "Not registered to launch at login."
-        case .requiresApproval: return "Approval required. Allow Fix macOS in macOS Login Items settings to finish enabling launch at login."
+        case .requiresApproval: return "Approval required. Allow Better macOS in macOS Login Items settings to finish enabling launch at login."
         case .notFound: return "macOS could not find this login item. Try enabling it again; if it still fails, check this app’s installation and signature."
         case .unknown: return "macOS returned an unknown login-item status. Check Login Items settings."
         }

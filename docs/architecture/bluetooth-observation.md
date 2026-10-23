@@ -122,7 +122,7 @@ in `build/bluetooth-cycle-full-registration-failure.log`, not counted as a full 
 
 The final frozen-source run passed with command-scoped standalone CLT and ad-hoc
 signing: `DEVELOPER_DIR=/Library/Developer/CommandLineTools
-MAC_UTILS_SIGNING_IDENTITY=- bash test.sh`. Separate, overlapping results:
+BETTER_MACOS_SIGNING_IDENTITY=- bash test.sh`. Separate, overlapping results:
 
 | Check | Result |
 | --- | --- |
@@ -265,7 +265,7 @@ or merge. Existing default tests retain their read-only runtime capability probe
 At **`6c59dc915c076e6ff464ff5f594275a60e75ad03`**:
 
 ```sh
-MAC_UTILS_SIGNING_IDENTITY=- DEVELOPER_DIR=/Library/Developer/CommandLineTools bash test.sh
+BETTER_MACOS_SIGNING_IDENTITY=- DEVELOPER_DIR=/Library/Developer/CommandLineTools bash test.sh
 DEVELOPER_DIR=/Library/Developer/CommandLineTools bash scripts/dev lint
 DEVELOPER_DIR=/Library/Developer/CommandLineTools bash scripts/dev format-check
 ```
@@ -286,7 +286,7 @@ All passed. Separate results:
 The full run also passed real app compilation/ad-hoc signing, exact bundle
 notices, strict signature and relocated-bundle checks, staged replacement/rollback
 fixtures, compiler-input ownership and SwiftUI compatibility. The built plist's
-`FixMacOSRevision` was read back as the exact frozen revision above, without
+`BetterMacOSRevision` was read back as the exact frozen revision above, without
 executing the app. Compiler: standalone CLT, Apple Swift 6.4
 (`swiftlang-6.4.0.34.1`), Swift 5 language mode, arm64/macOS 15 deployment target.
 This is isolated build/test evidence, not native Bluetooth/hardware acceptance.

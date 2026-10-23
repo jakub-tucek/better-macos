@@ -1,13 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-ROOT="$(mktemp -d "${TMPDIR:-/tmp}/fix-macos-install-test.XXXXXX")"
+ROOT="$(mktemp -d "${TMPDIR:-/tmp}/better-macos-install-test.XXXXXX")"
 trap 'rm -rf "$ROOT"' EXIT
 export MOCK_ROOT="$ROOT"
-export FIX_MACOS_HOME="$ROOT/state with spaces"
-export FIX_MACOS_APP_DIR="$ROOT/Applications"
+export BETTER_MACOS_HOME="$ROOT/state with spaces"
+export BETTER_MACOS_APP_DIR="$ROOT/Applications"
 export MOCK_REVISION=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-unset MAC_UTILS_SIGNING_IDENTITY
+unset BETTER_MACOS_SIGNING_IDENTITY
 mkdir -p "$ROOT/bin"
 cat > "$ROOT/bin/mock" <<'MOCK'
 #!/bin/bash
@@ -25,14 +25,16 @@ case "${0##*/}" in
         else
             shift 2
             case "$1" in
-                remote) echo https://github.com/jakub-tucek/fix-mac-os.git ;;
+                remote) echo https://github.com/jakub-tucek/better-macos.git ;;
                 symbolic-ref) echo main ;;
                 status) if [[ "${MOCK_DIRTY:-0}" == 1 ]]; then echo ' M user-work.swift'; fi ;;
                 merge-base) [[ "${MOCK_DIVERGED:-0}" == 0 ]] ;;
                 rev-parse) echo "$MOCK_REVISION" ;;
                 config)
-                    if [[ "$*" == 'config --local --get macutils.signingIdentity' ]]; then
+                    if [[ "$*" == 'config --local --get bettermacos.signingIdentity' ]]; then
                         [[ ! -f "$MOCK_ROOT/signing-identity" ]] || cat "$MOCK_ROOT/signing-identity"
+                    elif [[ "$*" == 'config --local --get macutils.signingIdentity' ]]; then
+                        [[ ! -f "$MOCK_ROOT/legacy-signing-identity" ]] || cat "$MOCK_ROOT/legacy-signing-identity"
                     else
                         printf '%s' "${@: -1}" > "$MOCK_ROOT/signing-identity"
                     fi ;;
@@ -75,28 +77,28 @@ set -euo pipefail
 cd "$(dirname "$0")"
 echo build >> "$MOCK_ROOT/actions"
 if [[ "${MOCK_BUILD_FAIL:-0}" == 1 ]]; then exit 17; fi
-mkdir -p 'build/Fix macOS.app/Contents'
-case "${MAC_UTILS_SIGNING_IDENTITY:--}" in
+mkdir -p 'build/Better macOS.app/Contents'
+case "${BETTER_MACOS_SIGNING_IDENTITY:--}" in
     'Fixture A'|1111111111111111111111111111111111111111) signature=1111111111111111111111111111111111111111 ;;
     'Fixture B'|2222222222222222222222222222222222222222) signature=2222222222222222222222222222222222222222 ;;
     abcdef0123456789abcdef0123456789abcdef01) signature=ABCDEF0123456789ABCDEF0123456789ABCDEF01 ;;
     -) signature=- ;;
     *) exit 18 ;;
 esac
-printf '%s' "${MOCK_BUILT_SIGNATURE:-$signature}" > 'build/Fix macOS.app/Contents/fixture-signature'
+printf '%s' "${MOCK_BUILT_SIGNATURE:-$signature}" > 'build/Better macOS.app/Contents/fixture-signature'
 /usr/bin/python3 - <<'PY'
 import os,plistlib
-with open('build/Fix macOS.app/Contents/Info.plist','wb') as f:
-    plistlib.dump({'CFBundleIdentifier':'io.github.jakub-tucek.mac-utils',
-        'FixMacOSRevision':os.environ['MOCK_REVISION'], 'FixMacOSSourceInstall':True,
-        'FixMacOSSourceDirectory':os.getcwd(),
-        'FixMacOSInstallDestination':os.environ['FIX_MACOS_INSTALL_DESTINATION']},f)
+with open('build/Better macOS.app/Contents/Info.plist','wb') as f:
+    plistlib.dump({'CFBundleIdentifier':'io.github.jakub-tucek.better-macos',
+        'BetterMacOSRevision':os.environ['MOCK_REVISION'], 'BetterMacOSSourceInstall':True,
+        'BetterMacOSSourceDirectory':os.getcwd(),
+        'BetterMacOSInstallDestination':os.environ['BETTER_MACOS_INSTALL_DESTINATION']},f)
 PY
 BUILD
-revision() { /usr/libexec/PlistBuddy -c 'Print :FixMacOSRevision' "$FIX_MACOS_APP_DIR/Fix macOS.app/Contents/Info.plist"; }
+revision() { /usr/libexec/PlistBuddy -c 'Print :BetterMacOSRevision' "$BETTER_MACOS_APP_DIR/Better macOS.app/Contents/Info.plist"; }
 expect_failure() {
     if bash install.sh --no-open > "$ROOT/output" 2>&1; then cat "$ROOT/output" >&2; echo "Expected installer failure: $*" >&2; exit 1; fi
-    [[ ! -d "$FIX_MACOS_HOME/install.lock" ]]
+    [[ ! -d "$BETTER_MACOS_HOME/install.lock" ]]
 }
 bash install.sh --no-open > "$ROOT/output" 2>&1
 [[ "$(revision)" == "$MOCK_REVISION" ]]
@@ -139,10 +141,10 @@ bash install.sh --force --no-open > "$ROOT/output" 2>&1
 [[ "$(grep -c '^build$' "$ROOT/actions")" == "$((before + 1))" ]]
 echo 'PASS: force rebuild works for an unchanged revision'
 
-signature() { cat "$FIX_MACOS_APP_DIR/Fix macOS.app/Contents/fixture-signature"; }
+signature() { cat "$BETTER_MACOS_APP_DIR/Better macOS.app/Contents/fixture-signature"; }
 builds() { grep -c '^build$' "$ROOT/actions"; }
 quits() { grep -c '^quit$' "$ROOT/actions"; }
-export MAC_UTILS_SIGNING_IDENTITY='Fixture A'
+export BETTER_MACOS_SIGNING_IDENTITY='Fixture A'
 before="$(builds)"
 bash install.sh --no-open > "$ROOT/output" 2>&1
 [[ "$(cat "$ROOT/signing-identity")" == 'Fixture A' ]]
@@ -156,29 +158,29 @@ echo 'PASS: same-SHA certificate selection is persisted, rebuilds ad-hoc app, th
 rm "$ROOT/signing-identity"
 bash install.sh --no-open > "$ROOT/output" 2>&1
 [[ "$(cat "$ROOT/signing-identity")" == 'Fixture A' && "$(builds)" == "$((before + 2))" ]]
-unset MAC_UTILS_SIGNING_IDENTITY
+unset BETTER_MACOS_SIGNING_IDENTITY
 bash install.sh --no-open > "$ROOT/output" 2>&1
 [[ "$(builds)" == "$((before + 2))" ]]
 echo 'PASS: explicit identity survives same-SHA path and subsequent environment-free installs'
 
-export MAC_UTILS_SIGNING_IDENTITY='Fixture B'
+export BETTER_MACOS_SIGNING_IDENTITY='Fixture B'
 bash install.sh --no-open > "$ROOT/output" 2>&1
 [[ "$(signature)" == 2222222222222222222222222222222222222222 && "$(builds)" == "$((before + 3))" ]]
 # External config changes must also be compared to the actual bundle signature.
 printf '%s' 'Fixture A' > "$ROOT/signing-identity"
-unset MAC_UTILS_SIGNING_IDENTITY
+unset BETTER_MACOS_SIGNING_IDENTITY
 bash install.sh --no-open > "$ROOT/output" 2>&1
 [[ "$(signature)" == 1111111111111111111111111111111111111111 && "$(builds)" == "$((before + 4))" ]]
 echo 'PASS: same-SHA different certificate and external configuration changes rebuild'
 
 before="$(builds)"
 quit_before="$(quits)"
-export MAC_UTILS_SIGNING_IDENTITY='Fixture B' MOCK_CERT_UNAVAILABLE=1
+export BETTER_MACOS_SIGNING_IDENTITY='Fixture B' MOCK_CERT_UNAVAILABLE=1
 expect_failure unavailable-certificate
 grep -q 'Selected signing certificate is unavailable' "$ROOT/output"
 [[ "$(cat "$ROOT/signing-identity")" == 'Fixture B' ]]
 [[ "$(builds)" == "$before" && "$(quits)" == "$quit_before" ]]
-unset MAC_UTILS_SIGNING_IDENTITY
+unset BETTER_MACOS_SIGNING_IDENTITY
 expect_failure unavailable-saved-certificate
 unset MOCK_CERT_UNAVAILABLE
 export MOCK_BUILT_SIGNATURE=1111111111111111111111111111111111111111
@@ -188,23 +190,34 @@ unset MOCK_BUILT_SIGNATURE
 [[ "$(signature)" == 1111111111111111111111111111111111111111 && "$(quits)" == "$quit_before" ]]
 echo 'PASS: unavailable and wrong signing certificates fail closed before quit, preserving old app'
 
-export MAC_UTILS_SIGNING_IDENTITY='Fixture A' MOCK_CERT_AMBIGUOUS=1
+export BETTER_MACOS_SIGNING_IDENTITY='Fixture A' MOCK_CERT_AMBIGUOUS=1
 expect_failure ambiguous-certificate
 grep -q 'Signing identity is ambiguous' "$ROOT/output"
 unset MOCK_CERT_AMBIGUOUS
-export MAC_UTILS_SIGNING_IDENTITY=2222222222222222222222222222222222222222
+export BETTER_MACOS_SIGNING_IDENTITY=2222222222222222222222222222222222222222
 bash install.sh --no-open > "$ROOT/output" 2>&1
 [[ "$(signature)" == 2222222222222222222222222222222222222222 ]]
-export MAC_UTILS_SIGNING_IDENTITY=abcdef0123456789abcdef0123456789abcdef01
+export BETTER_MACOS_SIGNING_IDENTITY=abcdef0123456789abcdef0123456789abcdef01
 bash install.sh --no-open > "$ROOT/output" 2>&1
 [[ "$(signature)" == ABCDEF0123456789ABCDEF0123456789ABCDEF01 ]]
-[[ "$(cat "$ROOT/signing-identity")" == "$MAC_UTILS_SIGNING_IDENTITY" ]]
+[[ "$(cat "$ROOT/signing-identity")" == "$BETTER_MACOS_SIGNING_IDENTITY" ]]
 before="$(builds)"
-unset MAC_UTILS_SIGNING_IDENTITY
+unset BETTER_MACOS_SIGNING_IDENTITY
 bash install.sh --no-open > "$ROOT/output" 2>&1
 [[ "$(builds)" == "$before" ]]
 echo 'PASS: lowercase alphabetic fingerprint resolves uppercase certificate hash and then skips rebuild'
-export MAC_UTILS_SIGNING_IDENTITY=-
+export BETTER_MACOS_SIGNING_IDENTITY=-
 bash install.sh --no-open > "$ROOT/output" 2>&1
 [[ "$(signature)" == - && "$(cat "$ROOT/signing-identity")" == - ]]
 echo 'PASS: ambiguous names rejected, full fingerprint selection and explicit ad-hoc reset supported'
+
+# A renamed destination must still restore the original filename on failure.
+mv "$BETTER_MACOS_APP_DIR/Better macOS.app" "$BETTER_MACOS_APP_DIR/Fix macOS.app"
+/usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier io.github.jakub-tucek.mac-utils' "$BETTER_MACOS_APP_DIR/Fix macOS.app/Contents/Info.plist"
+export MOCK_SWAP_FAIL=1
+expect_failure renamed-replacement
+[[ -d "$BETTER_MACOS_APP_DIR/Fix macOS.app" && ! -e "$BETTER_MACOS_APP_DIR/Better macOS.app" ]]
+unset MOCK_SWAP_FAIL
+bash install.sh --no-open > "$ROOT/output" 2>&1
+[[ -d "$BETTER_MACOS_APP_DIR/Better macOS.app" && ! -e "$BETTER_MACOS_APP_DIR/Fix macOS.app" ]]
+echo 'PASS: brand upgrade replaces the legacy bundle and rolls back its original filename on failure'

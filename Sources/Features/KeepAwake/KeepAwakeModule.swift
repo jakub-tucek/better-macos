@@ -11,7 +11,7 @@ struct SystemPowerAssertions: PowerAssertionBackend {
     func create(display: Bool, timeout: TimeInterval) throws -> IOPMAssertionID {
         let properties: [String: Any] = [
             kIOPMAssertionTypeKey: display ? kIOPMAssertionTypePreventUserIdleDisplaySleep : kIOPMAssertionTypePreventUserIdleSystemSleep,
-            kIOPMAssertionNameKey: "Fix macOS: keep \(display ? "display" : "computer") awake",
+            kIOPMAssertionNameKey: "Better macOS: keep \(display ? "display" : "computer") awake",
             kIOPMAssertionLevelKey: kIOPMAssertionLevelOn,
             kIOPMAssertionTimeoutKey: timeout,
             kIOPMAssertionTimeoutActionKey: kIOPMAssertionTimeoutActionTurnOff

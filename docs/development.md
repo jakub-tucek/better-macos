@@ -62,9 +62,9 @@ bash Tests/packaging.sh          # inspect notices/signature after a successful 
 bash scripts/dev logs --help    # local JSONL reader options; help reads no live logs
 ```
 
-Build output: `build/Fix macOS.app`. Building signs the local bundle; it does not
+Build output: `build/Better macOS.app`. Building signs the local bundle; it does not
 install or launch it. Existing signing configuration still applies; use
-`MAC_UTILS_SIGNING_IDENTITY=- bash scripts/dev build` for explicit ad-hoc signing.
+`BETTER_MACOS_SIGNING_IDENTITY=- bash scripts/dev build` for explicit ad-hoc signing.
 
 The full regression entry point is `bash test.sh` (build, packaging/build fixtures,
 ten Swift Testing policy tests in three suites, legacy isolated runner and installer

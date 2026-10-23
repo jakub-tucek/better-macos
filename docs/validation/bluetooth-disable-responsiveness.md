@@ -156,7 +156,7 @@ that partial run is **not** full-suite success. The explicit mock-list addition
 in `c8a44b4` corrects that fixture integration.
 
 Unmodified normal-path lint/format/tooling passed at both implementation commits
-in `/Users/jakubtucek/Projects/others/fix-mac-os-bluetooth-validation`, a detached
+in `/Users/jakubtucek/Projects/others/better-macos-bluetooth-validation`, a detached
 validation worktree. Temp-path lint initially reported the four unchanged
 WindowPositions forced casts despite their baseline; temp-path tooling also
 failed path-based exclusion fixtures. Neither baseline nor config was changed.
@@ -166,7 +166,7 @@ in the implementation worktree.
 ### Frozen secondary-fix validation
 
 At **`c8a44b450e58f61b1c65dfcb065186d82a74eab9`**, the complete command
-`MAC_UTILS_SIGNING_IDENTITY=- DEVELOPER_DIR=/Library/Developer/CommandLineTools bash test.sh`
+`BETTER_MACOS_SIGNING_IDENTITY=- DEVELOPER_DIR=/Library/Developer/CommandLineTools bash test.sh`
 passed:
 
 - **4,731 legacy isolated checks**, including the actual-host failure/recovery

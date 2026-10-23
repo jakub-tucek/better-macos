@@ -35,7 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let injectedMouseLifecycle: MouseLifecycle?
     private lazy var mouseLifecycle = injectedMouseLifecycle ?? MouseLifecycle(settings: modules)
     private let sourceUpdater = SourceUpdater()
-    private let animationQueue = DispatchQueue(label: "fix-mac-os.animation-preferences")
+    private let animationQueue = DispatchQueue(label: "better-macos.animation-preferences")
     private let modules: ModuleSettings
     private let preferences: UserDefaults
     private let model: DashboardModel
@@ -50,10 +50,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let uiStore: UISettingsStore
     private var setupPermissionManager: CBCentralManager?
     private let safety = SafetySupervisor()
-    private let logger = Logger(subsystem: "io.github.jakub-tucek.mac-utils", category: "Safety")
+    private let logger = Logger(subsystem: "io.github.jakub-tucek.better-macos", category: "Safety")
     private var loggedLoginStatus: String?
     private lazy var displayRefresh = DisplayRefreshGate { [weak self] in self?.refreshDisplaySnapshot() }
-    private let recoveryQueue = DispatchQueue(label: "mac-utils.display-recovery", qos: .userInitiated)
+    private let recoveryQueue = DispatchQueue(label: "better-macos.display-recovery", qos: .userInitiated)
     private var item: NSStatusItem!
     private var recovering = false
     private var rollbackTimer: Timer?
@@ -200,7 +200,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         catch { showError(ToggleError(message: "Could not start the recovery watchdog: \(error.localizedDescription)")) }
         configureDisplayRefresh()
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "Fix macOS")
+        item.button?.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "Better macOS")
         item.button?.target = self
         item.button?.action = #selector(toggleDashboard)
         item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -463,8 +463,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func refreshKeepAwakeStatus(_ state: KeepAwakeFeature.State) {
-        item?.button?.image = NSImage(systemSymbolName: state.active ? DashboardTab.keepAwake.symbol : "slider.horizontal.3", accessibilityDescription: state.active ? "Fix macOS — Keep awake active" : "Fix macOS")
-        item?.button?.toolTip = state.protectionFailed ? "Fix macOS — keep awake needs retry" : (state.active ? "Fix macOS — keeping awake" : "Fix macOS")
+        item?.button?.image = NSImage(systemSymbolName: state.active ? DashboardTab.keepAwake.symbol : "slider.horizontal.3", accessibilityDescription: state.active ? "Better macOS — Keep awake active" : "Better macOS")
+        item?.button?.toolTip = state.protectionFailed ? "Better macOS — keep awake needs retry" : (state.active ? "Better macOS — keeping awake" : "Better macOS")
         publishModuleStatus()
     }
 
@@ -690,7 +690,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             model.monitors = []
             model.activeMonitorCount = 0
             model.displaySupported = false
-            item?.button?.toolTip = "Fix macOS"
+            item?.button?.toolTip = "Better macOS"
         }
         refreshBluetooth()
         refreshPreferences()
@@ -836,7 +836,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard transactions.acceptsActions else { return }
         if activityWindow == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 560), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-            window.title = "Fix macOS — Activity"
+            window.title = "Better macOS — Activity"
             window.isReleasedWhenClosed = false
             window.contentViewController = NSHostingController(rootView: ActivityView(presentation: activityPresentation))
             window.minSize = NSSize(width: 540, height: 360)
@@ -855,7 +855,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         popover.performClose(nil)
         if settingsWindow == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 680), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-            window.title = "Fix macOS Settings"
+            window.title = "Better macOS Settings"
             window.isReleasedWhenClosed = false
             window.contentViewController = NSHostingController(rootView: SettingsView(model: model))
             window.setContentSize(NSSize(width: 1000, height: 760))
@@ -870,7 +870,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         popover.performClose(nil)
         if let setupWindow, activeSetupDraft != nil { presentWindow(setupWindow); return }
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 700), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        window.title = "Set up Fix macOS"
+        window.title = "Set up Better macOS"
         window.isReleasedWhenClosed = false
         let draft = SetupDraft(current: model, defaults: preferences)
         activeSetupDraft = draft; window.delegate = self
@@ -1128,7 +1128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let controller else { return }
         do { try controller.refreshDisplays() }
         catch { showError(error); return }
-        item?.button?.toolTip = "Fix macOS\n" + controller.status()
+        item?.button?.toolTip = "Better macOS\n" + controller.status()
         model.monitors = controller.monitors
         model.activeMonitorCount = (try? controller.activeIDs().count) ?? 0
         model.displaySupported = controller.supported && safety.isReady
@@ -1465,7 +1465,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         arrangementWindow?.close()
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 720, height: 500),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        window.title = "Fix macOS — Arrange displays"
+        window.title = "Better macOS — Arrange displays"
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: DisplayArrangementEditor(
             original: model.currentLayout, monitors: model.monitors, mainUUID: main,

@@ -100,7 +100,7 @@ env -u SDKROOT DEVELOPER_DIR=/Library/Developer/CommandLineTools bash test.sh
 - **81 separate diagnostics regressions**, the no-flush/no-synchronous-wait safety
   entry guard, **10 policy tests in 3 suites**, **13 mocked installer scenarios**,
   compiler/build fixtures and real/relocated bundle checks.
-- Built `FixMacOSRevision` exactly matches the implementation above. Subsequent
+- Built `BetterMacOSRevision` exactly matches the implementation above. Subsequent
   strict signature verification passed. No version/deployment-target change.
 
 Log: `build/presentation-refresh-4e9b8aa-test.log`. The same built isolated runner
@@ -204,7 +204,7 @@ The integrated visibility full run at `5feb438` **failed**, as recorded in
 [its evidence](bluetooth-discovery-visibility.md#completed-main-validation-and-native-test-blocker).
 That historical result is not replaced with a pass. Its baseline focused binary
 reproduced the exact first-display-click failure in the stable sibling worktree
-`/Users/jakubtucek/Projects/others/fix-mac-os-native-first-click-20261016`.
+`/Users/jakubtucek/Projects/others/better-macos-native-first-click-20261016`.
 The earlier pre-visibility `52ae53e` reproduction remains valid; this is not evidence
 of a Bluetooth regression.
 

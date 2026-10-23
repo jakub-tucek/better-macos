@@ -111,14 +111,14 @@ func replacedDirectory() throws {
     let sink = RotatingDiagnosticSink(directory: logs, session: session, pid: getpid(), limit: 1024, retainedFiles: 3)
     try sink.write(Data("original\n".utf8))
     try FileManager.default.moveItem(at: logs, to: retained)
-    let ownedName = "fixmacos-\(getpid())-\(session)-0.jsonl"
+    let ownedName = "bettermacos-\(getpid())-\(session)-0.jsonl"
     let sentinel = target.appendingPathComponent(ownedName)
     try Data("TARGET MUST STAY UNCHANGED".utf8).write(to: sentinel)
     var targetNames = [ownedName, "unrelated.txt"]
-    for _ in 0..<4 { targetNames.append("fixmacos-2147483647-\(UUID().uuidString)-0.jsonl") }
+    for _ in 0..<4 { targetNames.append("bettermacos-2147483647-\(UUID().uuidString)-0.jsonl") }
     for name in targetNames.dropFirst() {
         try Data("DO NOT DELETE".utf8).write(to: target.appendingPathComponent(name))
-        if name.hasPrefix("fixmacos-") { try Data("owned old session".utf8).write(to: retained.appendingPathComponent(name)) }
+        if name.hasPrefix("bettermacos-") { try Data("owned old session".utf8).write(to: retained.appendingPathComponent(name)) }
     }
     try Data("UNRELATED ORIGINAL".utf8).write(to: retained.appendingPathComponent("unrelated.txt"))
     try FileManager.default.createSymbolicLink(at: logs, withDestinationURL: target)
@@ -138,7 +138,7 @@ func replacedDirectory() throws {
     try check(afterOrdinary == Data("REPLACEMENT MUST STAY UNCHANGED".utf8), "ordinary replacement directory is not adopted by a prepared writer")
     try check(try FileManager.default.contentsOfDirectory(atPath: logs.path) == [ownedName], "ordinary replacement receives no lock, rotation or cleanup")
     try check(try Data(contentsOf: retained.appendingPathComponent("unrelated.txt")) == Data("UNRELATED ORIGINAL".utf8), "descriptor-relative retention preserves nonowned files in original inode")
-    try check(targetNames.filter { $0.hasPrefix("fixmacos-2147483647-") }.allSatisfy {
+    try check(targetNames.filter { $0.hasPrefix("bettermacos-2147483647-") }.allSatisfy {
         !FileManager.default.fileExists(atPath: retained.appendingPathComponent($0).path)
     }, "retention actually prunes owned old sessions only inside retained inode")
 

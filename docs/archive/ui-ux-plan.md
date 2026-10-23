@@ -38,7 +38,7 @@ Use a single vertical column, consistent cards, and a scrollable height bounded 
 the available screen. Do not add a top-level navigation dropdown or feature grid.
 
 ```text
-Fix macOS                         Edit   ⚙
+Better macOS                         Edit   ⚙
 ┌ Keep awake ───────────────────────────┐
 │ 30 min · Display may sleep      Start │
 └───────────────────────────────────────┘
@@ -139,7 +139,7 @@ inside a group; do not add ambiguous group-wide switches.
 
 ### Flow
 
-1. **Welcome.** Explain that Fix macOS applies only selected improvements. Offer
+1. **Welcome.** Explain that Better macOS applies only selected improvements. Offer
    Set up and Skip for now; skipping opens an empty/safe quick-action home.
 2. **Choose improvements.** Group cards by purpose. Each feature has a one-line
    description, a permission/experimental badge where relevant, and an independent

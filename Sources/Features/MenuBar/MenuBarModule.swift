@@ -87,13 +87,13 @@ final class MenuBarModule: NSObject {
     private func createItems() {
         guard control == nil else { return }
         let control = NSStatusBar.system.statusItem(withLength: 24)
-        control.autosaveName = "FixMacOS.MenuBar.Toggle"
+        control.autosaveName = "BetterMacOS.MenuBar.Toggle"
         control.button?.target = self
         control.button?.action = #selector(toggle)
         control.button?.setAccessibilityLabel("Show or hide extra menu-bar icons")
         self.control = control
         let divider = NSStatusBar.system.statusItem(withLength: 20)
-        divider.autosaveName = "FixMacOS.MenuBar.Divider"
+        divider.autosaveName = "BetterMacOS.MenuBar.Divider"
         divider.button?.title = "│"
         divider.button?.alignment = .right
         divider.button?.toolTip = "Command-drag extra icons to the left of this divider"

@@ -20,16 +20,16 @@ do {
     }
     var old = try line(first, "startup", at: now)
     old.append(Data("malformed\n{partial".utf8))
-    try old.write(to: root.appendingPathComponent("fixmacos-123-\(first)-2.jsonl"))
+    try old.write(to: root.appendingPathComponent("bettermacos-123-\(first)-2.jsonl"))
     var current = try line(first, "same_tick", at: now)
     current.append(try line(first, "later", at: now.addingTimeInterval(1)))
-    try current.write(to: root.appendingPathComponent("fixmacos-123-\(first)-0.jsonl"))
+    try current.write(to: root.appendingPathComponent("bettermacos-123-\(first)-0.jsonl"))
     for (generation, mtime) in [(0, 1000.0), (2, 2000.0)] {
-        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: mtime)], ofItemAtPath: root.appendingPathComponent("fixmacos-123-\(first)-\(generation).jsonl").path)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: mtime)], ofItemAtPath: root.appendingPathComponent("bettermacos-123-\(first)-\(generation).jsonl").path)
     }
-    try line(second, "startup", at: now.addingTimeInterval(2), role: "watchdog", pid: 456).write(to: root.appendingPathComponent("fixmacos-456-\(second)-0.jsonl"))
+    try line(second, "startup", at: now.addingTimeInterval(2), role: "watchdog", pid: 456).write(to: root.appendingPathComponent("bettermacos-456-\(second)-0.jsonl"))
     try Data("PRIVATE_UNRELATED\n".utf8).write(to: root.appendingPathComponent("unrelated.jsonl"))
-    let symlink = root.appendingPathComponent("fixmacos-789-\(UUID().uuidString)-0.jsonl")
+    let symlink = root.appendingPathComponent("bettermacos-789-\(UUID().uuidString)-0.jsonl")
     try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: root.appendingPathComponent("unrelated.jsonl"))
     let loaded = try DiagnosticLogReader.read(root.path)
     try check(loaded.records.count == 4 && loaded.skipped == 1, "reader skips malformed/partial lines, unrelated files and symlinks")
@@ -59,13 +59,13 @@ do {
         for generation in 0...2 {
             var data = Data()
             for event in generationEvents[generation] { data.append(try line(batchSession, event, at: now)) }
-            let file = batch.appendingPathComponent("fixmacos-123-\(batchSession)-\(generation).jsonl")
+            let file = batch.appendingPathComponent("bettermacos-123-\(batchSession)-\(generation).jsonl")
             try data.write(to: file)
             try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: mtimes[generation])], ofItemAtPath: file.path)
         }
     }
-    try line(otherSession, "foreign", at: now).write(to: batch.appendingPathComponent("fixmacos-123-\(otherSession)-0.jsonl"))
-    try line(otherSession, "helper", at: now, role: "watchdog", pid: 456).write(to: batch.appendingPathComponent("fixmacos-456-\(otherSession)-0.jsonl"))
+    try line(otherSession, "foreign", at: now).write(to: batch.appendingPathComponent("bettermacos-123-\(otherSession)-0.jsonl"))
+    try line(otherSession, "helper", at: now, role: "watchdog", pid: 456).write(to: batch.appendingPathComponent("bettermacos-456-\(otherSession)-0.jsonl"))
     for mtimes in [[1000.0, 1500.0, 2000.0], [2000.0, 1500.0, 1000.0], [1000.0, 1000.0, 1000.0]] {
         try writeBatch(mtimes: mtimes)
         let records = try DiagnosticLogReader.read(batch.path).records
@@ -83,8 +83,8 @@ do {
     for (index, row) in rows.enumerated() {
         filterData.append(try line(first, row.0, at: now.addingTimeInterval(Double(index)), category: row.1, level: row.2))
     }
-    try filterData.write(to: filters.appendingPathComponent("fixmacos-123-\(first)-0.jsonl"))
-    try line(second, "excluded_session", at: now, pid: 456, category: "bluetooth", level: "error").write(to: filters.appendingPathComponent("fixmacos-456-\(second)-0.jsonl"))
+    try filterData.write(to: filters.appendingPathComponent("bettermacos-123-\(first)-0.jsonl"))
+    try line(second, "excluded_session", at: now, pid: 456, category: "bluetooth", level: "error").write(to: filters.appendingPathComponent("bettermacos-456-\(second)-0.jsonl"))
     let base = ["--directory", filters.path, "--session", first]
     for (flags, expected) in [
         ([], ["process/startup", "bluetooth/observation", "bluetooth/warning_detail", "login/error_detail"]),
@@ -104,7 +104,7 @@ do {
     // Explicit selection still reads every selected generation before merging.
     for index in 0..<25 {
         let session = String(format: "00000000-0000-0000-0000-%012d", index + 100)
-        try line(session, "noise", at: now, pid: 999).write(to: batch.appendingPathComponent("fixmacos-999-\(session)-0.jsonl"))
+        try line(session, "noise", at: now, pid: 999).write(to: batch.appendingPathComponent("bettermacos-999-\(session)-0.jsonl"))
     }
     do { _ = try DiagnosticLogReader.read(batch.path); throw DiagnosticLogReader.failure("silently truncated directory") }
     catch { try check(error.localizedDescription.contains("More than 24"), "over-budget directory fails explicitly without truncating selected sessions") }

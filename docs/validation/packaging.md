@@ -11,7 +11,7 @@ built bundle with `codesign --verify --strict`.
 
 Each build assembles a fresh `build/.bundle.XXXXXX/new.app`, with cleanup traps
 restricted to that invocation's staging directory. Only a strictly verified
-bundle replaces `build/Fix macOS.app`; compile/sign/verification failures leave
+bundle replaces `build/Better macOS.app`; compile/sign/verification failures leave
 the previous output untouched, and a failed publication restores it. Failed
 rollback retains the old bundle in staging and prints its location. No app is
 launched or quit. Source-install metadata records the repository root, not the
@@ -27,8 +27,8 @@ also absent after the full real-build test run.
 
 ## Installer signing selection
 
-- A nonempty `MAC_UTILS_SIGNING_IDENTITY` is saved in the managed source checkout's
-  local `macutils.signingIdentity` before considering a same-revision no-op.
+- A nonempty `BETTER_MACOS_SIGNING_IDENTITY` is saved in the managed source checkout's
+  local `bettermacos.signingIdentity` before considering a same-revision no-op.
   Any change from the previous configuration forces rebuilding, even if the
   installed signature already matches. `-` explicitly persists ad-hoc signing.
 - With no environment selection, the saved configuration is used; absent
@@ -63,12 +63,12 @@ an uppercase certificate fingerprint, followed by a saved-configuration no-op.
   still fetches and builds current `main` at execution time. A newer main may be
   installed than the offered revision. This work does not introduce source
   pinning or version channels.
-- `MAC_UTILS_SIGNING_IDENTITY=- bash test.sh`: real optimized Apple Silicon build,
+- `BETTER_MACOS_SIGNING_IDENTITY=- bash test.sh`: real optimized Apple Silicon build,
   complete bundled-notice checks, strict ad-hoc signature verification, 3,997
   isolated Swift checks, and mocked installer cases pass. This is not evidence
   of Developer ID signing, notarization, or hardware qualification.
 - `git diff --check` passes.
 - Build revision metadata is the checkout's `HEAD` when `build.sh` runs, not a
   promised release SHA. Rebuild after the final release/integration commit in
-  the parent checkout and verify `FixMacOSRevision` against that commit before
+  the parent checkout and verify `BetterMacOSRevision` against that commit before
   distributing; a pre-commit validation artifact is not the final release.

@@ -78,7 +78,7 @@ func runUITests() throws {
     runAwakeQuickActionTests()
     runAwakeNativeEditorTests()
     runPopupSizingTests()
-    let suite = "fix-mac-os.ui-tests.\(UUID().uuidString)"
+    let suite = "better-macos.ui-tests.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     let store = UISettingsStore(defaults: defaults)
@@ -228,7 +228,7 @@ private func runBuiltinCatalogTests() {
 
 private func runRegisteredOwnerChoiceTests() throws {
     for setup in [false, true] {
-        let suite = "fix-mac-os.registered-awake.\(UUID().uuidString)"
+        let suite = "better-macos.registered-awake.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = ModuleSettings(defaults: defaults)
@@ -262,7 +262,7 @@ private func runRegisteredOwnerChoiceTests() throws {
         withExtendedLifetime(host) {}
     }
     for setup in [false, true] {
-        let suite = "fix-mac-os.registered-clipboard.\(UUID().uuidString)"
+        let suite = "better-macos.registered-clipboard.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = ModuleSettings(defaults: defaults)
@@ -319,7 +319,7 @@ func renderReleaseUIFixtures(directory: String? = nil) throws {
     _ = NSApplication.shared
     let root = directory.map { URL(fileURLWithPath: $0, isDirectory: true) }
     if let root { try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true) }
-    let suite = "fix-mac-os.release-ui-fixtures.\(UUID().uuidString)"
+    let suite = "better-macos.release-ui-fixtures.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     func settle(_ window: NSWindow) {
@@ -546,7 +546,7 @@ private final class AwakeNativeEditorFixture {
 
 private func runAwakeNativeEditorTests() {
     _ = NSApplication.shared
-    let suite = "fix-mac-os.awake-native-editor.\(UUID().uuidString)"
+    let suite = "better-macos.awake-native-editor.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     for module in AppModule.allCases { ModuleSettings(defaults: defaults).set(module, enabled: false) }
@@ -678,7 +678,7 @@ private func runAwakeQuickActionTests() {
     model.keepAwakeProtectionFailed = false; model.keepAwakeRemaining = 0; model.keepAwakeAppNames = ["Fixture app"]
     expect(actions.status == "Active · app rules", "app-only protection stays distinct from timed and inactive sessions")
 
-    let suite = "fix-mac-os.popup-awake.\(UUID().uuidString)"
+    let suite = "better-macos.popup-awake.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     for module in AppModule.allCases { ModuleSettings(defaults: defaults).set(module, enabled: false) }
@@ -906,7 +906,7 @@ func renderCompactUIFixtures(directory: String) throws {
 }
 
 private func runSetupDesktopPermissionTests() {
-    let suite = "fix-mac-os.setup-desktop-permission.\(UUID().uuidString)"
+    let suite = "better-macos.setup-desktop-permission.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     for module in AppModule.allCases { ModuleSettings(defaults: defaults).set(module, enabled: module == .spaces) }
@@ -1034,7 +1034,7 @@ private func runSetupDesktopIntentTests() {
     let filterIndex = CommandLine.arguments.firstIndex(of: "--setup-space-case")
     let filter = filterIndex.flatMap { $0 + 1 < CommandLine.arguments.count ? CommandLine.arguments[$0 + 1] : nil }
     for scenario in ["inactive-off", "animation-on-desktop-off", "pending-on", "ordinary-animation-off"] where filter == nil || filter == scenario {
-        let suite = "fix-mac-os.setup-desktop-intent.\(UUID().uuidString)"
+        let suite = "better-macos.setup-desktop-intent.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         for module in AppModule.allCases { ModuleSettings(defaults: defaults).set(module, enabled: module == .spaces) }
@@ -1098,7 +1098,7 @@ private func runSetupDesktopIntentTests() {
 }
 
 private func runNativeUIInteractionTests() {
-    let suite = "fix-mac-os.native-ui-interactions.\(UUID().uuidString)"
+    let suite = "better-macos.native-ui-interactions.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     for module in AppModule.allCases { ModuleSettings(defaults: defaults).set(module, enabled: false) }
@@ -1201,7 +1201,7 @@ private struct SetupBluetoothRunner: CommandRunning {
 }
 
 private func runSetupOutcomeTests() {
-    let suite = "fix-mac-os.setup-outcomes.\(UUID().uuidString)"
+    let suite = "better-macos.setup-outcomes.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     for module in AppModule.allCases { ModuleSettings(defaults: defaults).set(module, enabled: false) }
@@ -1234,7 +1234,7 @@ private func runSetupOutcomeTests() {
     withExtendedLifetime(host) {}
 
     for scenario in ["denied", "off", "failed"] {
-        let btSuite = "fix-mac-os.setup-bluetooth.\(UUID().uuidString)"
+        let btSuite = "better-macos.setup-bluetooth.\(UUID().uuidString)"
         let btDefaults = UserDefaults(suiteName: btSuite)!
         for module in AppModule.allCases { ModuleSettings(defaults: btDefaults).set(module, enabled: false) }
         let routing = AudioModule(backend: SetupAudioBackend(), defaults: btDefaults)
@@ -1260,7 +1260,7 @@ private func runSetupOutcomeTests() {
 }
 
 private func runSetupActivationOrderingTests() {
-    let suite = "fix-mac-os.setup-activation.\(UUID().uuidString)"
+    let suite = "better-macos.setup-activation.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     for module in AppModule.allCases { ModuleSettings(defaults: defaults).set(module, enabled: false) }
@@ -1294,7 +1294,7 @@ private func runSetupActivationOrderingTests() {
     audio.stop(); try? awake.deactivate()
     withExtendedLifetime(host) {}
 
-    let refusedSuite = "fix-mac-os.setup-refused.\(UUID().uuidString)"
+    let refusedSuite = "better-macos.setup-refused.\(UUID().uuidString)"
     let refusedDefaults = UserDefaults(suiteName: refusedSuite)!
     defer { refusedDefaults.removePersistentDomain(forName: refusedSuite) }
     for module in AppModule.allCases { ModuleSettings(defaults: refusedDefaults).set(module, enabled: false) }

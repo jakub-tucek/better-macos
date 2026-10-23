@@ -474,7 +474,7 @@ struct DashboardView: View {
         } message: {
             Text("Disconnect \(disconnectWarning?.name ?? "this device")? \(disconnectDisablesRule ? "Its auto-reconnect rule will be turned off; other rules are unchanged. " : "")If this is your keyboard or mouse, make sure you have another usable input device first.")
         }
-        .alert("Move auto-connect into Fix macOS?", isPresented: $showLegacyWarning) {
+        .alert("Move auto-connect into Better macOS?", isPresented: $showLegacyWarning) {
             Button("Take over", action: model.onTakeOverLegacy)
             Button("Cancel", role: .cancel) {}
         } message: { Text("The existing LaunchAgent will be stopped and disabled. Its source files are preserved.") }
@@ -706,7 +706,7 @@ struct DashboardView: View {
                 DashboardSwitchRow(title: "Keep display awake", isOn: Binding(get: { model.keepDisplayAwake }, set: model.onKeepDisplayAwakeChanged))
                 Text(model.keepDisplayAwake ? "Keep the computer and display awake until the session ends." : "Keep the computer awake while letting the display sleep.")
                     .font(.caption).foregroundStyle(.secondary)
-                Text("Sleep from the Apple menu and closing the lid still work. Quitting Fix macOS ends the session.")
+                Text("Sleep from the Apple menu and closing the lid still work. Quitting Better macOS ends the session.")
                     .font(.caption2).foregroundStyle(.secondary)
             } }
         }
@@ -754,7 +754,7 @@ struct DashboardView: View {
             }
             card {
                 DashboardSwitchRow(title: "Hide extra icons", accessibilityTitle: "Hide extra menu-bar icons", isOn: Binding(get: { model.menuBarHiding }, set: model.onMenuBarHidingChanged))
-                Text("Hold ⌘ and drag the divider left of the chevron. Move less-used icons left of the divider; keep Fix macOS and essential icons to its right.")
+                Text("Hold ⌘ and drag the divider left of the chevron. Move less-used icons left of the divider; keep Better macOS and essential icons to its right.")
                     .font(.caption).foregroundStyle(.secondary)
                 if model.menuBarHiding && !draftMode {
                     Button(model.menuBarHidden ? "Show extra icons" : "Hide extra icons", action: model.onToggleMenuBar)
