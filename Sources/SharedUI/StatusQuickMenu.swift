@@ -154,9 +154,7 @@ struct StatusQuickMenuView: View {
     private func row(_ action: StatusQuickAction, title: String, detail: String, symbol: String) -> some View {
         Button { choose(action) } label: {
             HStack(spacing: 12) {
-                Image(systemName: symbol).font(.system(size: 17, weight: .regular)).foregroundStyle(.secondary)
-                    .frame(width: 32, height: 32)
-                    .background(.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+                AppSymbolBadge(symbol: symbol)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title).font(.system(size: 12, weight: .medium))
                     Text(detail).font(.system(size: 10)).foregroundStyle(.secondary)

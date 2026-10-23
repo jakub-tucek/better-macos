@@ -329,11 +329,10 @@ struct DashboardCard<Content: View>: View {
     let content: Content
     init(@ViewBuilder content: () -> Content) { self.content = content() }
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) { content }
-            .padding(openSections ? 0 : 12).padding(.vertical, openSections ? 14 : 0)
+        VStack(alignment: .leading, spacing: AppStyle.spacing) { content }
+            .padding(openSections ? 0 : AppStyle.spacing).padding(.vertical, openSections ? 14 : 0)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(openSections ? Color.clear : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.primary.opacity(openSections ? 0 : 0.06)))
+            .background { if !openSections { Color.clear.modifier(AppSurface()) } }
             .overlay(alignment: .bottom) { if openSections { Divider() } }
             .accessibilityElement(children: .contain)
     }

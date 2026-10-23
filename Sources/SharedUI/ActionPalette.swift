@@ -94,10 +94,7 @@ struct ActionPaletteLayout<Icon: View, Content: View>: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 16) {
                 icon().frame(width: 72, height: 46)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(title).font(.system(size: 24, weight: .semibold))
-                    Text(subtitle).font(.callout).foregroundStyle(.secondary).lineLimit(1)
-                }
+                AppHeading(title: title, subtitle: subtitle)
                 Spacer()
                 Button(action: close) { Image(systemName: "xmark").padding(8) }
                     .buttonStyle(.plain).accessibilityLabel("Close \(title)")
@@ -128,9 +125,8 @@ struct ActionPaletteTile<Icon: View>: View {
                     .frame(height: 28).multilineTextAlignment(.center)
                 Text(detail).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
             }.frame(maxWidth: .infinity).padding(.vertical, 12)
-                .background(selected ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(selected ? Color.accentColor.opacity(0.6) : Color.primary.opacity(0.06)))
-                .contentShape(RoundedRectangle(cornerRadius: 10))
+                .modifier(AppSurface(selected: selected))
+                .contentShape(RoundedRectangle(cornerRadius: AppStyle.radius))
         }.buttonStyle(.plain).accessibilityLabel("\(title), \(detail)")
             .accessibilityAddTraits(selected ? .isSelected : [])
     }

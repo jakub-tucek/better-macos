@@ -311,6 +311,32 @@ placements in each direction, including odd-width destination halves.
 scenarios** passed (`build/opposite-half-test.log`). Pinned lint, format and
 whitespace checks passed. Live multi-display movement remains for user confirmation.
 
+## Unified quick-action styling · 2026-10-23
+
+Quick actions now uses a named header, spaced neutral cards, shared icon badges,
+larger preset targets and full-width Clipboard/Windows launch rows. Widget order,
+staged editing, measured popup sizing and native control actions are preserved.
+Settings' widget overview and add-widget gallery use adaptive grids. Shared
+`AppStyle.swift` headings and surfaces also serve Settings, setup, the right-click
+menu and both action palettes. Settings retains the selected Open layout; increased
+contrast strengthens shared surface borders without adding motion.
+
+`bash test.sh` passed **5,168 isolated checks**, supporting suites and **13 installer
+scenarios** (`build/unified-ui-complete-test.log`). Pinned lint, format and whitespace
+checks passed. Compact and release UI fixtures were rendered; light/dark popup,
+editor and Settings previews were inspected (`build/unified-ui-fixtures.log`).
+These fixtures do not establish live VoiceOver or hardware acceptance.
+
+Initial runs exposed a presentation-test assumption: its click used the old
+header/card coordinates. The fixture now finds the topmost native display switch
+and converts its center into popup coordinates before sending one real event pair.
+The first adjustment used subview order, which picked the second display; sorting
+by rendered position fixed the fixture. Both failures remain in
+`build/unified-ui-{test,final-test}.log`. The subsequent passing focused native test
+is in `build/unified-ui-presentation.log`. A full run interrupted by the coding
+server restart remains in `build/unified-ui-passed-test.log`; the complete run
+named above supersedes it.
+
 ## Shortcut-session extraction · 2026-10-22
 
 The candidate-2 working tree based on `ff1e046` moves registration attempt/generation,

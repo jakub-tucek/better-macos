@@ -41,6 +41,9 @@ for the broader lifecycle work that remains proposed.
 
 ## Find the UI first
 
+- [AppStyle.swift](../Sources/SharedUI/AppStyle.swift): shared headings, neutral
+  surfaces, contrast-aware borders, icon badges and compact launch rows. Used by
+  Quick actions, Settings, setup, the right-click menu and action palettes.
 - [UISurfaces.swift](../Sources/SharedUI/UISurfaces.swift): `SettingsGroup`, six `WidgetKind` cases,
   widget editor/popup, Settings shell, and quick-action views.
 - [StatusQuickMenu.swift](../Sources/SharedUI/StatusQuickMenu.swift): fixed-size,

@@ -40,6 +40,13 @@ enum WidgetKind: String, CaseIterable, Identifiable, Codable {
     var title: String { BuiltinFeatures.widget(for: self).title }
     var detail: String { BuiltinFeatures.widget(for: self).detail }
     var module: AppModule { BuiltinFeatures.widget(for: self).module }
+    var symbol: String {
+        switch self {
+        case .keepAwake: return "moon.zzz"
+        case .windows: return "rectangle.split.2x2"
+        default: return feature.symbol
+        }
+    }
 }
 
 enum UILaunchRoute: Equatable {
@@ -190,7 +197,7 @@ struct WidgetEditor: View {
                 DashboardCard {
                     HStack {
                         Image(systemName: "line.3.horizontal").accessibilityLabel("Drag to reorder")
-                        Text(entry.known?.title ?? "Unavailable widget: \(entry.kind)").font(.headline)
+                        Text(entry.known?.title ?? "Unavailable widget: \(entry.kind)").font(AppStyle.sectionTitle)
                         Spacer()
                         Button { layout.move(entry.id, by: -1) } label: { Image(systemName: "arrow.up") }
                             .disabled(index == 0).accessibilityLabel("Move \(entry.known?.title ?? entry.kind) up")
@@ -224,14 +231,20 @@ struct WidgetEditor: View {
                 Button("Restore suggested") { layout = .suggested(for: model.enabledModules) }
             }
             if gallery || layout.entries.isEmpty {
+                Text("Available quick actions").font(AppStyle.sectionTitle).accessibilityAddTraits(.isHeader)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), alignment: .top)], alignment: .leading, spacing: AppStyle.spacing) {
                 ForEach(WidgetKind.allCases.filter { kind in !layout.entries.contains { $0.kind == kind.rawValue } }) { kind in
                     DashboardCard {
-                        Label(kind.title, systemImage: kind.feature.symbol).font(.headline)
-                        Text(kind.detail).font(.caption)
+                        HStack(spacing: 8) {
+                            AppSymbolBadge(symbol: kind.symbol)
+                            Text(kind.title).font(AppStyle.sectionTitle)
+                        }
+                        Text(kind.detail).font(.caption).foregroundStyle(.secondary)
                         Text(preview(kind)).font(.caption).foregroundStyle(.secondary)
                         Button("Add \(kind.title)") { layout.add(kind) }
                     }
                 }
+                }.environment(\.openSettingsSections, false)
             }
         }
     }
@@ -288,7 +301,7 @@ struct QuickActionsView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Fix macOS").font(.system(size: 14, weight: .semibold))
+                AppHeading(title: editor.draft == nil ? "Quick actions" : "Edit quick actions", subtitle: "Fix macOS", compact: true)
                 Spacer()
                 if editor.draft != nil {
                     Button("Cancel", action: editor.cancel)
@@ -299,36 +312,32 @@ struct QuickActionsView: View {
                     }.buttonStyle(.plain).foregroundStyle(.secondary)
                         .help("Choose and arrange quick actions")
                 }
-            }.padding(.horizontal, 16).padding(.vertical, 10)
+            }.padding(.horizontal, 20).padding(.vertical, 14)
                 .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { headerHeight = $0 }
             Divider().frame(height: 1)
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: AppStyle.spacing) {
                     SafetyAlerts(model: model, showAwakeSession: editor.draft != nil || !entries.contains { $0.known == .keepAwake && model.enabledModules.contains(.keepAwake) })
-                        .padding(.horizontal, 14)
                     if editor.draft != nil {
                         WidgetEditor(layout: Binding(get: { editor.draft ?? model.widgetLayout }, set: { editor.draft = $0 }), model: model)
-                            .padding(14)
                     } else {
                         if model.launchWidget != nil {
                             Button("Dismiss temporary launch action") { model.launchWidget = nil }.font(.caption)
                         }
                         ForEach(entries) { entry in
                             QuickWidget(model: model, entry: entry)
-                             if entry.id != entries.last?.id { Divider().padding(.horizontal, 16) }
                         }
                         if entries.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {
-                                Label("Quick actions", systemImage: "square.grid.2x2").font(.headline)
                                 Text("Keep your most-used controls in the menu bar.").font(.caption).foregroundStyle(.secondary)
                                 HStack {
                                     Button("Add quick actions") { editor.begin(model.widgetLayout) }
                                     Button("Run setup", action: model.onRunSetup)
                                 }
-                            }.padding(14)
+                            }.padding(4)
                         }
                     }
-                }
+                }.padding(12)
                 .frame(maxWidth: .infinity)
                 .fixedSize(horizontal: false, vertical: true)
                 .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { contentHeight = $0 }
@@ -522,9 +531,9 @@ struct AwakeSessionWidget: View {
             } else {
                 HStack(spacing: 5) {
                     ForEach(AwakeSessionActions.presets, id: \.self) { minutes in
-                         Button { actions.start(minutes: minutes) } label: {
-                             Text("\(minutes)").monospacedDigit().frame(maxWidth: .infinity).padding(.vertical, 4)
-                                 .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 5))
+                          Button { actions.start(minutes: minutes) } label: {
+                              Text("\(minutes)").monospacedDigit().frame(maxWidth: .infinity).padding(.vertical, 8)
+                                  .modifier(AppSurface())
                          }.buttonStyle(.plain)
                             .accessibilityLabel("Start keep awake for \(minutes) minutes")
                             .help("Start a \(minutes)-minute session")
@@ -572,15 +581,16 @@ struct QuickWidget: View {
     @StoredState private var disconnect: BluetoothDevice?
     var body: some View {
         if let kind = entry.known {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: AppStyle.spacing) {
                 HStack {
                     HStack(spacing: 7) {
-                         Image(systemName: kind.feature.symbol).foregroundStyle(.secondary).frame(width: 18)
-                        Text(kind.title).font(.system(size: 12, weight: .semibold))
+                         AppSymbolBadge(symbol: kind.symbol)
+                         Text(kind.title).font(AppStyle.sectionTitle).accessibilityAddTraits(.isHeader)
                     }
                     Spacer()
                     Button { model.onOpenSettings(SettingsGroup.forFeature(kind.feature)) } label: {
-                         Image(systemName: "arrow.up.right").font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+                          Image(systemName: "arrow.up.right").font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+                              .frame(width: 28, height: 28).contentShape(Rectangle())
                     }.buttonStyle(.plain).help("\(kind.title) settings")
                         .accessibilityLabel("\(kind.title) settings")
                 }
@@ -602,8 +612,9 @@ struct QuickWidget: View {
                 }
             }
             .font(.system(size: 12))
-             .padding(.horizontal, 16).padding(.vertical, 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
+             .padding(AppStyle.spacing)
+             .frame(maxWidth: .infinity, alignment: .leading)
+             .modifier(AppSurface())
             .accessibilityElement(children: .contain)
             .alert("Disconnect device?", isPresented: Binding(get: { disconnect != nil }, set: { if !$0 { disconnect = nil } })) {
                 Button("Disconnect", role: .destructive) {
@@ -650,9 +661,8 @@ struct QuickWidget: View {
     }
      @ViewBuilder private var windows: some View {
          if model.enabledModules.contains(.windows), let module = model.windowPositions {
-             Button(action: model.onWindowActions) {
-                 Label("Window actions…", systemImage: "rectangle.split.2x2")
-             }.help("Browse all window actions (\(WindowShortcutAction.showActions.shortcut))")
+              AppActionRow(title: "Window actions", symbol: "rectangle.split.2x2", action: model.onWindowActions)
+                  .help("Browse all window actions (\(WindowShortcutAction.showActions.shortcut))")
              WindowRestoreWidget(module: module, expanded: entry.expanded, target: entry.windowLayoutID)
         } else {
             Text("Window layouts are off.").font(.caption)
@@ -661,15 +671,7 @@ struct QuickWidget: View {
     }
     private var clipboard: some View {
         VStack(alignment: .leading, spacing: 8) {
-             Button(action: model.onClipboardOpen) {
-                 HStack {
-                     Text("Open history").fontWeight(.medium)
-                     Spacer()
-                     Text("⌘⇧V").font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
-                     Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
-                 }.padding(9).contentShape(Rectangle())
-                     .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
-             }.buttonStyle(.plain)
+              AppActionRow(title: "Open history", symbol: "clipboard", shortcut: "⌘⇧V", action: model.onClipboardOpen)
              Text(model.clipboardRecording ? "Recording" : "Recording paused").font(.caption).foregroundStyle(.secondary)
             if entry.expanded {
                 Text("\(model.clipboardCount) entries · no previews here").font(.caption)
@@ -800,12 +802,8 @@ struct SettingsView: View {
     private var categoryHeader: some View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(model.settingsGroup == .displays ? "Displays & windows" : model.settingsGroup.rawValue).font(.system(size: 34, weight: .semibold))
-                        .accessibilityAddTraits(.isHeader)
-                    Text(model.settingsGroup.summary).font(.callout).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                AppHeading(title: model.settingsGroup == .displays ? "Displays & windows" : model.settingsGroup.rawValue,
+                           subtitle: model.settingsGroup.summary)
                 Spacer(minLength: 0)
             }.frame(maxWidth: 1000).padding(.horizontal, 40).padding(.top, 32).padding(.bottom, 20)
         }.background(Color(nsColor: .windowBackgroundColor))
@@ -876,11 +874,12 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), alignment: .top)], alignment: .leading, spacing: AppStyle.spacing) {
                 ForEach(model.widgetLayout.entries) { entry in
                     DashboardCard {
                         HStack {
-                            Label(entry.known?.title ?? entry.kind, systemImage: entry.known?.feature.symbol ?? "questionmark.square")
-                                .font(.headline)
+                            AppSymbolBadge(symbol: entry.known?.symbol ?? "questionmark.square")
+                            Text(entry.known?.title ?? entry.kind).font(AppStyle.sectionTitle)
                             Spacer()
                             Text(entry.expanded ? "Expanded" : "Compact").font(.caption).foregroundStyle(.secondary)
                         }
@@ -892,6 +891,7 @@ struct SettingsView: View {
                         }
                     }
                 }
+                }.environment(\.openSettingsSections, false)
             }
         }
     }
