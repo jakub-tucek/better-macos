@@ -1,9 +1,32 @@
 # Validation and release acceptance
 
+## Current reading order · 2026-10-23
+
+This index summarizes recorded evidence, not a fresh test run at current HEAD.
+For current controls and defaults, use the [usage guide](../usage.md).
+
+| Recent work | Recorded result | Still open |
+| --- | --- | --- |
+| [Opposite-half entry across neighboring displays](ui-window-shortcuts.md#opposite-half-entry-correction) | 5,168 isolated checks, supporting suites, 13 installer scenarios; lint/format/whitespace passed | Live multi-display movement |
+| [Keep awake palette and shared layout](ui-window-shortcuts.md#keep-awake-palette-and-shared-layout--2026-10-23) | 5,159 isolated checks plus supporting suites; injected assertions and native panel fixtures | Physical sleep, live interaction, VoiceOver |
+| [Retained right-click panel](ui-window-shortcuts.md#right-click-panel-redesign--2026-10-23) | 5,149 isolated checks plus supporting suites | User-reported compositing smoothness |
+| [Foreground-only shortcut discovery](../architecture/window-execution.md#foreground-shortcut-discovery--2026-10-23) | 5,091 isolated checks; background-Finder failure reproduced with an injected backend | User's exact focused-app behavior after restart |
+
+Counts above are successive runs with overlapping coverage, not additive totals.
+Recent implementation checks do not supply a new independent review or hardware
+acceptance. Earlier failed runs and source-review chronology remain below and in
+the linked records.
+
+Release gates remain open for live hardware, focus/global shortcuts, VoiceOver,
+supported-OS coverage, hosted CI, final version/artifact choice and publication.
+Bluetooth helper/native disagreement still blocks control; the read-only native
+probe is not a reconnect fix. Gesture Swift drain/stale-tracking holes remain
+documented in [the offline characterization](gesture-terminal-failures.md).
+
 ## Evidence index
 
 - [Windows execution, shortcut sessions and Bluetooth cycle delivery](../architecture/bluetooth-observation.md#combined-architecture-refactors):
-  behavior-preserving deepening, independently reviewed; final combined run passed
+  behavior-preserving deepening, independently reviewed; the recorded refactor-stage run passed
   5,076 isolated checks plus named suites. Native/hardware acceptance remains open.
 
 - [Native UI polish and Rectangle-style window shortcuts](ui-window-shortcuts.md):
@@ -36,7 +59,7 @@ to the current documentation. Native/hardware acceptance remains open.
 - [Historical UI consolidation and storage-intent cases](ui-consolidation.md)
 - [Packaging](packaging.md) · [Release checklist](../releases/checklist.md)
 
-Latest integrated check · 2026-10-18:
+### Historical integrated checks · 2026-10-18
 
 | Tested code | Result |
 | --- | --- |

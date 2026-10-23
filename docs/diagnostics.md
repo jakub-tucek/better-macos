@@ -2,9 +2,10 @@
 
 Instrumented builds, once started, admit best-effort newline-delimited JSON to
 `~/Library/Logs/Fix macOS/`. No upload service or logging opt-in is involved.
-The [main integration record](#main-integration--2026-10-15) verifies source and
-isolated fixtures, not logging from the already-running app. That app has **not
-been relaunched** for this integration; no live user log directory was read.
+The [initial integration record](#main-integration--2026-10-15) and
+[later level/reader integration](#log-level-main-integration--2026-10-18) record
+source/isolated checks, not current running-process identity. Building a new bundle
+does not reconfigure or replace an already-running process.
 Each process/session has `fixmacos-<pid>-<session>-0.jsonl` (current), then `-1`
 and `-2` (older). Logger-created files are capped at 512 KiB; sessions in one
 validated directory share a 24-file budget (12 MiB). Old files, including old

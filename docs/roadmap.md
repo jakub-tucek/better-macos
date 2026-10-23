@@ -1,12 +1,27 @@
 # Development roadmap
 
-Plan based on `2620a32` (2026-10-15), with implementation status updated below.
+Plan started at `2620a32` (2026-10-15); current source checked through `1434620`
+on 2026-10-23. Implementation status is separated from acceptance below.
 Pinned developer tooling, the first Clipboard policy SwiftPM slice and partial static
 built-in registration, mechanical source organization and a CI workflow are available;
 one concrete Keep awake owned-feature seam is also implemented; broader lifecycle
 extraction remains proposed. Hosted CI execution is unverified. Current behavior lives in
-[the module guide](modules.md); acceptance and failures live in [validation](validation/README.md).
-Keep the concise README and its install command. This plan promises no release date or tag.
+[the usage guide](usage.md); ownership lives in [the source map](modules.md), and
+acceptance/failures in [validation](validation/README.md). No release date or tag is promised.
+
+## Recent implemented work
+
+- Tabbed Settings and a quieter editable popup, with responsive Displays/Windows layout.
+- Opt-in Rectangle-style window shortcuts and a captured-target Window actions palette.
+  Repeated left/right halves now traverse neighboring displays with opposite-half entry.
+- A retained right-click panel and Keep awake palette using shared presentation/tiles.
+- Verified Windows execution/native-access and shortcut-session boundaries; deterministic
+  Bluetooth cycle delivery. These deepen existing owners, not a general framework.
+- Foreground-only shortcut discovery; named layouts retain full-desktop fail-closed scans.
+
+See [recent UI/shortcut evidence](validation/ui-window-shortcuts.md) and
+[window execution](architecture/window-execution.md). Live keyboard/focus, display
+movement, sleep, VoiceOver and right-click smoothness remain acceptance work.
 
 ## Priorities
 
@@ -125,7 +140,8 @@ mode for release reproducibility; do not claim byte-identical output across SDKs
 Root documentation now consists of `README.md`, `LICENSE` and `AGENTS.md`.
 Use the [documentation index](README.md) for the moved guides:
 
-- [Modules and source architecture](modules.md) and [host terminology](glossary.md).
+- [Usage and defaults](usage.md), [modules and source architecture](modules.md),
+  and [host terminology](glossary.md).
 - [Validation index and revision-bound evidence](validation/README.md), including
   host transactions, integrated core fixes and historical UI validation.
 - [Release checklist](releases/checklist.md) and [unreleased notes](releases/1.0-notes-draft.md).

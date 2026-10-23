@@ -1,5 +1,11 @@
 # UI polish and window shortcuts
 
+Chronological record, 2026-10-21 through 2026-10-23. Later sections supersede earlier
+sidebar, segmented-tab, menu, and tiling descriptions. Use [the usage guide](../usage.md)
+for current controls, the [opposite-half correction](#opposite-half-entry-correction)
+for latest recorded tiling checks, and [the validation index](README.md) for open gates.
+The final shortcut-session extraction section retains its earlier candidate scope.
+
 ## UI source audit
 
 Reviewed the Settings shell, quick-action popup/editor, shared feature controls,

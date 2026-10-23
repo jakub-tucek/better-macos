@@ -1,5 +1,10 @@
 # Keep-awake validation
 
+Historical implementation and test record, through 2026-10-15. For current controls
+use [the usage guide](../usage.md#behavior-and-defaults); for later palette checks
+see [the 2026-10-23 record](ui-window-shortcuts.md#keep-awake-palette-and-shared-layout--2026-10-23).
+Counts below are not current-HEAD test results.
+
 Implemented timed and bundle-ID app rules, startup discovery, workspace launch/exit
 notifications plus periodic reconciliation, overlapping reasons, Stop/Resume, and
 module teardown. App-only assertions use renewable 60-second OS timeouts; a stalled

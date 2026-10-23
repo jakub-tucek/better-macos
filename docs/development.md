@@ -5,6 +5,11 @@
 Use Apple Silicon macOS; the app targets **arm64 / macOS 15+**. That deployment
 target is not a claim that every compiler/SDK combination builds the app.
 
+For first-time development, clone the repository, select installed developer tools,
+then run the [commands below](#commands). Homebrew's `blueutil` and `switchaudio-osx`
+are runtime helpers for Bluetooth/audio; pinned lint/format tools are separate,
+development-only downloads. A build does not launch the app or exercise hardware.
+
 Combined SwiftPM/state-compatibility source tested on 2026-10-15 at `dff0491`
 on macOS 26.6.2 arm64 (earlier source evidence at `a90cf68` is retained separately):
 
@@ -129,7 +134,7 @@ Keep style expansion and formatter rewrites separate from architecture changes.
 Project context: [modules](modules.md), [glossary](glossary.md),
 [roadmap](roadmap.md).
 
-## Main integration verification · 2026-10-15
+## Historical tooling integration · 2026-10-15
 
 At `228f367`, bootstrap verified both pinned archive hashes and tool versions;
 lint passed with zero violations across 36 files, format-check required no changes

@@ -1,5 +1,10 @@
 # Host quit coordination — 2026-10-15
 
+Historical extraction evidence. The final pending-review statement below belongs
+to that increment. Later [reviewed registration](../architecture/builtin-registration.md#main-integration--2026-10-15)
+and [core integration](../releases/checklist.md#core-integration--2026-10-15)
+retain host admission/quit regressions; no live quit acceptance is implied.
+
 Scope: host action admission and quit attempts only. No feature storage, cleanup,
 configuration, navigation or UI redesign.
 

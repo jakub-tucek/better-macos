@@ -1,5 +1,10 @@
 # Release core validation
 
+Historical source-worktree record. The series below was later independently
+reviewed CLEAN and integrated through `dc96e9c`; see [combined evidence](../releases/checklist.md#core-integration--2026-10-15).
+Pending-review and untouched-main statements describe their original revisions.
+Native/hardware acceptance remains open.
+
 ## P1 — display recovery ownership
 
 The host previously used dashboard counts to decide whether quit or module

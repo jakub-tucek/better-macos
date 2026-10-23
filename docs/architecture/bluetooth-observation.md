@@ -2,10 +2,11 @@
 
 ## Scope
 
-Observation-only correction based on `52ae53e`. This does not establish the cause
+The observation correction began at `52ae53e`. It does not establish the cause
 of the live helper/native disagreement or qualify Bluetooth control on macOS 26.
 No permission reset, helper replacement, automatic power action or control API
-fallback is introduced. Independent review remains required before merge.
+fallback is introduced. The series is integrated with independent CLEAN review;
+historical pending-review statements below retain their named revision scope.
 
 The parent has since supplied final independent **CLEAN** review of the source
 series through `bf10ccf`. Historical review blockers below remain preserved;
@@ -99,10 +100,10 @@ live Bluetooth or run-loop waiting. Existing observation suites remain separate.
 
 ### Candidate 3 validation · working diff atop `a1c7936`
 
-This extraction is uncommitted main-checkout work, not a newly tested commit or
-hardware acceptance. The original backend/connection policy, owner completion,
-readback application and stopped drain compare byte-identical to the base; only
-the cancellation token moved out of the backend section. Audio, HostTransactions,
+This record describes the then-uncommitted main-checkout extraction, subsequently
+committed as `b1a2a9f`; it is not hardware acceptance. The original backend/connection
+policy, owner completion, readback application and stopped drain compare byte-identical
+to the base; only the cancellation token moved out of the backend section. Audio, HostTransactions,
 native observation/profiler/probe, host composition and vendor sources are unchanged.
 Legacy service takeover continues to share the same serial worker executor.
 

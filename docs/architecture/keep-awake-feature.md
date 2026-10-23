@@ -64,9 +64,7 @@ retains every quit ordering, drain, final check, veto and reopening rule. No awa
 quit veto is added. Shared Audio/Bluetooth ownership, display recovery and
 readiness, and Clipboard capture/retention/unload/quit distinctions are unchanged.
 
-## Regression contract
-
-### Keep awake action palette
+## Keep awake action palette
 
 `KeepAwakePalette.swift` is another presentation of the existing feature callbacks,
 opened from the right-click menu. It offers existing duration presets, the existing
@@ -80,6 +78,8 @@ The Windows and Keep awake palettes share `ActionPalettePresenter`,
 nonactivating presentation, screen bounds, material and observer cleanup, not feature
 state or action policy. Closing a palette does not end its feature session. Host
 surface switches and quit quiescence dismiss the panel.
+
+## Regression contract
 
 [`Tests/KeepAwakeFeatureTests.swift`](../../Tests/KeepAwakeFeatureTests.swift)
 exercises the feature interface with isolated preferences, fake assertions and

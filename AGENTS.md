@@ -1,6 +1,9 @@
 # Working in Fix macOS
+
 ## Read by task
 
+- For user-facing behavior, shortcuts, installation, permissions or privacy, read
+  [usage](docs/usage.md). Use [the docs index](docs/README.md) to find other guides.
 - For feature ownership, shared dependencies, UI entry points or cleanup, read
   [module guide](docs/modules.md). Built-in features are compiled into one app, not runtime plugins.
 - For developer commands and pinned lint/format tools, read [docs/development.md](docs/development.md),

@@ -2,6 +2,12 @@
 
 2026-10-15 · base `f359f423bd7d3109fe519268776e6ca65d155344`
 
+Historical source-worktree record, later independently reviewed and integrated;
+see [UI/packaging integration](../releases/checklist.md#ui-packaging-and-documentation-integration--2026-10-15).
+For current Settings and palettes, use [usage](../usage.md) and
+[later UI evidence](ui-window-shortcuts.md). Counts and pending review below belong
+to the original worktree.
+
 ## Changes and isolated evidence
 
 - Settings and native history Clear share the original confirmation wording.

@@ -1,10 +1,9 @@
 # Built-in modules and source map
 
-Source map started at `f359f42`, with registration ownership updated through
-`66056f0` and reviewed mechanical source organization integrated at `480e957`. This describes existing
-code, not a completed architecture refactor. See [move evidence](validation/source-organization.md). Use
-[validation](validation/README.md) for acceptance and pending release blockers.
-Keep awake ownership is updated through integrated `aec5532` below.
+Current source map, checked against `1434620` on 2026-10-23. For controls, defaults,
+installation and privacy, use the [usage guide](usage.md). For test results and open
+release gates, use [validation](validation/README.md). Directory organization is
+not a completed lifecycle refactor; see [move evidence](validation/source-organization.md).
 
 ## Modules, not a plugin system
 
@@ -62,8 +61,7 @@ for the broader lifecycle work that remains proposed.
 
 The entries below name the Settings destination and quick surface. Their shared
 view implementations live in those files unless a dedicated UI file is listed.
-Cleanup describes the relevant owner and path, not proof of live acceptance or a
-claim that the baseline's release blockers are fixed.
+Cleanup describes the relevant owner and path, not proof of live acceptance.
 
 ## Feature owners
 
@@ -166,8 +164,8 @@ claim that the baseline's release blockers are fixed.
   and quit authority; it no longer accesses the private KeepAwakeModule owner.
 - **Resources/cleanup:** IOKit system/display assertions, deadline/update timer and
   app launch/exit observers. `deactivate()` removes observers/timer and stops reasons;
-  assertion release failures have feature-owned error/cleanup state. The setup assertion
-  fix is integrated; see [core evidence](validation/README.md#reviewed-core-integration--dc96e9c--2026-10-15)
+  assertion release failures retain feature-owned error/cleanup state. The setup
+  assertion fix is integrated; see [core evidence](validation/README.md#reviewed-core-integration--dc96e9c--2026-10-15)
   and the remaining [release gates](releases/checklist.md#native-acceptance).
 - **Boundary:** feature `prepareDisable()` retains/reactivates the same owner on
   failure; actions and post-chooser selections recheck host admission. Shutdown
@@ -199,7 +197,8 @@ claim that the baseline's release blockers are fixed.
   owns registration generations/retry, action outcomes and bounded original-frame
   lifetime. Production preset orchestration handles rollback over a low-level Carbon
   adapter. The owner retains admission and queued-layout cancellation. See
-  [controls, lifecycle and validation](validation/ui-window-shortcuts.md).
+  [controls and current cross-display traversal](usage.md#window-shortcuts) and
+  [lifecycle/validation history](validation/ui-window-shortcuts.md).
 
 ### Clipboard · `clipboard`
 
@@ -301,117 +300,22 @@ or VoiceOver acceptance. Follow the revision-bound links in [validation](validat
 
 ## Behavior and defaults
 
-Fresh installations start with features off and an empty quick-action layout.
-Existing installations keep their preferences. Enable features in Settings or run
-guided setup; macOS permission grants survive setup cancellation.
-
-**Displays:** default **Dangerously** mode acts immediately; **Safely** offers a
-20-second undo. Both protect the last usable display. Arrangement changes require
-confirmation; display changes last for the login session. Window restore reports
-missing, ambiguous, and unsupported windows instead of guessing a match.
-
-**Audio:** automatic routing starts off and polls device changes every two seconds.
-Manual changes pause that direction until a device-list change or Resume.
-**Keep awake:** custom durations accept 1–1440 whole minutes, with +15 minutes and
-presets. Stop pauses matching app reasons; Resume restores them. Timed sessions
-do not survive relaunch.
-
-**Clipboard:** select an entry, then press Return or click **Copy** to copy and
-dismiss without pasting. **Hold to quit:** the default is three seconds (1–99);
-releasing early, switching apps, or clicking cancels. Normal quit requests preserve
-save prompts; other quit commands remain unchanged.
-
-**Mouse:** Apply changes IOKit runtime values, not system preferences; disable/quit
-restores captured values. Relaunch/reconnect does not reapply overrides. Readback
-checks API results, not physical effectiveness. Per-device and wheel controls are
-unsupported. **Animations:** turning the preset off restores prior settings; effects
-vary by app and do not suppress all Mission Control/Control Center motion.
-
-**Menu bar:** spacing and hiding start off. ⌘-drag the divider left of the chevron
-and extra icons left of the divider. Click the chevron to hide/reveal; quitting
-reveals icons. Spacing may require app relaunch/logout. There is no notch-overflow panel.
-
-The popup contains editable quick-action widgets. **Edit** supports Add, ordering,
-compact/expanded presentation, Remove, and Restore suggested; **Done** saves and
-**Cancel** discards the draft. Removing a widget does not disable its feature or
-clear its data. Safety/recovery controls and an active awake session's Stop remain
-reachable without widgets. Clipboard widgets do not preview content.
-
-The gear opens one reusable, resizable **Settings** window: General, Quick actions,
-Displays, Sound & connections, Input, System, and Clipboard. **General → Run setup
-again** starts from current choices. Only **Finish** applies setup configuration;
-Mouse tuning still requires explicit Apply. Setup does not move windows, rearrange
-displays, or start timed awake sessions. Feature activation can start reviewed app
-awake rules, Bluetooth reconnect, or audio routing; animation changes may restart
-Dock/Finder. Setup reports per-feature outcomes and pending access/hardware.
+Moved to the [usage guide](usage.md#behavior-and-defaults), including current popup,
+Settings, setup, palettes and window shortcuts. This heading remains for old links.
 
 ## Clipboard privacy and retention
 
-Capture starts **paused each launch**. History defaults to memory-only, with at most
-100 entries, UTF-8 text up to **64 KiB**, and **PNG only**, up to **4 MiB per image**
-and **32 MiB total image bytes**. Pins bypass age expiry, not hard caps.
-
-Optional disk retention stores an **unencrypted JSON archive**, including image
-bytes, at `~/Library/Application Support/Fix macOS/Clipboard/history.json`. Choose
-1–365 days for unpinned entries. Turning disk retention off deletes the archive;
-Clear deletes history including pins. Failed cleanup stays pending with retry and
-can block module unload or quit. Turning the Clipboard module off stops its work
-but does **not** turn retention off or erase the archive. Capture and retention are
-separate choices.
-
-The app samples the clipboard every **500 ms** and can miss intermediate copies.
-App exclusions use the foreground app at sampling time, not proven clipboard
-authorship. Concealed, transient, and autogenerated formats are skipped. These
-filters cannot guarantee that other apps label sensitive content correctly.
+See [Clipboard privacy and retention](usage.md#clipboard-privacy-and-retention).
 
 ## Source installation and signing
 
-Use the [README install command](../README.md#install-from-source). The installer
-keeps its checkout in `~/Library/Application Support/Fix macOS/source` and installs
-to `~/Applications/Fix macOS.app`. It skips unchanged revisions only when signing
-configuration and the installed signature also match. Changing the selected signing
-identity triggers a rebuild; use `| bash -s -- --force` instead of `| bash` for an
-unconditional rebuild. It stops rather than overwriting local source changes.
-
-**Settings → General → Updates** checks GitHub source history on `main`, with a daily
-automatic check and a manual check. Installer-managed copies offer **Install update…**
-in Terminal and quit the old app before replacement. Updates follow source commits,
-not release versions. The app downloads `install.sh` at the offered SHA, but that
-installer fetches/builds the latest `main`; it does not guarantee the exact offered SHA.
-
-Without a certificate, builds use ad-hoc signing; macOS may require renewed permission
-grants after updates. Set `MAC_UTILS_SIGNING_IDENTITY` when running the installer to
-save a local signing identity, or use `-` to persist ad-hoc signing. Unavailable or
-ambiguous certificates fail closed, even at an unchanged revision. No certificate
-or notarization service is included; this repository provides source installation,
-not a notarized binary release.
-
-For a manual build:
-
-```sh
-brew install blueutil switchaudio-osx
-bash build.sh
-open "build/Fix macOS.app"
-```
-
-Enable **Launch at login** in Settings if wanted. Run isolated developer checks
-with `bash test.sh`.
+See [installation, updates and signing](usage.md#source-installation-and-signing)
+or [developer commands and tested toolchains](development.md).
 
 ## Permissions and limits
 
-- **Accessibility:** desktop switching, matched screen edges, hold to quit, and
-  Accessibility-based window capture/restore. Grant access for the features you use.
-- **Bluetooth:** contextual authorization for device management.
-- **Microphone / Screen Recording:** selecting an audio input does not record it.
-  Production features do not require microphone recording or Screen Recording access.
-
-Display and gesture features use private macOS APIs. Physical monitor recovery,
-trackpad behavior, mouse effectiveness, audio hardware, and live accessibility/focus
-checks still have acceptance gaps. The watchdog cannot guarantee recovery from a
-stalled WindowServer or graphics driver. Window restoration covers ordinary accessible
-windows on the current desktop, not full-screen windows or Space assignments.
-Development evidence includes macOS **26.6.2 (25G83)**; the macOS 15 deployment target
-does not establish acceptance on every supported OS.
+See [permissions and limits](usage.md#permissions-and-limits) and the
+[revision-bound acceptance matrix](validation/README.md).
 
 ## Documentation and source credits
 

@@ -4,8 +4,9 @@ Revision scope: this record retains the agreed design and delivery requirements.
 B–D are implemented at the `f359f42` documentation baseline; E native acceptance is
 partial. Read imperative/proposed wording below as the original requirements, not
 unimplemented feature claims. Later compact-popup and clipboard changes supersede
-older dimensions and panel descriptions. See the
-[current acceptance matrix](../validation/README.md#acceptance-matrix-and-baseline--2026-10-15),
+older dimensions and panel descriptions. Use the [usage guide](../usage.md) for
+current controls. See [later tabbed Settings/palette evidence](../validation/ui-window-shortcuts.md),
+the [acceptance baseline](../validation/README.md#acceptance-matrix-and-baseline--2026-10-15),
 [compact UI evidence](../validation/compact-ui.md), and
 [clipboard UI evidence](../validation/clipboard-ui.md).
 

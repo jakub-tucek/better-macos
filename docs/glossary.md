@@ -1,4 +1,4 @@
-# Fix macOS
+# Host coordination glossary
 
 Terms for coordinating reversible system changes and safe application exit.
 

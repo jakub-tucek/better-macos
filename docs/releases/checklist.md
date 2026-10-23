@@ -2,6 +2,19 @@
 
 Status: preparation in progress. No release tag or publication authorized yet.
 
+## Current status · 2026-10-23
+
+`Info.plist` still declares **0.4 / build 4**; “1.0” is a release goal. Current
+source through `1434620` includes tabbed Settings, Window actions and Keep awake
+palettes, foreground-only shortcut discovery, and opposite-half cross-display
+tiling. See [recent recorded checks](../validation/README.md#current-reading-order--2026-10-23).
+The older integration records below are historical, not final-candidate proof.
+
+The [project home](../../README.md), [usage guide](../usage.md), and
+[documentation index](../README.md) describe current behavior. Their refresh does
+not complete native acceptance, choose a version, authorize publication, or
+constitute a fresh app/test run. Final release documentation approval remains open.
+
 ## Scope
 
 Polish and verify the existing feature set. Keep unsupported functionality explicit:
@@ -62,6 +75,9 @@ requirements silently added to this release.
   discovery, and attach only the artifacts actually supported by this release.
 
 ## Current evidence
+
+For later work, start with the [validation index](../validation/README.md).
+The baseline and integration tables below retain their exact historical scope.
 
 Baseline at `f359f423bd7d3109fe519268776e6ca65d155344`:
 

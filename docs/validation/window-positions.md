@@ -1,5 +1,11 @@
 # Window positions (roadmap 3A / 3B)
 
+The initial layout evidence and later extraction record below are historical.
+Current [window shortcuts and palettes](../usage.md#window-shortcuts) share the
+[verified execution backend](../architecture/window-execution.md). Shortcut discovery
+now scopes to the foreground app; saved-layout capture/restore retains whole-desktop
+fail-closed discovery. None of these records closes live AX/hardware acceptance.
+
 Implemented named, persisted layouts per stable display UUID set; exact bundle-ID/title matching rejects duplicates and untitled windows. Restore reports missing, ambiguous, unsupported, excluded, and failed windows. Frames are display-relative and clamped to current visible bounds. AX permission is explicitly requested from the Windows dashboard.
 
 Automatic restoration defaults off. Wake and display-set changes restore once after the existing display quiet period, fresh snapshot, watchdog readiness, recovery, and confirmation gates. Saved selection resolves multiple layouts for a set; otherwise restoration requires a unique layout. Pause and comma-separated app bundle-ID exclusions persist across module unload, as do layouts and selection. No app launches or Space switching.

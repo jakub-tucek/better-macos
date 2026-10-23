@@ -1,5 +1,10 @@
 # Compact native popup · 2026-10-15
 
+Historical record. The old colors and five-minute duration stepper below were
+superseded by later duration entry and [popup/palette work](ui-window-shortcuts.md).
+Use [the usage guide](../usage.md) for current controls; retain these counts and
+review statements as revision-bound evidence.
+
 ## Main integration
 
 The four reviewed compact-UI commits were cherry-picked in order onto main
