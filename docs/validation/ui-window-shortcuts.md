@@ -246,6 +246,31 @@ passed. `--release-ui-fixtures build` generated inspected light/dark menu snapsh
 `build/status-panel-presentation.log`, `build/status-panel-fixtures.log`.
 Live opening/closing smoothness remains for user confirmation after restart.
 
+## Keep awake palette and shared layout · 2026-10-23
+
+Right-click → Keep awake opens a centered translucent palette matching Window
+actions. Both now use shared native presentation, header/footer layout and action
+tiles. The quick menu remains fixed-size, now 304 × 262. Choices: 15/30/45/60/120
+minutes, custom 1–1440 minutes, display-awake toggle, +15 minutes, End session,
+protection retry and app-rule resume. End permits normal sleep without forcing it.
+Opening, selection previews and dismissal never start or stop a session.
+
+`bash test.sh` passed **5,159 isolated checks**, supporting suites and **13 installer
+scenarios** (`build/awake-palette-final.log`). New checks use the real KeepAwakeFeature
+and presentation callbacks with injected power assertions: native arrow/Return,
+display assertion, extension, inert open/close, host denial, failed release and
+cleanup retry. Windows palette and right-menu handoff checks also pass after reuse.
+The first test attempt incorrectly expected a release failure to set
+`protectionFailed`; existing ownership retains failed IDs and `canStop` instead.
+The corrected test verifies those IDs, the reported error and End-session retry.
+The failed attempt remains in `build/awake-palette-test.log`.
+
+Pinned lint, format and whitespace checks passed. Light/dark inactive/active palette
+and quick-menu snapshots were inspected. The 120-minute numeral was scaled to fit
+after snapshot inspection. Logs: `build/awake-palette-{fixtures,lint,format}.log`;
+images: `build/keep-awake-palette-{idle,active}-{light,dark}.png`. These are isolated
+fixtures, not physical sleep or live VoiceOver acceptance.
+
 ## Shortcut-session extraction · 2026-10-22
 
 The candidate-2 working tree based on `ff1e046` moves registration attempt/generation,

@@ -30,6 +30,65 @@ func runKeepAwakeFeatureTests() {
     runAwakeFeatureFailureOrderingTests()
     runAwakeFeatureHostAdmissionTests()
     runAwakeFeatureLifetimeTests()
+    runKeepAwakePaletteTests()
+}
+
+private func runKeepAwakePaletteTests() {
+    let suite = "fix-mac-os.awake-palette.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let power = FeaturePower()
+    var admitted = true
+    let model = DashboardModel(); model.enabledModules = [.keepAwake]
+    let presentation = KeepAwakePresentation(model: model, acceptsActions: { admitted }, chooseApps: { $0([]) })
+    let feature = KeepAwakeFeature(makeOwner: {
+        KeepAwakeModule(defaults: defaults, backend: power, now: { 100 }, automaticUpdates: false,
+                        runningApps: { [:] }, processInstances: { [:] })
+    }, acceptsActions: { admitted }, publish: { presentation.publish($0) }, reportError: { model.errorMessage = $0.localizedDescription })
+    presentation.bind(feature); feature.reconcile(enabled: true)
+    defer { feature.shutdown() }
+    let controller = KeepAwakePaletteController()
+    let panel = controller.show(model: model, orderFront: false)
+    let initial = AwakeSessionActions.presets.firstIndex(of: model.keepAwakeMinutes) ?? 0
+    expect(power.calls.isEmpty && !model.keepAwakeActive, "opening sleep palette neither starts a session nor changes power assertions")
+    func key(_ code: UInt16, _ text: String) {
+        panel.keyDown(with: NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                           windowNumber: panel.windowNumber, context: nil, characters: text,
+                                           charactersIgnoringModifiers: text, isARepeat: false, keyCode: code)!)
+    }
+    key(124, "\u{f703}")
+    expect(power.calls.isEmpty, "sleep palette arrow selection is preview-only")
+    key(36, "\r")
+    let minutes = AwakeSessionActions.presets[(initial + 1) % AwakeSessionActions.presets.count]
+    expect(model.keepAwakeActive && model.keepAwakeRemaining == Double(minutes * 60) && power.owned.count == 1,
+           "native sleep palette Return starts selected duration through the production feature")
+    let actions = KeepAwakePaletteActions(model: model)
+    actions.perform(.display(true))
+    expect(model.keepDisplayAwake && power.owned.count == 2, "sleep palette display switch uses existing assertion policy")
+    actions.perform(.extend)
+    expect(model.keepAwakeRemaining == Double((minutes + 15) * 60), "sleep palette extension uses existing session deadline")
+    key(53, "\u{1b}")
+    expect(!controller.isPresented && model.keepAwakeActive && power.owned.count == 2,
+           "closing sleep palette keeps the active session running")
+    admitted = false
+    let before = power.calls.count
+    let beforePreferences = defaults.dictionaryRepresentation()
+    actions.perform(.start(120)); actions.perform(.display(false)); actions.perform(.end)
+    expect(power.calls.count == before && NSDictionary(dictionary: beforePreferences).isEqual(to: defaults.dictionaryRepresentation()),
+           "palette callbacks cannot change assertions or preferences after host admission closes")
+    admitted = true
+    power.failRelease = true
+    actions.perform(.end)
+    expect(!power.owned.isEmpty && model.keepAwakeCanStop && model.errorMessage == "Feature release failure",
+           "sleep palette preserves failed release with its error and an available End session retry")
+    power.failRelease = false
+    actions.perform(.end)
+    expect(power.owned.isEmpty && !model.keepAwakeActive && model.keepAwakeRemaining == 0,
+           "allow sleep retries cleanup and ends the session without requesting immediate system sleep")
+    model.enabledModules = []
+    let afterStop = power.calls.count
+    actions.perform(.start(30))
+    expect(power.calls.count == afterStop, "disabled Keep awake cannot be started from the palette action seam")
 }
 
 private func runAwakeFeatureOwnershipTests() {

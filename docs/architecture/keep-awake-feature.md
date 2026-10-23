@@ -66,6 +66,21 @@ readiness, and Clipboard capture/retention/unload/quit distinctions are unchange
 
 ## Regression contract
 
+### Keep awake action palette
+
+`KeepAwakePalette.swift` is another presentation of the existing feature callbacks,
+opened from the right-click menu. It offers existing duration presets, the existing
+custom-duration editor, display-awake control, extension, end/retry and app-rule
+resume. Its action seam validates current UI eligibility; `KeepAwakeFeature.perform`
+still checks host admission and owns assertion changes. End session permits normal
+sleep and pauses current app rules; it does not invoke immediate system sleep.
+
+The Windows and Keep awake palettes share `ActionPalettePresenter`,
+`ActionPaletteLayout` and `ActionPaletteTile`. The shared module owns native
+nonactivating presentation, screen bounds, material and observer cleanup, not feature
+state or action policy. Closing a palette does not end its feature session. Host
+surface switches and quit quiescence dismiss the panel.
+
 [`Tests/KeepAwakeFeatureTests.swift`](../../Tests/KeepAwakeFeatureTests.swift)
 exercises the feature interface with isolated preferences, fake assertions and
 disabled automatic updates: inert construction, construction-once, closed-admission

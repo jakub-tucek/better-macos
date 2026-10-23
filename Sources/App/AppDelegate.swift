@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var quitGuard: QuitGuard?
     private var windowPositions: WindowPositions?
     private let windowActionPalette = WindowActionPaletteController()
+    private let keepAwakePalette = KeepAwakePaletteController()
     private let statusQuickMenu = StatusQuickMenuController()
     private var windowActionRequest = UUID()
     private var popupSourceApp: NSRunningApplication?
@@ -723,6 +724,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         popupSourceApp = NSWorkspace.shared.frontmostApplication
         popover.performClose(nil)
         windowActionPalette.dismiss()
+        keepAwakePalette.dismiss()
         return statusQuickMenu.show(relativeTo: anchor, windowsEnabled: windowPositions != nil, orderFront: orderFront) { [weak self] action in
             self?.performStatusQuickAction(action)
         }
@@ -732,6 +734,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         switch action {
         case .windows: showWindowActions(fromPopup: true)
         case .quickActions: model.launchWidget = nil; refreshPreferences(); showDashboard()
+        case .keepAwake:
+            windowActionRequest = UUID()
+            windowActionPalette.dismiss()
+            popover.performClose(nil)
+            keepAwakePalette.show(model: model)
         case .settings: showSettings(nil)
         case .quit: model.onQuit()
         }
@@ -767,6 +774,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @discardableResult
     func presentDashboard(relativeTo button: NSView) -> NSView? {
         statusQuickMenu.dismiss()
+        keepAwakePalette.dismiss()
         windowActionRequest = UUID()
         windowActionPalette.dismiss()
         guard !popover.isShown else { return popover.contentViewController?.view }
@@ -802,6 +810,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func showWindowActions(fromPopup: Bool) {
         guard transactions.acceptsActions, let owner = windowPositions else { return }
         statusQuickMenu.dismiss()
+        keepAwakePalette.dismiss()
         if windowActionPalette.isPresented { windowActionPalette.dismiss(); return }
         let source = fromPopup ? popupSourceApp : NSWorkspace.shared.frontmostApplication
         popover.performClose(nil)
@@ -839,6 +848,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func showSettings(_ group: SettingsGroup? = nil) {
         guard transactions.acceptsActions else { return }
         statusQuickMenu.dismiss()
+        keepAwakePalette.dismiss()
         refreshLoginStatus()
         Diagnostics.shared.emit("settings", "open_requested", fields: ["category": (group ?? model.settingsGroup).rawValue])
         if let group { model.settingsGroup = group }
@@ -1566,7 +1576,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let actions = HostTransactions.QuitActions(
             isBusy: { self.model.animationsBusy || !self.model.stoppingModules.isEmpty || self.recovering },
             prepareMouse: { self.mouseLifecycle.prepareToQuit() },
-            quiesce: { self.statusQuickMenu.dismiss(); self.windowPositions?.invalidate(); self.screenEdges?.stop() },
+            quiesce: { self.statusQuickMenu.dismiss(); self.keepAwakePalette.dismiss(); self.windowPositions?.invalidate(); self.screenEdges?.stop() },
             prepareClipboard: { self.clipboard?.prepareTermination() != false },
             needsDisplayRecovery: { self.needsDisplayRecovery },
             restoreDisplays: { self.restoreAll(reason: .quit, completion: $0) },

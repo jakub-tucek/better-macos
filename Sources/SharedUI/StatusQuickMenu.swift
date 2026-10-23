@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 enum StatusQuickAction: Int, CaseIterable {
-    case windows, quickActions, settings, quit
+    case windows, quickActions, keepAwake, settings, quit
 }
 
 final class StatusQuickMenuState: ObservableObject {
@@ -30,7 +30,7 @@ private final class StatusQuickPanel: NSPanel {
 /// Retains one fixed-size hosting tree. Presentation does not enter NSMenu's
 /// tracking loop, animate, resize to content, or read feature/device state.
 final class StatusQuickMenuController {
-    static let size = NSSize(width: 304, height: 208)
+    static let size = NSSize(width: 304, height: 262)
     private(set) var isPresented = false
     private let state = StatusQuickMenuState()
     private var panel: StatusQuickPanel?
@@ -140,6 +140,7 @@ struct StatusQuickMenuView: View {
             VStack(spacing: 0) {
                 row(.windows, title: "Window actions", detail: WindowShortcutAction.showActions.shortcut, symbol: "rectangle.split.2x2")
                 row(.quickActions, title: "Quick actions", detail: "Your pinned controls", symbol: "slider.horizontal.3")
+                row(.keepAwake, title: "Keep awake", detail: "Timers and sleep controls", symbol: "moon.zzz")
             }.padding(.horizontal, 8).padding(.vertical, 8)
             Divider().frame(height: 1).padding(.horizontal, 12)
             HStack(spacing: 8) {

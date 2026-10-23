@@ -356,6 +356,17 @@ func renderReleaseUIFixtures(directory: String? = nil) throws {
         quickMenuPanel.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         try snapshot(quickMenuPanel, "status-quick-menu-\(suffix)")
         quickMenuController.dismiss()
+        let awakeModel = DashboardModel(); awakeModel.enabledModules = [.keepAwake]
+        let awakePalette = KeepAwakePaletteController()
+        for active in [false, true] {
+            awakeModel.keepAwakeActive = active; awakeModel.keepAwakeCanStop = active
+            awakeModel.keepAwakeRemaining = active ? 1800 : 0
+            awakeModel.keepDisplayAwake = active
+            let panel = awakePalette.show(model: awakeModel, orderFront: false)
+            panel.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            try snapshot(panel, "keep-awake-palette-\(active ? "active" : "idle")-\(suffix)")
+            awakePalette.dismiss()
+        }
         let model = DashboardModel(); model.enabledModules = [.audio, .clipboard]; model.watchdogReady = true
         model.settingsGroup = .general
         let general = mount(AnyView(SettingsView(model: model)), dark: dark)

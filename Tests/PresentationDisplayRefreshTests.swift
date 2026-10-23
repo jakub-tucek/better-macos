@@ -205,7 +205,7 @@ func runPresentationDisplayRefreshTests() {
     }
     let beforeSettings = windows.count
     // Windows is unavailable in this fixture: Quick actions is initially selected.
-    menuKey(125, "\u{f701}"); menuKey(36, "\r")
+    menuKey(125, "\u{f701}"); menuKey(125, "\u{f701}"); menuKey(36, "\r")
     expect(windows.count == beforeSettings + 1, "native quick-panel Settings selection reaches production host presentation")
     model.onClose()
 

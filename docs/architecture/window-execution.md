@@ -115,8 +115,9 @@ Opening, previewing or dismissing does not write window geometry.
 Menu admission is independent of global shortcut registration. A stable, disabled
 registration no longer invalidates a menu target on every reconciliation; actual
 readiness loss, explicit retry, stop and setting changes still invalidate it.
-`WindowActionPaletteController` owns the nonactivating panel and removes its local
-and global mouse observers on dismissal. Application activation changes dismiss it.
+`WindowActionPaletteController` uses the shared `ActionPalettePresenter` for the
+nonactivating panel and local/global mouse observer cleanup. Application activation
+changes dismiss it.
 Owner invalidation closes it; selecting an action closes it before verified writes.
 The host guards queued presentation against replaced/stopped owners and canceled
 requests. Popup/menu presentation returns focus only to the app recorded when the

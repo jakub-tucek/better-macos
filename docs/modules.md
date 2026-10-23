@@ -47,6 +47,10 @@ for the broader lifecycle work that remains proposed.
 - [StatusQuickMenu.swift](../Sources/SharedUI/StatusQuickMenu.swift): fixed-size,
   nonactivating right-click panel, retained view tree, keyboard selection and
   outside-click lifetime. AppDelegate owns action admission and routing.
+- [ActionPalette.swift](../Sources/SharedUI/ActionPalette.swift): shared centered
+  panel lifetime, visual layout and action tiles used by Windows and
+  [KeepAwakePalette.swift](../Sources/Features/KeepAwake/KeepAwakePalette.swift).
+  Feature owners retain execution policy; opening either palette is read-only.
 - [Dashboard.swift](../Sources/SharedUI/Dashboard.swift): `DashboardModel`, `AppModule.dashboardFeature`
   mapping, shared controls, and feature configuration views. The filename predates
   the current popup/Settings split; it does not mean this is a separate plugin.
