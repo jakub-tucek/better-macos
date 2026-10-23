@@ -220,6 +220,32 @@ The final palette chord/label adjustment was followed by focused shortcut checks
 Live global-key delivery, menu-to-app focus return and VoiceOver remain acceptance
 gaps pending user use after restart.
 
+## Right-click panel redesign · 2026-10-23
+
+User identified opening/closing stutter and unwanted styling in the small status
+menu, not the centered window-action palette. Replaced the `NSMenu.popUp` path with
+a retained 304 × 208 nonactivating panel: two action rows, Settings/Quit footer,
+system popover material, and no window animations or content-driven resizing.
+The panel reuses its hosting tree, installs outside-click observers only while
+presented, and removes them on dismissal. Repeated right-click toggles it; left-click
+still opens the normal popup. Switching surfaces cancels queued palette presentation.
+Quit quiescence dismisses it; all selected commands re-enter host admission.
+
+The user's exact visible hitch was not reproduced or frame-profiled. This removes
+the native tracking-menu presentation path; hidden measurements are not proof of
+live compositing smoothness. Fifty cached hidden show/dismiss cycles took about
+14 ms in the focused run. Regression checks verify stable panel/content identity,
+fixed geometry, disabled window animation, unavailable-action traversal, single
+dispatch after dismissal, stale input rejection, Escape and popup-to-menu handoff
+without new display discovery. Native Settings routing remains covered.
+
+`bash test.sh`: **5,149 isolated checks**, supporting suites and **13 installer
+scenarios** passed (`build/status-panel-test.log`). Lint, format and whitespace
+passed. `--release-ui-fixtures build` generated inspected light/dark menu snapshots
+(`build/status-quick-menu-{light,dark}.png`). Focused logs:
+`build/status-panel-presentation.log`, `build/status-panel-fixtures.log`.
+Live opening/closing smoothness remains for user confirmation after restart.
+
 ## Shortcut-session extraction · 2026-10-22
 
 The candidate-2 working tree based on `ff1e046` moves registration attempt/generation,

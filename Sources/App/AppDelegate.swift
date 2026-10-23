@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var quitGuard: QuitGuard?
     private var windowPositions: WindowPositions?
     private let windowActionPalette = WindowActionPaletteController()
+    private let statusQuickMenu = StatusQuickMenuController()
     private var windowActionRequest = UUID()
     private var popupSourceApp: NSRunningApplication?
     private var clipboard: ClipboardModule?
@@ -706,38 +707,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc private func toggleDashboard() {
         if NSApp.currentEvent?.type == .rightMouseUp {
             guard transactions.acceptsActions, let button = item.button else { return }
-            popupSourceApp = NSWorkspace.shared.frontmostApplication
-            popover.performClose(nil)
-            let menu = makeStatusQuickMenu()
-            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.minY), in: button)
+            if statusQuickMenu.isPresented { statusQuickMenu.dismiss() }
+            else { presentStatusQuickMenu(relativeTo: button) }
             return
         }
+        statusQuickMenu.dismiss()
         if popover.isShown { popover.performClose(nil) }
         else { model.launchWidget = nil; refreshPreferences(); showDashboard() }
     }
 
-    func makeStatusQuickMenu() -> NSMenu {
-        let menu = NSMenu(); menu.autoenablesItems = false
-        func add(_ title: String, _ symbol: String, _ selector: Selector, enabled: Bool = true) {
-            let entry = NSMenuItem(title: title, action: selector, keyEquivalent: "")
-            entry.target = self; entry.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-            entry.isEnabled = enabled && transactions.acceptsActions
-            menu.addItem(entry)
+    @discardableResult
+    func presentStatusQuickMenu(relativeTo anchor: NSView, orderFront: Bool = true) -> NSPanel? {
+        guard transactions.acceptsActions else { return nil }
+        windowActionRequest = UUID()
+        popupSourceApp = NSWorkspace.shared.frontmostApplication
+        popover.performClose(nil)
+        windowActionPalette.dismiss()
+        return statusQuickMenu.show(relativeTo: anchor, windowsEnabled: windowPositions != nil, orderFront: orderFront) { [weak self] action in
+            self?.performStatusQuickAction(action)
         }
-        add("Window actions…", "rectangle.split.2x2", #selector(statusWindowActions), enabled: windowPositions != nil)
-        add("Quick actions", "slider.horizontal.3", #selector(statusQuickActions))
-        add("Settings…", "gearshape", #selector(statusSettings))
-        menu.addItem(.separator())
-        add("Quit Fix macOS", "power", #selector(statusQuit))
-        return menu
     }
-    @objc private func statusWindowActions() { showWindowActions(fromPopup: true) }
-    @objc private func statusQuickActions() {
+    private func performStatusQuickAction(_ action: StatusQuickAction) {
         guard transactions.acceptsActions else { return }
-        model.launchWidget = nil; refreshPreferences(); showDashboard()
+        switch action {
+        case .windows: showWindowActions(fromPopup: true)
+        case .quickActions: model.launchWidget = nil; refreshPreferences(); showDashboard()
+        case .settings: showSettings(nil)
+        case .quit: model.onQuit()
+        }
     }
-    @objc private func statusSettings() { showSettings(nil) }
-    @objc private func statusQuit() { model.onQuit() }
 
     private func displayConfigurationChanged() {
         displayRefresh.requestRefresh()
@@ -768,6 +766,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// the application, watchdog, feature owners or a real status item.
     @discardableResult
     func presentDashboard(relativeTo button: NSView) -> NSView? {
+        statusQuickMenu.dismiss()
+        windowActionRequest = UUID()
+        windowActionPalette.dismiss()
         guard !popover.isShown else { return popover.contentViewController?.view }
         popupSourceApp = NSWorkspace.shared.frontmostApplication
         configurePopover()
@@ -800,6 +801,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func showWindowActions(fromPopup: Bool) {
         guard transactions.acceptsActions, let owner = windowPositions else { return }
+        statusQuickMenu.dismiss()
         if windowActionPalette.isPresented { windowActionPalette.dismiss(); return }
         let source = fromPopup ? popupSourceApp : NSWorkspace.shared.frontmostApplication
         popover.performClose(nil)
@@ -836,6 +838,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func showSettings(_ group: SettingsGroup? = nil) {
         guard transactions.acceptsActions else { return }
+        statusQuickMenu.dismiss()
         refreshLoginStatus()
         Diagnostics.shared.emit("settings", "open_requested", fields: ["category": (group ?? model.settingsGroup).rawValue])
         if let group { model.settingsGroup = group }
@@ -1563,7 +1566,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let actions = HostTransactions.QuitActions(
             isBusy: { self.model.animationsBusy || !self.model.stoppingModules.isEmpty || self.recovering },
             prepareMouse: { self.mouseLifecycle.prepareToQuit() },
-            quiesce: { self.windowPositions?.invalidate(); self.screenEdges?.stop() },
+            quiesce: { self.statusQuickMenu.dismiss(); self.windowPositions?.invalidate(); self.screenEdges?.stop() },
             prepareClipboard: { self.clipboard?.prepareTermination() != false },
             needsDisplayRecovery: { self.needsDisplayRecovery },
             restoreDisplays: { self.restoreAll(reason: .quit, completion: $0) },

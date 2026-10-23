@@ -351,6 +351,11 @@ func renderReleaseUIFixtures(directory: String? = nil) throws {
     var evidence: [String] = []
     for dark in [false, true] {
         let suffix = dark ? "dark" : "light"
+        let quickMenuController = StatusQuickMenuController()
+        let quickMenuPanel = quickMenuController.show(relativeTo: NSView(frame: .zero), windowsEnabled: true, orderFront: false, choose: { _ in })
+        quickMenuPanel.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        try snapshot(quickMenuPanel, "status-quick-menu-\(suffix)")
+        quickMenuController.dismiss()
         let model = DashboardModel(); model.enabledModules = [.audio, .clipboard]; model.watchdogReady = true
         model.settingsGroup = .general
         let general = mount(AnyView(SettingsView(model: model)), dark: dark)

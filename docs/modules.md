@@ -44,6 +44,9 @@ for the broader lifecycle work that remains proposed.
 
 - [UISurfaces.swift](../Sources/SharedUI/UISurfaces.swift): `SettingsGroup`, six `WidgetKind` cases,
   widget editor/popup, Settings shell, and quick-action views.
+- [StatusQuickMenu.swift](../Sources/SharedUI/StatusQuickMenu.swift): fixed-size,
+  nonactivating right-click panel, retained view tree, keyboard selection and
+  outside-click lifetime. AppDelegate owns action admission and routing.
 - [Dashboard.swift](../Sources/SharedUI/Dashboard.swift): `DashboardModel`, `AppModule.dashboardFeature`
   mapping, shared controls, and feature configuration views. The filename predates
   the current popup/Settings split; it does not mean this is a separate plugin.

@@ -88,9 +88,45 @@ private func presentationClick(_ view: NSView, at point: NSPoint) {
 
 /// Real production popup/Settings, fixture-owned invisible anchor, injected
 /// discovery/actions only. Never starts the application, watchdog or live owners.
+private func runStatusQuickMenuTests() {
+    let anchor = NSView(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
+    let controller = StatusQuickMenuController()
+    var actions: [StatusQuickAction] = []
+    let first = controller.show(relativeTo: anchor, windowsEnabled: true, orderFront: false) { actions.append($0) }
+    let content = first.contentView
+    expect(first.animationBehavior == .none && first.styleMask.contains(.nonactivatingPanel),
+           "quick panel disables window animations and does not activate the app")
+    var reused = true
+    let start = ProcessInfo.processInfo.systemUptime
+    for _ in 0..<50 {
+        controller.dismiss()
+        let next = controller.show(relativeTo: anchor, windowsEnabled: true, orderFront: false) { actions.append($0) }
+        reused = reused && next === first && next.contentView === content && next.contentLayoutRect.size == StatusQuickMenuController.size
+    }
+    print("Quick panel: 50 cached show/dismiss cycles in \(ProcessInfo.processInfo.systemUptime - start)s (hidden native fixture)")
+    expect(reused, "repeated right-click presentation retains one hosting tree and stable geometry")
+    expect(actions.isEmpty, "opening and closing the quick panel never invokes an action")
+    func key(_ code: UInt16, _ text: String) {
+        first.keyDown(with: NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                           windowNumber: first.windowNumber, context: nil, characters: text,
+                                           charactersIgnoringModifiers: text, isARepeat: false, keyCode: code)!)
+    }
+    key(36, "\r")
+    expect(actions == [.windows] && !controller.isPresented, "Return routes selected quick action exactly once after dismissal")
+    key(36, "\r")
+    expect(actions == [.windows], "a dismissed panel rejects stale keyboard activation")
+    _ = controller.show(relativeTo: anchor, windowsEnabled: false, orderFront: false) { actions.append($0) }
+    key(126, "\u{f700}"); key(36, "\r")
+    expect(actions == [.windows, .quit], "keyboard traversal skips unavailable Window actions")
+    _ = controller.show(relativeTo: anchor, windowsEnabled: true, orderFront: false) { actions.append($0) }
+    key(53, "\u{1b}")
+    expect(!controller.isPresented && actions.count == 2, "Escape dismisses quick menu without invoking a command")
+}
+
 func runPresentationDisplayRefreshTests() {
     _ = NSApplication.shared
     runPresentationGateTests()
+    runStatusQuickMenuTests()
     let suite = "fix-mac-os.presentation-display-refresh.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
@@ -115,13 +151,6 @@ func runPresentationDisplayRefreshTests() {
             ]
             model.activeMonitorCount = 2; model.displaySupported = true
          }, loginService: PresentationLogin(), diagnostics: Diagnostics())
-    let quickMenu = host.makeStatusQuickMenu()
-    expect(quickMenu.items.first?.isEnabled == false, "right-click menu disables window actions when its owner is absent")
-    if let settingsItem = quickMenu.items.first(where: { $0.title == "Settings…" }), let action = settingsItem.action {
-        let before = windows.count
-        NSApp.sendAction(action, to: settingsItem.target, from: settingsItem)
-        expect(windows.count == before + 1, "native quick-menu Settings action reaches the production host presentation")
-    } else { expect(false, "right-click quick menu exposes Settings") }
     let anchorWindow = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 60, height: 30), styleMask: [.borderless], backing: .buffered, defer: false)
     anchorWindow.isReleasedWhenClosed = false; anchorWindow.alphaValue = 0
     let anchor = NSView(frame: NSRect(x: 0, y: 0, width: 60, height: 30))
@@ -162,10 +191,22 @@ func runPresentationDisplayRefreshTests() {
     // The real module path registers the screen observer and requests startup
     // discovery; all other features are off and Mouse has an injected backend.
     model.onModuleChanged(.monitors, true)
-    _ = show()
+    let cold = show()
     expect(model.displaySettling && snapshots == 0, "cold popup retains the pending initial display settle")
     settle()
     expect(snapshots == 1, "cold popup performs one coalesced initial snapshot")
+    let quickMenu = host.presentStatusQuickMenu(relativeTo: anchor, orderFront: false)!
+    expect(cold.window?.isVisible != true, "popup closes before right-click panel presentation")
+    expect(snapshots == 1 && !model.displaySettling, "right-click presentation performs no new discovery or settling")
+    func menuKey(_ code: UInt16, _ text: String) {
+        quickMenu.keyDown(with: NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+                                               windowNumber: quickMenu.windowNumber, context: nil, characters: text,
+                                               charactersIgnoringModifiers: text, isARepeat: false, keyCode: code)!)
+    }
+    let beforeSettings = windows.count
+    // Windows is unavailable in this fixture: Quick actions is initially selected.
+    menuKey(125, "\u{f701}"); menuKey(36, "\r")
+    expect(windows.count == beforeSettings + 1, "native quick-panel Settings selection reaches production host presentation")
     model.onClose()
 
     var monitorActions = 0
