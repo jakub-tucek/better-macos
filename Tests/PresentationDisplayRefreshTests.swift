@@ -215,9 +215,15 @@ func runPresentationDisplayRefreshTests() {
         monitorActions += 1
     }
     let stable = show()
-    // Actual first display row: 40pt header, divider, 10pt widget padding,
-    // 14pt widget heading, 8pt gap, and the 22pt switch. No live display IDs are used.
-    presentationClick(stable, at: NSPoint(x: stable.bounds.width - 33, y: 84))
+    // Locate the actual native switch rather than assuming header/card metrics.
+    // This fixture contains only display controls; no live display IDs are used.
+    let switches = presentationViews(stable).compactMap { $0 as? NSSwitch }
+    guard let displaySwitch = switches.min(by: {
+        $0.convert($0.bounds, to: stable).midY < $1.convert($1.bounds, to: stable).midY
+    }) else {
+        fatalError("Production popup must mount its native display switch")
+    }
+    presentationClick(stable, at: displaySwitch.convert(NSPoint(x: displaySwitch.bounds.midX, y: displaySwitch.bounds.midY), to: stable))
     expect(monitorActions == 1, "stable popup's first display-control click acts without an activation/loading click")
     expect(!model.displaySettling && snapshots == 1, "stable popup opening neither invalidates nor rediscovers displays")
     model.onOpenSettings(.displays)

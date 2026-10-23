@@ -321,7 +321,7 @@ struct SetupWizard: View {
     @StoredState private var confirmFinish = false
     var body: some View {
         VStack(spacing: 0) {
-            HStack { Text(title).font(.title2); Spacer(); if draft.applying { ProgressView().controlSize(.small) } }.padding(20)
+            HStack { Text(title).font(AppStyle.title).accessibilityAddTraits(.isHeader); Spacer(); if draft.applying { ProgressView().controlSize(.small) } }.padding(24)
             Divider()
             stepContent
             Divider()
