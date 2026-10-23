@@ -41,11 +41,14 @@ protocol WindowNativeAccess {
     func write(_ element: Element, _ attribute: WindowGeometryAttribute, _ values: WriteValues) -> Bool
 }
 
-/// Verified whole-desktop execution. Host admission and queued lifecycle checks
+/// Verified window execution. Host admission and queued lifecycle checks
 /// remain in the host/coordinator; this module owns AX-level refusal and readback.
 class WindowExecution<Access: WindowNativeAccess>: WindowPositionBackend {
     private let access: Access
     private var elements: [String: Access.Element] = [:]
+    // Keep identities for shortcut originals across foreground-app changes. Every
+    // write still requires a fresh app scan and native identity/focus validation.
+    private var focusedElements: [String: Access.Element] = [:]
 
     init(access: Access) { self.access = access }
     var permitted: Bool { access.permitted }
@@ -53,6 +56,9 @@ class WindowExecution<Access: WindowNativeAccess>: WindowPositionBackend {
     func displays() -> [WindowDisplay] { access.displays() }
 
     func windows() throws -> [PositionedWindow] {
+        try windows(in: nil)
+    }
+    private func windows(in application: WindowApplication?) throws -> [PositionedWindow] {
         var nextElements: [String: Access.Element] = [:]
         defer { elements = nextElements }
         guard permitted else { throw ToggleError(message: "Accessibility permission is unavailable") }
@@ -63,7 +69,8 @@ class WindowExecution<Access: WindowNativeAccess>: WindowPositionBackend {
         let deadline = access.uptime + 0.75
         var incomplete = false
         var unreadableApps = Set<String>()
-        let result = access.applications().flatMap { app -> [PositionedWindow] in
+        let applications = application.map { [$0] } ?? access.applications()
+        let result = applications.flatMap { app -> [PositionedWindow] in
             if access.uptime >= deadline { incomplete = true; return [] }
             guard access.uptime < deadline, app.pid != access.ownPID,
                   let bundle = app.bundle, visiblePIDs.contains(app.pid) else { return [] }
@@ -86,7 +93,8 @@ class WindowExecution<Access: WindowNativeAccess>: WindowPositionBackend {
                 }
                 let supported = onScreen && access.string(window, .subrole) == "AXStandardWindow" &&
                     access.bool(window, .minimized) == false && access.bool(window, .fullScreen) == false && positionSettable && sizeSettable
-                let token = elements.first(where: { access.equal($0.value, window) })?.key ?? UUID().uuidString
+                let token = elements.first(where: { access.equal($0.value, window) })?.key ??
+                    focusedElements.first(where: { access.equal($0.value, window) })?.key ?? UUID().uuidString
                 nextElements[token] = window
                 return PositionedWindow(token: token, app: bundle, title: title, frame: frame, supported: supported)
             }
@@ -119,12 +127,20 @@ class WindowExecution<Access: WindowNativeAccess>: WindowPositionBackend {
         return access.focused(root)
     }
     func focusedWindow() throws -> PositionedWindow? {
-        let snapshot = try windows()
+        guard permitted else { throw ToggleError(message: "Accessibility permission is unavailable") }
+        guard let app = access.frontmostApplication(), app.pid != access.ownPID else { return nil }
+        let snapshot = try windows(in: app)
         guard let focused = focusedElement() else { return nil }
-        return snapshot.first { window in
+        let result = snapshot.first { window in
             guard window.supported, let element = elements[window.token] else { return false }
             return access.focusEqual(focused, element)
         }
+        if let result, let element = elements[result.token] {
+            if focusedElements[result.token] == nil && focusedElements.count >= 64,
+               let evicted = focusedElements.keys.sorted().first { focusedElements.removeValue(forKey: evicted) }
+            focusedElements[result.token] = element
+        }
+        return result
     }
     func moveFocused(_ window: PositionedWindow, to frame: CGRect) -> Bool {
         move(window, to: frame, requireFocus: true)
@@ -133,8 +149,14 @@ class WindowExecution<Access: WindowNativeAccess>: WindowPositionBackend {
         move(window, to: frame, requireFocus: false)
     }
     private func move(_ window: PositionedWindow, to frame: CGRect, requireFocus: Bool) -> Bool {
-        guard permitted, let element = elements[window.token] else { return false }
-        guard let snapshot = try? windows() else { return false }
+        guard permitted, let element = elements[window.token] ?? (requireFocus ? focusedElements[window.token] : nil) else { return false }
+        let application: WindowApplication?
+        if requireFocus {
+            guard let frontmost = access.frontmostApplication(), frontmost.pid != access.ownPID,
+                  frontmost.bundle == window.app else { return false }
+            application = frontmost
+        } else { application = nil }
+        guard let snapshot = try? windows(in: application) else { return false }
         let fresh = snapshot.filter { $0.app == window.app && $0.title == window.title }
         guard fresh.count == 1, fresh[0].supported, let freshElement = elements[fresh[0].token], access.equal(element, freshElement) else { return false }
         guard Self.destinationIsClear(frame, for: fresh[0], in: snapshot) else { return false }

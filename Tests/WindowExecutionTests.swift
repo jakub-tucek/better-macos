@@ -118,6 +118,60 @@ private func windowExecutionChecks() throws {
 
     do {
         let access = ExecutionTestAccess()
+        let backend = WindowExecution(access: access)
+        access.apps.append(WindowApplication(pid: 2, bundle: "com.apple.finder"))
+        access.addWindow(2, pid: 2, frame: other)
+        access.records[2]?.title = nil
+        do {
+            let focused = try backend.focusedWindow()
+            expect(focused?.app == "test.app", "unreadable Finder metadata does not block another app's focused window")
+            expect(!access.trace.contains("root:2"), "focused discovery performs no AX calls against background Finder")
+            if let focused {
+                expect(backend.moveFocused(focused, to: target), "focused move revalidation excludes unreadable background Finder")
+                expect(access.writeElements == [1, 1, 1], "focused movement writes only the verified foreground window")
+            }
+        } catch {
+            expect(false, "background Finder blocks a valid focused shortcut: \(error.localizedDescription)")
+        }
+        expect(executionError(backend)?.contains("com.apple.finder") == true,
+               "saved-layout discovery still rejects incomplete whole-desktop metadata")
+    }
+    for missing in ["title", "frame", "windows"] {
+        let access = ExecutionTestAccess()
+        let backend = WindowExecution(access: access)
+        access.addWindow(2, frame: other)
+        if missing == "title" { access.records[2]?.title = nil }
+        if missing == "frame" { access.records[2]?.frame = nil }
+        if missing == "windows" { access.appWindows[-1] = nil }
+        var failed = false
+        do { _ = try backend.focusedWindow() } catch { failed = true }
+        expect(failed && access.writes.isEmpty, "focused app's missing \(missing) still fails closed")
+    }
+    do {
+        let access = ExecutionTestAccess()
+        let backend = WindowExecution(access: access)
+        access.apps.append(WindowApplication(pid: 2, bundle: "second.app"))
+        access.addWindow(2, pid: 2, frame: other)
+        let first = try backend.focusedWindow()!
+        access.frontmost = access.apps[1]; access.focus = 2
+        let second = try backend.focusedWindow()!
+        expect(!backend.moveFocused(first, to: target) && access.writes.isEmpty,
+               "foreground app switch rejects old app's move before writing")
+        access.frontmost = access.apps[0]; access.focus = 1
+        let returnedFirst = try backend.focusedWindow()
+        expect(returnedFirst?.token == first.token,
+               "returning to an app preserves the shortcut original's native identity token")
+        access.frontmost = access.apps[1]; access.focus = 2
+        let returnedSecond = try backend.focusedWindow()
+        expect(returnedSecond?.token == second.token,
+               "switching between apps preserves both shortcut original tokens")
+        access.records[3] = access.records[2]; access.appWindows[-2] = [3]; access.focus = 3
+        expect(!backend.moveFocused(second, to: target) && access.writes.isEmpty,
+               "remembered focus identity cannot authorize a replacement window")
+    }
+
+    do {
+        let access = ExecutionTestAccess()
         let subject = WindowExecution(access: access)
         expect(access.trace.isEmpty, "execution construction performs no native work")
         let original = try subject.windows()[0]
@@ -262,7 +316,7 @@ private func windowExecutionChecks() throws {
         let access = ExecutionTestAccess(), backend: WindowExecution<ExecutionTestAccess>
         backend = WindowExecution(access: access)
         let original = try backend.focusedWindow()!
-        expect(original.supported, "production focused read resolves native identity from full snapshot")
+        expect(original.supported, "production focused read resolves native identity from complete foreground-app snapshot")
         access.beforeValues = { access.focus = 2 }
         expect(!backend.moveFocused(original, to: target) && access.writes.isEmpty,
                "focus lost immediately before write preparation completion prevents all writes")
@@ -313,7 +367,7 @@ private func windowExecutionChecks() throws {
         access.makeValues = false
         expect(!backend.moveFocused(original, to: target) && access.writes.isEmpty,
                "native write payload creation failure prevents all writes")
-        expect(!access.trace.contains("frontmost"), "payload creation failure precedes focus recheck")
+        expect(access.trace.last == "values" && !access.trace.contains("focused:-1"), "payload creation failure precedes final AX focus recheck")
     }
     for mode in ["exact", "constrained", "unreadable"] {
         let access = ExecutionTestAccess(), backend: WindowExecution<ExecutionTestAccess>

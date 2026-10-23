@@ -1,7 +1,8 @@
 # Windows verified execution
 
 `WindowExecution<Access>` implements the existing `WindowPositionBackend` interface.
-It owns whole-desktop discovery, the native-identity token cache, the 750 ms scan
+It owns whole-desktop layout discovery, foreground-app shortcut discovery,
+the native-identity token cache, the 750 ms scan
 budget, per-element 50 ms timeout setup, conservative geometry support, fresh
 title/identity checks, same-app destination collision refusal, focused lookup and
 last-moment focus recheck, position–size–position writes, and exact readback.
@@ -62,7 +63,7 @@ orchestration for Carbon. A deterministic primitive adapter exercises the same
 orchestration in tests, with no live key registration. The existing whole-registration
 owner fake remains useful for host integration tests.
 
-Whole-desktop fail-closed discovery remains deliberate, including unreadable apps
+Whole-desktop fail-closed layout discovery remains deliberate, including unreadable apps
 that the coordinator later excludes. Discovery retains its original deferred
 cache replacement, including partial caches on a thrown incomplete scan; moves
 still require a successful fresh scan and identity validation before writing.
@@ -71,3 +72,33 @@ call can overrun, including the final read. No hard preemption or end-of-scan ch
 is added. Write refusal can leave a partially moved/resized window; there is no
 transactional rollback. Exact-title reuse and native timeout enforcement retain
 their [existing acceptance gaps](../validation/window-positions.md).
+
+## Foreground shortcut discovery · 2026-10-23
+
+User reported `Window discovery failed: Incomplete Accessibility metadata for
+com.apple.finder`. An injected production-backend reproduction confirmed that
+missing metadata in background Finder blocked a fully readable focused window in
+another app (`build/window-finder-red.log`). Shortcut discovery and move revalidation
+now scan only the foreground application. They retain whole-app completeness,
+same-title/geometry/collision refusal, native identity and final focus checks, write
+ordering and exact readback. Saved layouts retain whole-desktop fail-closed scans.
+
+A bounded 64-element focused identity cache retains shortcut tokens when switching
+apps, so session originals remain addressable. At capacity it evicts the lexically
+smallest token before inserting a new identity, matching the existing session's
+bounded policy. A remembered element never authorizes a write without fresh scope,
+identity and focus validation. Missing metadata in the foreground app still fails
+closed; this change does not qualify Finder itself when it is the target.
+
+`bash test.sh` passed **5,091 isolated checks**, supporting suites and 13 installer
+scenarios (`build/window-finder-test.log`). The focused production-backend route
+`build/isolated-tests --window-execution-tests` passed; tests cover the reported
+background-Finder failure, unchanged whole-desktop refusal, unreadable foreground
+metadata, app switching, preserved original tokens and replacement identity refusal.
+Lint, format and whitespace checks passed. A pre-existing trace assertion was updated
+to distinguish initial app-scope selection from the final AX focus check.
+
+Live log selection found no retained verified GUI startup. The user's exact focused
+app and real shortcut outcome remain to be confirmed after restart. The separate
+`isResidencyContractEligible` string was not found in repository sources; its origin
+and relationship to the failure are unverified.
