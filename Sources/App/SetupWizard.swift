@@ -141,7 +141,8 @@ struct SetupCheckpoint: Codable {
 }
 
 final class SetupDraft: ObservableObject {
-    enum Step: Hashable { case welcome, selection, configure(SettingsGroup), permissions, widgets, review, results }
+    enum Step: Hashable { case welcome, feature(AppModule), configure(AppModule), permissions, widgets, review, results }
+    static let featureOrder: [AppModule] = [.windows, .monitors, .arrangement, .keepAwake, .audio, .bluetooth, .clipboard, .quitGuard, .mouse, .spaces, .menuBar]
     @Published var selected: Set<AppModule>
     @Published var step: Step = .welcome
     @Published var widgets: WidgetLayout
@@ -220,9 +221,26 @@ final class SetupDraft: ObservableObject {
         value.normalize(); return value
     }
     var steps: [Step] {
-        [.welcome, .selection] + SettingsGroup.allCases.filter { !selected.isDisjoint(with: $0.modules) }.map(Step.configure) + [.permissions, .widgets, .review]
+        [.welcome] + Self.featureOrder.flatMap { module -> [Step] in
+            selected.contains(module) ? [.feature(module), .configure(module)] : [.feature(module)]
+        } + [.permissions, .widgets, .review]
     }
-    var needsAccessibility: Bool { !selected.isDisjoint(with: [.arrangement, .windows, .quitGuard, .spaces]) }
+    func choose(_ module: AppModule, enabled: Bool) {
+        guard step == .feature(module), !applying else { return }
+        setSelected(module, enabled: enabled)
+        next()
+    }
+    func requiresAccessibility(for module: AppModule) -> Bool {
+        guard selected.contains(module) else { return false }
+        switch module {
+        case .windows: return true
+        case .arrangement: return controls.matchScreenEdges
+        case .quitGuard: return controls.quitGuardEnabled
+        case .spaces: return controls.spacesEnabled
+        default: return false
+        }
+    }
+    var needsAccessibility: Bool { selected.contains { requiresAccessibility(for: $0) } }
     var unresolvedPermissions: [String] {
         (needsAccessibility && !accessibilityGranted ? ["Accessibility: later setup may be required for selected controls."] : []) +
         (selected.contains(.bluetooth) && !bluetoothGranted ? ["Bluetooth: access is unresolved; device controls may be unavailable."] : [])
@@ -286,7 +304,7 @@ final class SetupDraft: ObservableObject {
         saved.configuration.install(in: controls)
         windowsAutomatic = saved.configuration.windowsAutomatic; windowsPaused = saved.configuration.windowsPaused
         windowsSelected = saved.configuration.windowsSelected; windowsExclusions = saved.configuration.windowsExclusions
-        widgets = saved.widgets; widgetsVisited = true; checkpointing = true; syncSelection(); step = .selection
+        widgets = saved.widgets; widgetsVisited = true; checkpointing = true; syncSelection(); step = .feature(Self.featureOrder[0])
     }
     func discardCheckpoint() { checkpointing = false; defaults.removeObject(forKey: Self.checkpointKey) }
     static func clearCheckpoint(defaults: UserDefaults = .standard) { defaults.removeObject(forKey: checkpointKey) }
@@ -314,6 +332,46 @@ struct WindowPolicyControls: View {
     }
 }
 
+extension AppModule {
+    var setupNeedsAccessibility: Bool { [.windows, .arrangement, .quitGuard, .spaces].contains(self) }
+    var setupAccess: String {
+        if setupNeedsAccessibility { return "Accessibility for window and input controls" }
+        if self == .bluetooth { return "Bluetooth permission for device discovery" }
+        if self == .mouse { return "Hardware support required; Apply stays manual" }
+        return "No additional macOS permission required"
+    }
+    var setupExplanation: String {
+        switch self {
+        case .windows: return "Put windows where you want them. Use keyboard shortcuts to tile them, or save a layout to restore your workspace later."
+        case .monitors: return "Turn individual displays on or off from the menu bar, with recovery controls close at hand."
+        case .arrangement: return "Make your virtual desk match your physical one. Arrange screens and smooth pointer movement across their edges."
+        case .keepAwake: return "Keep your Mac awake for a task, presentation or download. Choose a timer when you need it, or let selected apps keep it awake."
+        case .audio: return "Choose speakers and microphone independently. Optionally prefer particular devices when they become available."
+        case .bluetooth: return "Reconnect the paired devices you choose, without repeatedly visiting system settings."
+        case .clipboard: return "Find something you copied earlier. Search your local history, pin useful items and choose what stays on disk."
+        case .quitGuard: return "Avoid an accidental ⌘Q. Hold the shortcut for a moment when you really want to quit."
+        case .mouse: return "Tune supported mouse pointer acceleration and tracking. Preview your choices here and apply them explicitly in Settings."
+        case .spaces: return "Reduce Dock and Finder animations, and optionally use faster keyboard-driven desktop switching."
+        case .menuBar: return "Keep the menu bar tidy. Adjust icon spacing or tuck less-used icons behind a divider."
+        }
+    }
+    var setupEffect: String {
+        switch self {
+        case .windows: return "Setup never captures or moves windows. Automatic restoration can act on later reconnects or wake when configured."
+        case .monitors: return "The last usable display stays protected. Turning a display off requires a ready safety watchdog."
+        case .arrangement: return "Setup does not rearrange screens. Edge matching starts only when access, layout and safety checks are ready."
+        case .keepAwake: return "Finish never starts a timer. Saved app rules may activate immediately. Apple-menu Sleep and closing the lid still work."
+        case .audio: return "Automatic routing can change audio routes after Finish. Choosing a microphone does not record audio."
+        case .bluetooth: return "Automatic reconnect can connect selected devices after Finish. You choose which devices and whether to protect other audio."
+        case .clipboard: return "Recording starts paused on a fresh launch. Disk history is optional, local and unencrypted; sensitive or excluded captures are rejected."
+        case .quitGuard: return "Uses Accessibility for the keyboard shortcut. It requests normal quit and preserves app save prompts."
+        case .mouse: return "Hardware support varies. Finish saves your proposal; only Apply in Input settings changes pointer behavior."
+        case .spaces: return "Applying the animation preset can restart Dock and Finder. Desktop switching needs Accessibility and a ready watchdog; it may vary by macOS version."
+        case .menuBar: return "Spacing changes may require apps to restart. You place the divider with ⌘-drag; hidden icons can be revealed again."
+        }
+    }
+}
+
 struct SetupWizard: View {
     @ObservedObject var model: DashboardModel
     @ObservedObject var draft: SetupDraft
@@ -321,21 +379,30 @@ struct SetupWizard: View {
     @StoredState private var confirmFinish = false
     var body: some View {
         VStack(spacing: 0) {
-            HStack { Text(title).font(AppStyle.title).accessibilityAddTraits(.isHeader); Spacer(); if draft.applying { ProgressView().controlSize(.small) } }.padding(24)
+            HStack {
+                Text("Better macOS").font(AppStyle.sectionTitle)
+                Spacer()
+                Text(progressLabel).font(.caption).foregroundStyle(.secondary)
+                if draft.applying { ProgressView().controlSize(.small) }
+            }.padding(.horizontal, 32).padding(.vertical, 20)
             Divider()
             stepContent
             Divider()
             HStack {
                 if draft.step != .results {
-                    Button("Cancel") { if draft.cancel() { close() } }
+                    Button("Cancel") { if draft.cancel() { close() } }.buttonStyle(.plain).foregroundStyle(.secondary)
                     if draft.step != .welcome { Button("Back") { draft.back() } }
-                    Button("Save draft & close") { draft.saveCheckpoint(); close() }
+                    if draft.step != .welcome { Button("Save for later") { draft.saveCheckpoint(); close() } }
                 }
                 Spacer()
                 if draft.step == .results { Button("Close", action: close) }
                 else if draft.step == .review { Button("Finish") { confirmFinish = true }.buttonStyle(.borderedProminent) }
-                else if draft.step != .welcome { Button(draft.step == .permissions ? "Continue / do later" : "Continue") { draft.next() }.buttonStyle(.borderedProminent) }
-            }.padding(16).disabled(draft.applying)
+                else if case .feature(let module) = draft.step {
+                    Button("Skip this feature") { draft.choose(module, enabled: false) }
+                    Button("Enable & configure") { draft.choose(module, enabled: true) }.buttonStyle(.borderedProminent)
+                }
+                else if draft.step != .welcome { Button(draft.step == .permissions && !draft.unresolvedPermissions.isEmpty ? "Set up access later" : "Continue") { draft.next() }.buttonStyle(.borderedProminent) }
+            }.controlSize(.large).padding(24).disabled(draft.applying)
         }.frame(minWidth: 640, minHeight: 480)
             .background(Color(nsColor: .windowBackgroundColor))
             .onChange(of: draft.selected) { _, _ in draft.autosaveCheckpoint() }
@@ -346,8 +413,9 @@ struct SetupWizard: View {
             .onChange(of: draft.windowsSelected) { _, _ in draft.autosaveCheckpoint() }
             .onChange(of: draft.windowsExclusions) { _, _ in draft.autosaveCheckpoint() }
             .onReceive(draft.controls.objectWillChange) { _ in
-                DispatchQueue.main.async { draft.autosaveCheckpoint() }
+                DispatchQueue.main.async { draft.objectWillChange.send(); draft.autosaveCheckpoint() }
             }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in draft.onRetryPermissions() }
             .interactiveDismissDisabled(draft.applying)
             .alert("Apply these choices?", isPresented: $confirmFinish) {
                 Button("Finish") {
@@ -358,14 +426,39 @@ struct SetupWizard: View {
     }
     private var stepContent: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) { content }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 24) {
+                AppHeading(title: title, subtitle: subtitle)
+                content
+            }.frame(maxWidth: 560, alignment: .leading).padding(32).frame(maxWidth: .infinity, alignment: .top)
         }.id(draft.step).disabled(draft.applying)
+    }
+    private var progressLabel: String {
+        switch draft.step {
+        case .feature(let module), .configure(let module):
+            return "Feature \((SetupDraft.featureOrder.firstIndex(of: module) ?? 0) + 1) of \(SetupDraft.featureOrder.count)"
+        case .welcome: return "Make it yours"
+        case .permissions: return "Access"
+        case .widgets: return "Quick actions"
+        case .review: return "Ready when you are"
+        case .results: return "Complete"
+        }
+    }
+    private var subtitle: String {
+        switch draft.step {
+        case .welcome: return "A few small improvements. A Mac that works your way."
+        case .feature(let module): return module.detail
+        case .configure: return "Choose how it should work. These changes stay in your draft until Finish."
+        case .permissions: return "Only the access your choices need. You can come back to this later."
+        case .widgets: return "Keep your everyday controls one click away."
+        case .review: return "Your choices, before anything changes."
+        case .results: return "See what’s ready and what still needs attention."
+        }
     }
     private var title: String {
         switch draft.step {
         case .welcome: return "Welcome to Better macOS"
-        case .selection: return "Choose improvements"
-        case .configure(let group): return "Configure · \(group.rawValue)"
+        case .feature(let module): return module.title
+        case .configure(let module): return "Make \(module.title.lowercased()) yours"
         case .permissions: return "Access when you need it"
         case .widgets: return "Choose quick actions"
         case .review: return "Review and finish"
@@ -375,10 +468,20 @@ struct SetupWizard: View {
     @ViewBuilder private var content: some View {
         switch draft.step {
         case .welcome:
-            Text("Choose the improvements you want. Selections and configuration remain a draft until Finish. You can repeat setup from General settings.")
-            Text("Existing settings and running sessions are not reset by opening or canceling setup.").font(.caption)
-            Button("Set up") { draft.next() }.buttonStyle(.borderedProminent)
-            Button("Skip for now", action: model.onSkipSetup)
+            HStack(spacing: 16) {
+                ForEach(["rectangle.split.2x2", "moon.zzz", "speaker.wave.2", "clipboard"], id: \.self) { AppSymbolBadge(symbol: $0) }
+            }.padding(.vertical, 12)
+            VStack(alignment: .leading, spacing: 18) {
+                welcomeRow("1", title: "Discover each feature", detail: "See what it does, then enable it or skip it.")
+                welcomeRow("2", title: "Choose your settings", detail: "Configure the features you want, with access explained along the way.")
+                welcomeRow("3", title: "Review and apply", detail: "Nothing in this draft changes your setup until you choose Finish.")
+            }
+            HStack {
+                Button("Let’s get started") { draft.next() }.buttonStyle(.borderedProminent)
+                Button("Not now", action: model.onSkipSetup)
+            }.controlSize(.large).padding(.top, 8)
+            Text("You can run setup again from Settings → General. Canceling keeps your current configuration.")
+                .font(.caption).foregroundStyle(.secondary)
             if draft.hasCheckpoint {
                 DashboardCard {
                     Text("A saved draft is available. It is not applied automatically.")
@@ -386,55 +489,37 @@ struct SetupWizard: View {
                     Button("Discard saved draft") { draft.discardCheckpoint(); draft.objectWillChange.send() }
                 }
             }
-        case .selection:
-            ForEach(SettingsGroup.allCases.filter { !$0.modules.isEmpty }) { group in
-                Text(group.rawValue).font(.headline)
-                ForEach(group.modules) { module in
-                    DashboardCard {
-                        Toggle(module.title, isOn: Binding(get: { draft.selected.contains(module) }, set: { value in
-                            draft.setSelected(module, enabled: value)
-                        }))
-                        Text(module.detail).font(.caption)
-                        if [.arrangement, .windows, .quitGuard, .spaces].contains(module) { Label("Accessibility for supported controls", systemImage: "hand.raised").font(.caption) }
-                        if module == .bluetooth { Text("Bluetooth access · device availability varies").font(.caption) }
-                        if [.spaces, .menuBar, .mouse].contains(module) { Text("Experimental / hardware-dependent").font(.caption).foregroundStyle(.orange) }
-                    }
+        case .feature(let module):
+            Image(systemName: module.dashboardFeature.symbol).font(.system(size: 48, weight: .light))
+                .foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 24).accessibilityHidden(true)
+            Text(module.setupExplanation).font(.system(size: 16)).fixedSize(horizontal: false, vertical: true)
+            DashboardCard {
+                Label("What to expect", systemImage: "sparkles").font(AppStyle.sectionTitle)
+                Text(module.setupEffect).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Label(module.setupAccess, systemImage: "hand.raised").font(.caption).foregroundStyle(.secondary)
+            }
+            Text(draft.selected.contains(module) ? "Currently included. Choose Enable & configure to review it, or Skip to turn it off at Finish." : "Currently not included. You can enable it now or leave it off.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        case .configure(let module):
+            if module == .bluetooth { permissionCard(bluetooth: true) }
+            if module == .audio || module == .bluetooth {
+                HStack {
+                    Button("Find available devices") { draft.onDiscover(draft) }
+                    Text(draft.discoveryStatus).font(.caption).foregroundStyle(.secondary)
                 }
             }
-        case .configure(let group):
-            Text("Draft only. Configure selected improvements; permission grants are handled next. Operational actions remain in Settings after Finish.").font(.caption)
-            if group == .sound {
-                Button("Refresh available devices") { draft.onDiscover(draft) }
-                Text(draft.discoveryStatus).font(.caption)
-            }
-            ForEach(selectedFeatures(group), id: \.self) { feature in
-                DashboardView(model: draft.controls, feature: feature, draftMode: true)
-                if feature == .windows {
-                    WindowPolicyControls(automatic: $draft.windowsAutomatic, paused: $draft.windowsPaused, selected: $draft.windowsSelected, exclusions: $draft.windowsExclusions, layouts: draft.savedWindowLayouts)
-                }
-                if feature == .keepAwake {
-                    Text("Enabling Keep awake may activate saved app rules for apps already running. Finish never starts a timed session.").font(.caption)
-                }
-            }
+            featureConfiguration(module)
+            if draft.requiresAccessibility(for: module) { permissionCard(bluetooth: false) }
         case .permissions:
-            Text("macOS controls access. A request is not a guarantee. Grants remain in macOS even if you cancel setup.")
+            Text("macOS grants stay in place if you cancel setup. Features with missing access remain unavailable until you grant it.")
+                .font(.caption).foregroundStyle(.secondary)
             if draft.needsAccessibility {
-                DashboardCard {
-                    Text("Accessibility permits supported window, keyboard, screen-edge, and desktop-switching controls.")
-                    Text(draft.accessibilityGranted ? "Access currently granted" : "Access not confirmed").font(.caption)
-                    Button("Open Accessibility settings", action: model.onAccessibilitySettings)
-                }
+                permissionCard(bluetooth: false)
             }
             if draft.selected.contains(.bluetooth) {
-                DashboardCard {
-                    Text("Bluetooth access allows paired-device discovery and connection controls.")
-                    Text(draft.bluetoothGranted ? "Access currently granted" : "Access not confirmed").font(.caption)
-                    Button("Request / open Bluetooth access", action: draft.onBluetoothPermission)
-                }
+                permissionCard(bluetooth: true)
             }
             if !draft.needsAccessibility && !draft.selected.contains(.bluetooth) { Text("No extra access step for your selection. Some hardware controls can still be unavailable.") }
-            Button("Retry access checks") { draft.onRetryPermissions() }
-            ForEach(draft.unresolvedPermissions, id: \.self) { Text($0).font(.caption).foregroundStyle(.orange) }
         case .widgets:
             Text("Widgets never enable features. Disabled or unavailable targets link to Settings.").font(.caption)
             WidgetEditor(layout: $draft.widgets, model: draft.controls, allowSettings: false, layouts: draft.savedWindowLayouts)
@@ -463,9 +548,50 @@ struct SetupWizard: View {
             Button("Open Settings") { model.onOpenSettings(nil) }
         }
     }
-    private func selectedFeatures(_ group: SettingsGroup) -> [DashboardTab] {
-        var seen = Set<DashboardTab>()
-        return group.modules.filter { draft.selected.contains($0) }.map(\.dashboardFeature).filter { seen.insert($0).inserted }
+    private func welcomeRow(_ number: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Text(number).font(.system(size: 13, weight: .medium, design: .rounded))
+                .frame(width: 28, height: 28).modifier(AppSurface()).accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(AppStyle.sectionTitle)
+                Text(detail).font(.callout).foregroundStyle(.secondary)
+            }
+        }
+    }
+    private func permissionCard(bluetooth: Bool) -> some View {
+        let granted = bluetooth ? draft.bluetoothGranted : draft.accessibilityGranted
+        return DashboardCard {
+            HStack {
+                Label(bluetooth ? "Bluetooth access" : "Accessibility access", systemImage: "hand.raised")
+                    .font(AppStyle.sectionTitle)
+                Spacer()
+                Label(granted ? "Granted" : "Not granted", systemImage: granted ? "checkmark.circle" : "circle")
+                    .font(.caption).foregroundStyle(granted ? Color.green : .secondary)
+            }
+            Text(bluetooth ? "Lets Better macOS discover paired devices and connect the ones you choose. It does not pair new devices during setup." : "Lets Better macOS control supported windows and respond to your keyboard or screen-edge actions. Enable Better macOS in Privacy & Security → Accessibility.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if !granted {
+                HStack {
+                    Button(bluetooth ? "Allow Bluetooth…" : "Open Accessibility settings…", action: bluetooth ? draft.onBluetoothPermission : model.onAccessibilitySettings)
+                    Button("Check again", action: draft.onRetryPermissions)
+                }
+                Text("You can continue without access and enable it later in Settings.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+    @ViewBuilder private func featureConfiguration(_ module: AppModule) -> some View {
+        if module == .windows {
+            WindowPolicyControls(automatic: $draft.windowsAutomatic, paused: $draft.windowsPaused, selected: $draft.windowsSelected, exclusions: $draft.windowsExclusions, layouts: draft.savedWindowLayouts)
+            Text("Save layouts and enable window keyboard shortcuts in Displays settings after setup.").font(.caption).foregroundStyle(.secondary)
+        } else if module == .monitors {
+            DashboardSwitchRow(title: "Offer a 20-second undo after disabling a display", isOn: Binding(get: { draft.controls.confirmMonitorDisable }, set: draft.controls.onMonitorDisableModeChanged))
+            Text("Display switching stays manual. Setup never turns a screen off.").font(.caption).foregroundStyle(.secondary)
+        } else if module == .arrangement {
+            DashboardSwitchRow(title: "Match pointer movement across screen edges", isOn: Binding(get: { draft.controls.matchScreenEdges }, set: draft.controls.onMatchScreenEdgesChanged))
+            Text("Arrange your displays in Settings after setup. Pointer matching requires Accessibility and a ready safety watchdog.").font(.caption).foregroundStyle(.secondary)
+        } else {
+            DashboardView(model: draft.controls, feature: module.dashboardFeature, draftMode: true)
+        }
     }
     private func configurationSummary(_ module: AppModule) -> String {
         let value = draft.configuration

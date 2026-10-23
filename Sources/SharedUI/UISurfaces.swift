@@ -132,11 +132,11 @@ final class UISettingsStore {
             ["displayRecords", "pendingArrangement", "arrangement.matchEdges", "monitors.confirmDisable", "savedLayout", "targetUUID", "disabledByApp", "transitionSpeed"].contains($0)
         } || defaults.object(forKey: Self.layoutKey) != nil || defaults.integer(forKey: Self.completionKey) > 0
     }
-    func loadLayout(modules: Set<AppModule>, existing: Bool) -> WidgetLayout {
+    func loadLayout(modules: Set<AppModule>) -> WidgetLayout {
         if let data = defaults.data(forKey: Self.layoutKey), var value = try? JSONDecoder().decode(WidgetLayout.self, from: data) {
             value.normalize(); return value
         }
-        let value = existing ? WidgetLayout.suggested(for: modules) : WidgetLayout()
+        let value = WidgetLayout.suggested(for: modules)
         save(value); return value
     }
     func save(_ layout: WidgetLayout) {

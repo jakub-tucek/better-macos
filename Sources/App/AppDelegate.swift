@@ -156,11 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let legacyInstall = !(preferences.persistentDomain(forName: "local.jakub.monitor-toggle") ?? [:]).isEmpty
         let existingInstall = uiStore.isExistingInstall || legacyInstall
-        model.widgetLayout = uiStore.loadLayout(modules: modules.enabled, existing: existingInstall)
-        if !existingInstall {
-            // A fresh install is inert until explicit Finish. Legacy installs keep every choice.
-            for module in AppModule.allCases { modules.set(module, enabled: false) }
-        }
+        model.widgetLayout = uiStore.loadLayout(modules: modules.enabled)
         if let index = CommandLine.arguments.firstIndex(of: "--test-connect-in-gui"), index + 1 < CommandLine.arguments.count {
             guiTestTarget = CommandLine.arguments[index + 1]
         }

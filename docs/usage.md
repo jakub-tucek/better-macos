@@ -15,7 +15,9 @@ Grant Accessibility and Bluetooth access to **Better macOS** when requested, and
 enable **Launch at login** in General if wanted. Permissions belong to the new
 bundle identity and cannot be transferred from the previous app.
 
-Fresh installations start with features off and an empty quick-action layout.
+Fresh installations default to all feature modules enabled and all six quick-action
+widgets pinned in compact form. Individual controls retain their built-in defaults;
+device-specific targets and unfinished setup drafts are not part of the defaults.
 Existing installations keep their preferences.
 
 1. Open **Settings** from the menu-bar popup or right-click menu.
@@ -63,7 +65,15 @@ Restore suggested. **Done** saves; **Cancel** discards the draft. Recovery contr
 and an active awake session's Stop remain reachable without widgets. Clipboard
 widgets never preview copied content.
 
-Setup starts from current choices. Only **Finish** applies configuration; Cancel
+Setup starts from current choices. It introduces one feature at a time: what it
+does, what enabling it can change, and which access it needs. **Enable & configure**
+opens that feature's settings; **Skip this feature** stages it off and continues.
+Back keeps configuration drafts. Access cards offer a direct Settings/request button
+and refresh when you return to the app. Accessibility is needed for window actions,
+or enabled edge-matching, hold-to-quit and desktop-switching controls. Missing access
+can be set up later. A final access summary precedes quick actions and review.
+
+Only **Finish** applies configuration; Cancel
 discards drafts, not macOS permission grants. Setup does not move windows, rearrange
 displays, apply Mouse tuning, or start timed awake sessions. Enabling features can
 start reviewed app-awake rules, Bluetooth reconnect, or automatic audio routing;

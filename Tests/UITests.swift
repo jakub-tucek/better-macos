@@ -83,13 +83,20 @@ func runUITests() throws {
     defer { defaults.removePersistentDomain(forName: suite) }
     let store = UISettingsStore(defaults: defaults)
     expect(!store.isExistingInstall, "fresh UI detection does not rely solely on missing wizard-completion key")
+    let baseline = ModuleSettings(defaults: defaults).enabled
+    let initialLayout = store.loadLayout(modules: baseline)
+    expect(baseline == Set(AppModule.allCases) && initialLayout.entries.count == 6 && initialLayout.entries.allSatisfy { !$0.expanded && $0.windowLayoutID.isEmpty },
+           "fresh applied-settings baseline enables all modules and pins six compact widgets without device targets")
+    store.save(WidgetLayout())
+    expect(store.loadLayout(modules: baseline).entries.isEmpty, "new defaults preserve an explicitly saved empty widget layout")
+    defaults.removeObject(forKey: UISettingsStore.layoutKey)
     defaults.set(true, forKey: "windows.auto")
     expect(store.isExistingInstall, "legacy Windows-only preferences prevent a forced upgrade wizard")
     defaults.removeObject(forKey: "windows.auto")
     defaults.set(true, forKey: "quitGuard.enabled")
     expect(store.isExistingInstall, "existing feature preferences remain an existing install without setup completion")
     defaults.removeObject(forKey: "quitGuard.enabled")
-    let seeded = store.loadLayout(modules: [.audio, .keepAwake], existing: true)
+    let seeded = store.loadLayout(modules: [.audio, .keepAwake])
     expect(seeded.entries.map(\.kind) == ["keepAwake", "audio"], "migration seeds only relevant curated widgets")
     var edited = seeded
     edited.add(.clipboard); edited.add(.clipboard)
@@ -99,11 +106,11 @@ func runUITests() throws {
     edited.entries[0].expanded = true
     edited.entries[0].windowLayoutID = "absent-layout"
     store.save(edited)
-    expect(store.loadLayout(modules: [], existing: true) == edited, "layout order, presentation and absent targets survive relaunch without feature reseeding")
+    expect(store.loadLayout(modules: []) == edited, "layout order, presentation and absent targets survive relaunch without feature reseeding")
     var unknown = WidgetEntry(.audio); unknown.kind = "future-kind"
     edited.entries.append(unknown); edited.entries.append(unknown); edited.normalize()
     store.save(edited)
-    expect(store.loadLayout(modules: [], existing: true).entries.filter { $0.kind == "future-kind" }.count == 1, "unknown widget kinds survive normalized persistence")
+    expect(store.loadLayout(modules: []).entries.filter { $0.kind == "future-kind" }.count == 1, "unknown widget kinds survive normalized persistence")
     let newerLayout = try JSONDecoder().decode(WidgetLayout.self, from: Data(#"{"version":2,"entries":[{"kind":"future-only"},{"kind":"audio","expanded":true}]}"#.utf8))
     expect(newerLayout.entries.count == 2 && newerLayout.entries[0].known == nil && newerLayout.entries[1].expanded, "unknown kinds with no old presentation fields do not reset otherwise usable widgets")
     let model = DashboardModel()
@@ -115,8 +122,18 @@ func runUITests() throws {
     model.onKeepAwakeStart = { liveMutations += 1 }
     model.onApplyMouse = { liveMutations += 1 }
     let draft = SetupDraft(current: model, defaults: defaults)
+    draft.step = .feature(.windows)
+    draft.choose(.windows, enabled: true)
+    expect(draft.step == .configure(.windows) && draft.selected.contains(.windows),
+           "onboarding Yes leads directly to that feature's staged configuration")
+    draft.back(); draft.choose(.windows, enabled: false)
+    expect(draft.step == .feature(.monitors) && !draft.selected.contains(.windows),
+           "onboarding Skip leaves the feature disabled in the draft and skips its configuration")
+    expect(liveMutations == 0 && model.enabledModules.isEmpty,
+           "onboarding feature decisions do not apply changes before Finish")
     draft.selected = [.clipboard, .mouse]; draft.syncSelection()
-    expect(draft.steps == [.welcome, .selection, .configure(.input), .configure(.clipboard), .permissions, .widgets, .review], "wizard configures only selected groups in stable order")
+    expect(draft.steps.filter { if case .configure = $0 { return true }; return false } == [.configure(.clipboard), .configure(.mouse)],
+           "wizard configures only chosen features in guided order")
     draft.controls.onClipboardPersistence(true)
     draft.controls.onClipboardDays(12)
     draft.controls.onClipboardExclusions("fixture.secret")
@@ -142,6 +159,11 @@ func runUITests() throws {
     expect(repeatDraft.widgets.entries.isEmpty && repeatDraft.configuration.outputPreferences == ["saved-uid"], "repeat setup starts from current preferences and preserves an intentional empty home")
     repeatDraft.selected = [.windows, .bluetooth]; repeatDraft.accessibilityGranted = false; repeatDraft.bluetoothGranted = false
     expect(repeatDraft.unresolvedPermissions.count == 2, "denied contextual permissions remain explicit and do not block Do later")
+    repeatDraft.selected = [.spaces, .arrangement, .quitGuard]
+    repeatDraft.controls.spacesEnabled = false; repeatDraft.controls.matchScreenEdges = false; repeatDraft.controls.quitGuardEnabled = false
+    expect(!repeatDraft.needsAccessibility, "onboarding omits Accessibility when all selected input operations are off")
+    repeatDraft.controls.matchScreenEdges = true
+    expect(repeatDraft.needsAccessibility, "onboarding asks for Accessibility when a configured input operation needs it")
     for feature in DashboardTab.features {
         let group = SettingsGroup.forFeature(feature)
         expect(group.modules.contains { $0.dashboardFeature == feature }, "\(feature.rawValue) retains a grouped Settings destination")
@@ -421,9 +443,20 @@ func renderReleaseUIFixtures(directory: String? = nil) throws {
         model.monitors = []; model.currentLayout = []
         model.audioDevices = []
         let draft = SetupDraft(current: model, defaults: defaults)
-        draft.selected = [.audio]; draft.syncSelection(); draft.step = .configure(.sound)
+        draft.selected = [.audio]; draft.syncSelection(); draft.step = .configure(.audio)
         let wizard = mount(AnyView(SetupWizard(model: model, draft: draft, close: {})), dark: dark)
         try snapshot(wizard, "wizard-audio-empty-\(suffix)"); wizard.orderOut(nil)
+        draft.selected = Set(AppModule.allCases); draft.syncSelection()
+        for (name, step) in [("welcome", SetupDraft.Step.welcome), ("feature", .feature(.windows)),
+                             ("configure", .configure(.monitors)), ("permissions", .permissions), ("review", .review)] {
+            draft.step = step
+            let screen = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 700), styleMask: [.titled], backing: .buffered, defer: false)
+            screen.contentView = NSHostingView(rootView: SetupWizard(model: model, draft: draft, close: {}))
+            screen.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            settle(screen)
+            try snapshot(screen, "onboarding-\(name)-\(suffix)")
+            screen.orderOut(nil)
+        }
 
         // Force long content on both sides of navigation so clamping cannot hide retention.
         model.settingsGroup = .sound
@@ -445,13 +478,13 @@ func renderReleaseUIFixtures(directory: String? = nil) throws {
             try snapshot(settings, "settings-navigation-\(suffix)")
         } else { expect(false, "native Settings content scroller exists") }
         settings.orderOut(nil)
-        draft.selected = Set(AppModule.allCases); draft.syncSelection(); draft.step = .selection
+        draft.selected = Set(AppModule.allCases); draft.syncSelection(); draft.step = .review
         draft.controls.audioPreferences = model.audioPreferences
         let navigation = mount(AnyView(SetupWizard(model: model, draft: draft, close: {})), dark: dark)
         if let scroller = scroll(navigation.contentView!) {
             scroller.documentView?.scroll(NSPoint(x: 0, y: 450)); settle(navigation)
             let before = scroller.contentView.bounds.origin.y
-            draft.step = .configure(.sound); settle(navigation)
+            draft.step = .configure(.audio); settle(navigation)
             let after = scroll(navigation.contentView!)?.contentView.bounds.origin.y ?? -1
             evidence.append("Wizard \(suffix): before=\(before), after=\(after)")
             expect(before == 450 && after == 0, "native wizard \(suffix) step navigation resets a proven nonzero content offset")
@@ -1121,12 +1154,12 @@ private func runNativeUIInteractionTests() {
     let popup = model.popupWidgetEditor
     popup.begin(model.widgetLayout); popup.draft?.add(.audio)
     popup.cancel()
-    expect(popup.draft == nil && model.widgetLayout == original && store.loadLayout(modules: [], existing: true) == original,
+    expect(popup.draft == nil && model.widgetLayout == original && store.loadLayout(modules: []) == original,
            "production popup Cancel action discards its actual editor session without invoking host persistence")
     popup.begin(model.widgetLayout); popup.draft?.add(.audio)
     expect(popup.done(save: model.onSaveWidgets) && popup.draft == nil && model.widgetLayout.entries.count == 2,
            "production popup Done action invokes actual host persistence and closes only its committed draft")
-    expect(store.loadLayout(modules: [], existing: true) == model.widgetLayout,
+    expect(store.loadLayout(modules: []) == model.widgetLayout,
            "interaction-level Done is persisted across store recreation")
     popup.begin(model.widgetLayout); popup.draft?.entries.removeAll()
     expect(!popup.done(save: { _ in false }) && popup.draft != nil && !model.widgetLayout.entries.isEmpty,

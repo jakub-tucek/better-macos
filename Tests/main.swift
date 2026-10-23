@@ -878,7 +878,7 @@ if let index = CommandLine.arguments.firstIndex(of: "--preview"), index + 1 < Co
     let fixtureSuite = "better-macos.preview.\(UUID().uuidString)"
     let fixtureDefaults = UserDefaults(suiteName: fixtureSuite)!
     let setup = SetupDraft(current: dashboardModel, defaults: fixtureDefaults)
-    for (name, step) in [("selection", SetupDraft.Step.selection), ("configure-audio", .configure(.sound)), ("permissions", .permissions), ("widgets", .widgets), ("review", .review)] {
+    for (name, step) in [("feature", SetupDraft.Step.feature(.windows)), ("configure-audio", .configure(.audio)), ("permissions", .permissions), ("widgets", .widgets), ("review", .review)] {
         setup.step = step
         try render("wizard-\(name)", AnyView(SetupWizard(model: dashboardModel, draft: setup, close: {})), width: 760, height: 700)
     }

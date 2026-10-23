@@ -337,6 +337,34 @@ is in `build/unified-ui-presentation.log`. A full run interrupted by the coding
 server restart remains in `build/unified-ui-passed-test.log`; the complete run
 named above supersedes it.
 
+## Guided onboarding and applied-settings defaults · 2026-10-23
+
+Setup now introduces each of eleven features separately, with an explanation,
+side-effect/access summary and explicit Enable & configure / Skip choices. Only
+chosen features receive configuration steps. Inline Accessibility/Bluetooth cards
+and a final access summary support Settings/request actions, explicit rechecks and
+read-only refresh on app activation. Accessibility is conditional on the configured
+input operation, except Windows which needs it for window operations. Draft-only
+configuration, Cancel, existing checkpoints, host Finish and per-feature outcomes
+remain in place. Light/dark welcome, feature, configuration, access and review
+fixtures use the production view. Live VoiceOver and permission-grant acceptance
+remain unverified.
+
+At the user's request, the portable applied-settings baseline is now the fresh
+default: all eleven modules enabled, all six widgets compact, existing per-feature
+fallback settings retained. Device IDs, unfinished setup drafts and operational
+snapshots are excluded. Saved choices and an explicitly empty widget layout win
+over defaults.
+
+`build/onboarding-verified-test.log`: **5,175 isolated checks**, supporting suites
+and **13 installer scenarios** passed. Checks cover Yes → configuration, Skip →
+next feature, inert draft decisions, contextual access requirements and the fresh
+widget baseline. Earlier compile attempts exposed outdated step/layout call sites;
+their logs remain in `build/onboarding-{test,final-test,complete-test}.log`.
+The first executable run (`build/onboarding-passed-test.log`) exposed a scroll test
+that expected the former long selection page. It now scrolls the actual long review
+page before switching steps, preserving its nonzero-offset/reset assertion.
+
 ## Shortcut-session extraction · 2026-10-22
 
 The candidate-2 working tree based on `ff1e046` moves registration attempt/generation,
