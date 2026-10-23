@@ -7,22 +7,13 @@ instructions, not a new live acceptance run. [Known validation gaps](validation/
 
 ## Start here
 
-### Upgrade to Better macOS
+### Better macOS identity
 
-The app, executable, repository and preference domain now use the Better macOS
-name. The installer replaces the previous bundle after normal quit and restores
-its original filename if replacement fails. On first normal GUI launch, the app
-imports previous preferences, menu-bar positions, Clipboard history, Mouse recovery
-and other application-support files into the new locations. Conflicting files stop
-startup rather than overwrite either copy; fix the reported conflict and retry.
-Existing new-domain choices win, and completed migration never reimports old choices.
-The previous preference domain remains a recovery copy. Installer source checkouts
-are retained separately because they may contain local commits.
-
-macOS permissions belong to the new bundle identity. Grant Accessibility and
-Bluetooth access to **Better macOS** when requested; check **Launch at login** again
-in General. The app cannot transfer macOS permission grants from the old identity.
-Read-only diagnostic-probe launches never perform migration.
+The app, executable, repository and preference domain use the Better macOS name.
+This is a fresh installation: previous-brand settings and data are not imported.
+Grant Accessibility and Bluetooth access to **Better macOS** when requested, and
+enable **Launch at login** in General if wanted. Permissions belong to the new
+bundle identity and cannot be transferred from the previous app.
 
 Fresh installations start with features off and an empty quick-action layout.
 Existing installations keep their preferences.

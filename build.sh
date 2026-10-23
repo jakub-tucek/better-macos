@@ -5,9 +5,6 @@ OUTPUT="$PWD/build/Better macOS.app"
 # Local repository configuration selects a repeatable signing identity across builds.
 # An unavailable configured certificate must fail signing, never fall back silently.
 SIGNING_IDENTITY="${BETTER_MACOS_SIGNING_IDENTITY:-$(git config --local --get bettermacos.signingIdentity || true)}"
-if [[ -z "$SIGNING_IDENTITY" ]]; then
-    SIGNING_IDENTITY="${MAC_UTILS_SIGNING_IDENTITY:-$(git config --local --get macutils.signingIdentity || true)}"
-fi
 mkdir -p build
 STAGE="$(mktemp -d "$PWD/build/.bundle.XXXXXX")"
 cleanup() {
@@ -59,7 +56,6 @@ xcrun swiftc -swift-version 5 -warnings-as-errors -O -target arm64-apple-macos15
     Sources/App/LoginService.swift Sources/Features/KeepAwake/KeepAwakeFeature.swift Sources/Features/KeepAwake/KeepAwakePresentation.swift \
     Sources/SharedUI/ActionPalette.swift Sources/Features/KeepAwake/KeepAwakePalette.swift \
     Sources/SharedUI/AppStyle.swift \
-    Sources/App/BrandMigration.swift \
     -I "$CLIPBOARD_PACKAGE_MODULES" "$CLIPBOARD_PACKAGE_ARCHIVE" \
     -I Vendor/strafe/CStrafe/include -I MouseHID Sources/SharedUI/StatusQuickMenu.swift Sources/Features/Clipboard/ClipboardModule.swift Sources/Features/Windows/WindowShortcuts.swift Sources/Features/Windows/WindowShortcutSession.swift Sources/Features/Windows/WindowPositions.swift Sources/Features/Windows/WindowExecution.swift Sources/Features/Windows/AXWindowNativeAccess.swift Sources/Features/Windows/WindowPositionsView.swift Sources/Features/Windows/WindowActionPalette.swift \
     Sources/Features/Bluetooth/BluetoothCycleDelivery.swift \

@@ -20,20 +20,6 @@ let launchMode = ApplicationLaunchMode(arguments: CommandLine.arguments)
 
 func runGUI(_ mode: ApplicationLaunchMode) {
     let application = NSApplication.shared
-    if mode != .bluetoothReadOnlyProbe {
-        do {
-            guard NSRunningApplication.runningApplications(withBundleIdentifier: BrandMigration.oldDomain).isEmpty else {
-                throw ToggleError(message: "Quit the previous app before starting Better macOS so its recovery and settings can be migrated safely.")
-            }
-            try BrandMigration.run(home: FileManager.default.homeDirectoryForCurrentUser, defaults: .standard)
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = "Better macOS migration needs attention"
-            alert.informativeText = error.localizedDescription
-            alert.runModal()
-            return
-        }
-    }
     let delegate = mode.delegate(normal: { AppDelegate() }, probe: { BluetoothReadOnlyProbeDelegate() })
     application.setActivationPolicy(.accessory)
     application.delegate = delegate

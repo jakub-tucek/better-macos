@@ -2,12 +2,10 @@
 set -euo pipefail
 
 REPOSITORY="https://github.com/jakub-tucek/better-macos.git"
-STATE="${BETTER_MACOS_HOME:-${FIX_MACOS_HOME:-$HOME/Library/Application Support/Better macOS}}"
+STATE="${BETTER_MACOS_HOME:-$HOME/Library/Application Support/Better macOS}"
 SOURCE="$STATE/source"
-APP_DIR="${BETTER_MACOS_APP_DIR:-${FIX_MACOS_APP_DIR:-$HOME/Applications}}"
+APP_DIR="${BETTER_MACOS_APP_DIR:-$HOME/Applications}"
 APP="$APP_DIR/Better macOS.app"
-LEGACY_APP="$APP_DIR/Fix macOS.app"
-PREVIOUS="$APP"
 FORCE=0
 OPEN=1
 for arg in "$@"; do
@@ -34,7 +32,7 @@ cleanup() {
     local result=$?
     if [[ -n "$STAGE" && -d "$STAGE" ]]; then
         if [[ -d "$STAGE/previous.app" && ! -e "$APP" ]]; then
-            mv "$STAGE/previous.app" "$PREVIOUS" || echo "Previous app remains at $STAGE/previous.app" >&2
+            mv "$STAGE/previous.app" "$APP" || echo "Previous app remains at $STAGE/previous.app" >&2
         fi
         # Keep a previous app if rollback failed, rather than deleting it.
         if [[ ! -d "$STAGE/previous.app" || -d "$APP" ]]; then rm -rf "$STAGE"; fi
@@ -48,12 +46,7 @@ trap 'exit 143' TERM
 
 if [[ -e "$SOURCE" ]]; then
     [[ -d "$SOURCE/.git" ]] || fail "$SOURCE exists but is not an installer checkout."
-    ORIGIN="$(git -C "$SOURCE" remote get-url origin)"
-    if [[ "$ORIGIN" == https://github.com/jakub-tucek/fix-mac-os.git ]]; then
-        git -C "$SOURCE" remote set-url origin "$REPOSITORY"
-    else
-        [[ "$ORIGIN" == "$REPOSITORY" ]] || fail "Source checkout has a different origin; leaving it untouched."
-    fi
+    [[ "$(git -C "$SOURCE" remote get-url origin)" == "$REPOSITORY" ]] || fail "Source checkout has a different origin; leaving it untouched."
     [[ "$(git -C "$SOURCE" symbolic-ref --short HEAD)" == main ]] || fail "Source checkout is not on main; leaving it untouched."
     [[ -z "$(git -C "$SOURCE" status --porcelain)" ]] || fail "Source checkout has local changes; commit or move them before updating."
     git -C "$SOURCE" fetch origin main
@@ -67,11 +60,6 @@ REVISION="$(git -C "$SOURCE" rev-parse HEAD)"
 # Save an explicit selection even when the revision is unchanged. A changed
 # selection always rebuilds; an unchanged selection must also match the bundle.
 CONFIGURED_IDENTITY="$(git -C "$SOURCE" config --local --get bettermacos.signingIdentity || true)"
-if [[ -z "$CONFIGURED_IDENTITY" ]]; then
-    CONFIGURED_IDENTITY="$(git -C "$SOURCE" config --local --get macutils.signingIdentity || true)"
-    if [[ -n "$CONFIGURED_IDENTITY" ]]; then git -C "$SOURCE" config --local bettermacos.signingIdentity "$CONFIGURED_IDENTITY"; fi
-fi
-BETTER_MACOS_SIGNING_IDENTITY="${BETTER_MACOS_SIGNING_IDENTITY:-${MAC_UTILS_SIGNING_IDENTITY:-}}"
 IDENTITY_CHANGED=0
 if [[ -n "${BETTER_MACOS_SIGNING_IDENTITY:-}" ]]; then
     if [[ "$BETTER_MACOS_SIGNING_IDENTITY" != "$CONFIGURED_IDENTITY" ]]; then IDENTITY_CHANGED=1; fi
@@ -103,11 +91,6 @@ signature_matches() {
     fi
 }
 PLIST="$APP/Contents/Info.plist"
-if [[ -e "$LEGACY_APP" ]]; then
-    [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$LEGACY_APP/Contents/Info.plist" 2>/dev/null || true)" == io.github.jakub-tucek.mac-utils ]] || fail "Legacy destination contains a different app: $LEGACY_APP"
-    [[ ! -e "$APP" ]] || fail "Both old and new apps exist; move the old app aside before updating."
-    PREVIOUS="$LEGACY_APP"
-fi
 if [[ -e "$APP" ]]; then
     [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST" 2>/dev/null || true)" == io.github.jakub-tucek.better-macos ]] || fail "Destination contains a different app: $APP"
 fi
@@ -130,21 +113,18 @@ signature_matches "$STAGE/new.app" || fail "Built app does not match the selecte
 # Quit via the app's normal recovery/drain path. Never kill a busy GUI.
 osascript <<'APPLESCRIPT'
 with timeout of 30 seconds
-    if application id "io.github.jakub-tucek.mac-utils" is running then
-        tell application id "io.github.jakub-tucek.mac-utils" to quit
-    end if
     if application id "io.github.jakub-tucek.better-macos" is running then
         tell application id "io.github.jakub-tucek.better-macos" to quit
     end if
 end timeout
 APPLESCRIPT
 for ((attempt = 0; attempt < 60; attempt++)); do
-    if ! pgrep -x 'better-macos|fix-mac-os' >/dev/null; then break; fi
+    if ! pgrep -x better-macos >/dev/null; then break; fi
     sleep 0.5
 done
-if pgrep -x 'better-macos|fix-mac-os' >/dev/null; then fail "The app is still busy. Finish its current operation and rerun the installer."; fi
+if pgrep -x better-macos >/dev/null; then fail "The app is still busy. Finish its current operation and rerun the installer."; fi
 
-if [[ -e "$PREVIOUS" ]]; then mv "$PREVIOUS" "$STAGE/previous.app"; fi
+if [[ -e "$APP" ]]; then mv "$APP" "$STAGE/previous.app"; fi
 mv "$STAGE/new.app" "$APP"
 echo "Installed $APP (${REVISION:0:7})."
 if [[ "$OPEN" == 1 ]]; then open "$APP"; fi

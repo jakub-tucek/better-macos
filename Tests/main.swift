@@ -1,5 +1,4 @@
 import AppKit
-// Temporary home and preference suites only; no live migration in tests.
 import SwiftUI
 import CStrafe
 import CoreBluetooth
@@ -442,7 +441,6 @@ displaySetDefaults.removePersistentDomain(forName: displaySetDomain)
 runHostTransactionsTests()
 runLoginServiceTests()
 runKeepAwakeFeatureTests()
-runBrandMigrationTests()
 try runDiagnosticsTests()
 try runActivityTests()
 try runUITests()

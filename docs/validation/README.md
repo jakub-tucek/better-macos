@@ -5,7 +5,7 @@ to Better macOS. Historical revisions, results and open gates remain unchanged;
 their original artifacts used the previous names. Renamed paths in those records
 are not evidence that historical builds were rerun.
 
-Rename validation: `build/rename-clean-test.log` records **5,174 isolated checks**,
+Initial rename validation (migration subsequently removed): `build/rename-clean-test.log` records **5,174 isolated checks**,
 supporting suites and **14 installer scenarios**, including migration conflict/retry,
 preference precedence, one-time import, menu-bar identity and old-filename rollback.
 The earlier `rename-test.log` reached 5,174 checks but failed in an installer mock
@@ -13,6 +13,20 @@ that did not recognize the legacy signing-config lookup. The updated mock and ne
 upgrade scenario pass. After moving the repository, `rename-final-test.log` hit an
 absolute-path Swift module cache error; cleaning only the SwiftPM scratch build
 resolved it. No permission-grant or live hardware acceptance is claimed by tests.
+
+The first live rename launch stopped on conflicting old/new diagnostic rotation
+locks. `build/migration-lock-red.log` reproduced this with isolated files. The user
+then chose a clean uninstall/reinstall instead of migration. Migration code,
+compatibility aliases and migration-specific tests were removed; current installs
+use only the new identity. Earlier migration results above are historical evidence,
+not claims about the final fresh-install path.
+
+Fresh-install rename validation: `build/rename-fresh-test.log` passed **5,168 isolated
+checks**, supporting suites and **13 installer scenarios**. Pinned lint, formatting
+and whitespace checks passed. The current tracked tree contains no previous-brand
+identifiers or compatibility aliases. User-authorized local cleanup disabled the
+old login item, reset both bundle identities' privacy grants and removed application
+preferences, support data, logs and installed bundles before reinstalling.
 
 ## Current reading order · 2026-10-23
 

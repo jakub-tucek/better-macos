@@ -33,8 +33,6 @@ case "${0##*/}" in
                 config)
                     if [[ "$*" == 'config --local --get bettermacos.signingIdentity' ]]; then
                         [[ ! -f "$MOCK_ROOT/signing-identity" ]] || cat "$MOCK_ROOT/signing-identity"
-                    elif [[ "$*" == 'config --local --get macutils.signingIdentity' ]]; then
-                        [[ ! -f "$MOCK_ROOT/legacy-signing-identity" ]] || cat "$MOCK_ROOT/legacy-signing-identity"
                     else
                         printf '%s' "${@: -1}" > "$MOCK_ROOT/signing-identity"
                     fi ;;
@@ -210,14 +208,3 @@ export BETTER_MACOS_SIGNING_IDENTITY=-
 bash install.sh --no-open > "$ROOT/output" 2>&1
 [[ "$(signature)" == - && "$(cat "$ROOT/signing-identity")" == - ]]
 echo 'PASS: ambiguous names rejected, full fingerprint selection and explicit ad-hoc reset supported'
-
-# A renamed destination must still restore the original filename on failure.
-mv "$BETTER_MACOS_APP_DIR/Better macOS.app" "$BETTER_MACOS_APP_DIR/Fix macOS.app"
-/usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier io.github.jakub-tucek.mac-utils' "$BETTER_MACOS_APP_DIR/Fix macOS.app/Contents/Info.plist"
-export MOCK_SWAP_FAIL=1
-expect_failure renamed-replacement
-[[ -d "$BETTER_MACOS_APP_DIR/Fix macOS.app" && ! -e "$BETTER_MACOS_APP_DIR/Better macOS.app" ]]
-unset MOCK_SWAP_FAIL
-bash install.sh --no-open > "$ROOT/output" 2>&1
-[[ -d "$BETTER_MACOS_APP_DIR/Better macOS.app" && ! -e "$BETTER_MACOS_APP_DIR/Fix macOS.app" ]]
-echo 'PASS: brand upgrade replaces the legacy bundle and rolls back its original filename on failure'
