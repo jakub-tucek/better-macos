@@ -34,7 +34,7 @@ final class WindowActionPaletteController {
         let appName = target.flatMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0.window.app).first?.localizedName }
         let view = WindowActionPaletteView(state: state, targetName: appName ?? "Focused window", enabled: target != nil,
                                           hotkeysActive: owner.shortcutsActive,
-                                          message: message ?? (target == nil ? owner.shortcutStatus : "Choose a layout. Repeat Left half or Right half to continue onto the next display in that direction."),
+                                          message: message ?? (target == nil ? owner.shortcutStatus : "Repeat Left half or Right half to enter the next display on its opposite half, then continue across it."),
                                           perform: { [weak self] in self?.apply($0) }, close: { [weak self] in self?.dismiss() })
         return presenter.show(title: "Window actions", preferredSize: NSSize(width: 760, height: 700), targetFrame: target?.window.frame,
                               orderFront: orderFront, handleKey: { [weak self] in self?.handle($0) ?? false }) { view }

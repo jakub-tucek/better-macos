@@ -19,7 +19,7 @@ struct WindowPositionsView: View {
                     .font(.headline)
                 Text("Move the focused window with Rectangle-style shortcuts.")
                     .font(.caption).foregroundStyle(.secondary)
-                Text("Repeat Left half or Right half to continue onto the display in that direction.")
+                Text("Repeat Left half or Right half to enter the next display on its opposite half, then continue across it.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Text("\(WindowShortcutAction.showActions.shortcut) opens the visual action palette. You can also choose Window actions from the menu-bar popup.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)

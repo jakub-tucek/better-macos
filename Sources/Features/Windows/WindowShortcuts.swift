@@ -131,10 +131,11 @@ enum WindowShortcutAction: UInt32, CaseIterable, Identifiable {
             return CGRect(x: bounds.minX + start, y: bounds.minY, width: end - start, height: bounds.height)
         }
         if self == .left || self == .right {
-            func half(in display: CGRect) -> CGRect {
+            func half(in display: CGRect, opposite: Bool = false) -> CGRect {
                 let split = floor(display.width / 2)
-                return CGRect(x: self == .left ? display.minX : display.minX + split, y: display.minY,
-                              width: self == .left ? split : display.width - split, height: display.height)
+                let useLeft = (self == .left) != opposite
+                return CGRect(x: useLeft ? display.minX : display.minX + split, y: display.minY,
+                              width: useLeft ? split : display.width - split, height: display.height)
             }
             let snapped = half(in: bounds)
             guard frame == snapped else { return snapped }
@@ -150,7 +151,7 @@ enum WindowShortcutAction: UInt32, CaseIterable, Identifiable {
                 let left = rank(lhs), right = rank(rhs)
                 return left == right ? lhs.id < rhs.id : left.lexicographicallyPrecedes(right)
             }
-            return neighbor.map { half(in: $0.bounds) } ?? snapped
+            return neighbor.map { half(in: $0.bounds, opposite: true) } ?? snapped
         }
         let halfWidth = floor(bounds.width / 2), halfHeight = floor(bounds.height / 2)
         let right = [.right, .topRight, .bottomRight].contains(self)

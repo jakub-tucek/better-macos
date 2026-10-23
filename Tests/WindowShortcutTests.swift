@@ -138,18 +138,25 @@ func runWindowShortcutTests() {
     let firstLeft = WindowShortcutAction.left.destination(for: frame, displays: desk)!
     let secondLeft = WindowShortcutAction.left.destination(for: firstLeft, displays: desk)!
     let thirdLeft = WindowShortcutAction.left.destination(for: secondLeft, displays: desk)!
-    expect(firstLeft == lhs && secondLeft == CGRect(x: -900, y: -500, width: 450, height: 700) &&
-           thirdLeft == CGRect(x: -2101, y: -500, width: 600, height: 900),
-           "repeated Left half snaps then walks physically left across three mixed-size displays")
-    expect(WindowShortcutAction.left.destination(for: thirdLeft, displays: desk) == thirdLeft,
+    let fourthLeft = WindowShortcutAction.left.destination(for: thirdLeft, displays: desk)!
+    let fifthLeft = WindowShortcutAction.left.destination(for: fourthLeft, displays: desk)!
+    expect(firstLeft == lhs && secondLeft == CGRect(x: -450, y: -500, width: 450, height: 700) &&
+           thirdLeft == CGRect(x: -900, y: -500, width: 450, height: 700) &&
+           fourthLeft == CGRect(x: -1501, y: -500, width: 601, height: 900) &&
+           fifthLeft == CGRect(x: -2101, y: -500, width: 600, height: 900),
+           "repeated Left half enters each neighboring screen on its right half before continuing left")
+    expect(WindowShortcutAction.left.destination(for: fifthLeft, displays: desk) == fifthLeft,
            "Left half stops at the leftmost display instead of wrapping")
-    let firstRight = WindowShortcutAction.right.destination(for: thirdLeft, displays: desk)!
+    let firstRight = WindowShortcutAction.right.destination(for: fifthLeft, displays: desk)!
     let secondRight = WindowShortcutAction.right.destination(for: firstRight, displays: desk)!
     let thirdRight = WindowShortcutAction.right.destination(for: secondRight, displays: desk)!
+    let fourthRight = WindowShortcutAction.right.destination(for: thirdRight, displays: desk)!
+    let fifthRight = WindowShortcutAction.right.destination(for: fourthRight, displays: desk)!
     expect(firstRight == CGRect(x: -1501, y: -500, width: 601, height: 900) &&
-           secondRight == CGRect(x: -450, y: -500, width: 450, height: 700) && thirdRight == rhs,
-           "Right half first switches sides then walks right, preserving odd-width remainder")
-    expect(WindowShortcutAction.right.destination(for: thirdRight, displays: desk) == thirdRight,
+           secondRight == CGRect(x: -900, y: -500, width: 450, height: 700) &&
+           thirdRight == CGRect(x: -450, y: -500, width: 450, height: 700) && fourthRight == lhs && fifthRight == rhs,
+           "repeated Right half enters each neighboring screen on its left half, preserving odd-width remainder")
+    expect(WindowShortcutAction.right.destination(for: fifthRight, displays: desk) == fifthRight,
            "Right half stops at the rightmost display")
     expect(WindowShortcutAction.left.destination(for: lhs, displays: [main]) == lhs,
            "repeated half placement remains stable on a single display")
@@ -166,7 +173,8 @@ func runWindowShortcutTests() {
         session.admitsAction = { true }; session.isExcluded = { _ in false }
         session.reconcile(enabled: true, admitted: true)
         registration.callback?(.left); registration.callback?(.left); registration.callback?(.left)
-        expect(backend.writes == [firstLeft, secondLeft, thirdLeft],
+        registration.callback?(.left); registration.callback?(.left)
+        expect(backend.writes == [firstLeft, secondLeft, thirdLeft, fourthLeft, fifthLeft],
                "registered Left half uses fresh geometry to advance across each display")
         registration.callback?(.restore)
         expect(backend.writes.last == frame, "Restore returns to the original window frame after walking across displays")

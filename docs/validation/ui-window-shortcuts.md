@@ -273,6 +273,8 @@ fixtures, not physical sleep or live VoiceOver acceptance.
 
 ## Repeated directional halves · 2026-10-23
 
+Initial behavior below was superseded by the opposite-half correction that follows.
+
 Left half and Right half first snap within the current display. If the current
 verified frame already matches that half exactly, the same action continues to
 the nearest display in that horizontal direction and snaps to its corresponding
@@ -289,6 +291,19 @@ single/stacked displays and side-by-side preference; and exercises real shortcut
 session callbacks plus Restore across the complete three-display sequence.
 Pinned lint, format and whitespace passed. Real multi-monitor movement remains
 for user confirmation after restart; all movement tests use injected windows.
+
+### Opposite-half entry correction
+
+Per user clarification, crossing a display boundary now enters the adjacent half:
+Left → current left → neighboring right → neighboring left, with Right mirrored.
+The next press traverses that screen before crossing another boundary. Neighbor
+selection, outer-edge stopping, exact-frame admission and original-frame restoration
+remain unchanged. Three-display geometry and session tests now verify all five
+placements in each direction, including odd-width destination halves.
+
+`bash test.sh`: **5,168 isolated checks**, supporting suites and **13 installer
+scenarios** passed (`build/opposite-half-test.log`). Pinned lint, format and
+whitespace checks passed. Live multi-display movement remains for user confirmation.
 
 ## Shortcut-session extraction · 2026-10-22
 
