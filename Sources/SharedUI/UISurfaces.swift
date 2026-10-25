@@ -1001,12 +1001,16 @@ final class SettingsTabButton: NSButton {
         }
     }
     override func keyDown(with event: NSEvent) {
-        if event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
-           event.keyCode == 123 || event.keyCode == 124,
+        let plain = event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty
+        if plain, event.keyCode == 123 || event.keyCode == 124,
            let stack = superview as? NSStackView {
             let buttons = stack.arrangedSubviews.compactMap { $0 as? SettingsTabButton }
             let index = max(0, min(buttons.count - 1, tag + (event.keyCode == 124 ? 1 : -1)))
             window?.makeFirstResponder(buttons[index])
+        } else if plain, event.keyCode == 49 {
+            // Like the arrows, Space selects without system Full Keyboard Access,
+            // which NSButton otherwise requires.
+            performClick(nil)
         } else { super.keyDown(with: event) }
     }
 }
