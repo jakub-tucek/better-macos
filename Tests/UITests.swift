@@ -279,6 +279,11 @@ private func runSetupRecommendationTests() {
 }
 
 private func runBuiltinCatalogTests() {
+    let mainMenu = AppDelegate.makeMainMenu()
+    let shortcuts = mainMenu.items.flatMap { $0.submenu?.items ?? [] }.map { "\($0.keyEquivalent):\($0.action.map(NSStringFromSelector) ?? "")" }
+    expect(shortcuts.contains("a:selectAll:") && shortcuts.contains("v:paste:") && shortcuts.contains("c:copy:") && shortcuts.contains("x:cut:") && shortcuts.contains("z:undo:"),
+           "the hidden main menu provides standard text-editing shortcuts")
+    expect(!shortcuts.contains { $0.hasPrefix("q:") }, "the main menu adds no ⌘Q that could bypass Hold to quit or host quit approval")
     expect(BuiltinFeatures.definitions.map(\.module) == AppModule.allCases, "catalog registers every stable feature exactly once without changing setup order")
     expect(AppModule.allCases.map(\.rawValue) == ["monitors", "arrangement", "bluetooth", "audio", "spaces", "menuBar", "quitGuard", "keepAwake", "windows", "clipboard", "mouse"], "feature persistence IDs remain stable")
     let groups: [(SettingsGroup, [AppModule])] = [(.general, []), (.quickActions, []), (.displays, [.monitors, .arrangement, .windows]), (.sound, [.audio, .bluetooth]), (.input, [.quitGuard, .mouse]), (.system, [.spaces, .menuBar, .keepAwake]), (.clipboard, [.clipboard])]
@@ -1230,6 +1235,11 @@ private func runNativeUIInteractionTests() {
     model.settingsWidgetEditor.begin(model.widgetLayout); model.settingsWidgetEditor.draft?.entries.removeAll()
     expect(model.settingsWidgetEditor.done(save: model.onSaveWidgets) && model.widgetLayout.entries.isEmpty,
            "Settings Done persists its real editor draft through the host callback")
+    settings.alphaValue = 0; settings.orderFront(nil)
+    let beforeReopen = presented.count
+    _ = host.applicationShouldHandleReopen(NSApp, hasVisibleWindows: true)
+    expect(presented.count == beforeReopen + 1 && presented.last === settings && settings.isVisible,
+           "an unclicked reopen (e.g. a system confirmation) returns to visible Settings instead of the popup")
 
     model.onRunSetup()
     let setupWindow = presented.last!
@@ -1237,6 +1247,9 @@ private func runNativeUIInteractionTests() {
     model.onRunSetup()
     expect(presented.last === setupWindow && host.setupSession === draft,
            "actual repeated Run setup action reuses the existing native setup session")
+    _ = host.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
+    expect(presented.last === setupWindow && host.setupSession === draft,
+           "status-item and reopen requests return to an in-progress setup instead of hiding it behind the popup")
     draft.next(); draft.setSelected(.spaces, enabled: true)
     draft.controls.onAnimationsChanged(true)
     draft.controls.onSpacesChanged(false) // This fixture exercises animation Apply, not permission-gated input.
