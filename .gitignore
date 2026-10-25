@@ -3,3 +3,6 @@ build/
 .build/
 .swiftpm/
 *.log
+
+# Local git worktrees (parallel work); never commit them as gitlinks.
+.worktrees/
