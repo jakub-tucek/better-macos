@@ -156,6 +156,7 @@ struct SetupConfiguration: Codable, Equatable {
         case .monitors: return ["monitors.confirmDisable": confirmDisplays]
         case .arrangement: return ["arrangement.matchEdges": matchEdges]
         case .mouse: return ["mouse.proposedAcceleration": mouseAcceleration, "mouse.proposedTracking": mouseTracking]
+        case .links: return [:]
         }
     }
 }
@@ -169,7 +170,7 @@ struct SetupCheckpoint: Codable {
 
 final class SetupDraft: ObservableObject {
     enum Step: Hashable { case welcome, feature(AppModule), access(AppModule), configure(AppModule), permissions, widgets, review, results }
-    static let featureOrder: [AppModule] = [.windows, .monitors, .arrangement, .keepAwake, .audio, .bluetooth, .clipboard, .quitGuard, .mouse, .spaces, .menuBar]
+    static let featureOrder: [AppModule] = [.windows, .monitors, .arrangement, .keepAwake, .audio, .bluetooth, .clipboard, .quitGuard, .mouse, .spaces, .menuBar, .links]
     @Published var selected: Set<AppModule>
     @Published var step: Step = .welcome
     @Published var widgets: WidgetLayout
@@ -407,6 +408,7 @@ extension AppModule {
         case .mouse: return "Tune supported mouse pointer acceleration and tracking. Preview your choices here and apply them explicitly in Settings."
         case .spaces: return "Reduce Dock and Finder animations, and optionally use faster keyboard-driven desktop switching."
         case .menuBar: return "Keep the menu bar tidy. Adjust icon spacing or tuck less-used icons behind a divider."
+        case .links: return "Open work links in your work browser profile and everything else in your personal one. Rules match a domain, text in the link, or a wildcard pattern."
         }
     }
     var setupEffect: String {
@@ -422,6 +424,7 @@ extension AppModule {
         case .mouse: return "Hardware support varies. Finish saves your proposal; only Apply in Input settings changes pointer behavior."
         case .spaces: return "Applying the animation preset can restart Dock and Finder. Desktop switching needs Accessibility and a ready watchdog; it may vary by macOS version."
         case .menuBar: return "Spacing changes may require apps to restart. You place the divider with ⌘-drag; hidden icons can be revealed again."
+        case .links: return "Rules apply only after you make Better macOS your default browser in Settings. If the feature is off, links still open in your chosen fallback browser."
         }
     }
 }
@@ -740,6 +743,7 @@ struct SetupWizard: View {
         case .windows: return "Keyboard shortcuts: \(value.windowsShortcuts == true ? "on" : "off"); automatic restore: \(value.windowsAutomatic ? "on" : "off"); paused: \(value.windowsPaused ? "yes" : "no"); target: \(value.windowsSelected.isEmpty ? "unique match" : value.windowsSelected); exclusions: \(value.windowsExclusions)"
         case .menuBar: return "Compact spacing: \(value.compactMenu ? "on" : "off"); icon hiding: \(value.hideMenu ? "on" : "off")"
         case .spaces: return "Animation preset: \(value.animations ? "on" : "off"); desktop switching: \(value.spaces ? "requested" : "off"); speed: \(TransitionSpeed.from(rawValue: value.speed).title)"
+        case .links: return "Rules and default browser are set in Links settings; setup changes neither."
         }
     }
 }

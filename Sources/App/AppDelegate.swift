@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var windowActionRequest = UUID()
     private var popupSourceApp: NSRunningApplication?
     private var clipboard: ClipboardModule?
+    private let links: LinksModule
     private let injectedMouseLifecycle: MouseLifecycle?
     private lazy var mouseLifecycle = injectedMouseLifecycle ?? MouseLifecycle(settings: modules)
     private let sourceUpdater = SourceUpdater()
@@ -99,6 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let terminationReply: (NSApplication, Bool) -> Void
 
      init(commandRunner: CommandRunning = CommandRunner(), spaces: SpacesModule? = nil, windowPositions: WindowPositions? = nil, clipboard: ClipboardModule? = nil, mouseLifecycle: MouseLifecycle? = nil, model: DashboardModel = DashboardModel(), preferences: UserDefaults = .standard,
+          linkBackend: LinkBrowserBackend? = nil,
           makeAudio: (() -> AudioModule)? = nil, makeKeepAwake: (() -> KeepAwakeModule)? = nil, makeBluetooth: (() -> BluetoothModule)? = nil,
           makeMenuBar: (() -> MenuBarModule)? = nil, menuBarSpacing: MenuBarSpacing? = nil, animations: AnimationPreferences? = nil,
           chooseKeepAwakeApps: @escaping KeepAwakePresentation.ChooseApps = KeepAwakePresentation.chooseApplications,
@@ -144,7 +146,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         self.clipboard = clipboard
         self.injectedMouseLifecycle = mouseLifecycle
         self.terminationReply = terminationReply
+        self.links = LinksModule(defaults: preferences, backend: linkBackend ?? SystemLinkBrowserBackend())
         super.init()
+          links.acceptsActions = { [weak self] in self?.transactions.acceptsActions == true }
+          model.links = links
           awakeFeature.activity = activity
          awakePresentation.didPublish = { [weak self] in self?.refreshKeepAwakeStatus($0) }
          configureActions()
@@ -556,6 +561,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             clipboard = nil
         }
         refreshClipboard()
+        links.setActive(modules.enabled.contains(.links))
         mouseLifecycle.reconcile()
         awakeFeature.reconcile(enabled: modules.enabled.contains(.keepAwake))
         if modules.enabled.contains(.quitGuard) {
@@ -775,8 +781,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    /// Reopen also arrives without a click, e.g. after a system confirmation
-    /// dialog. Return to a visible window instead of replacing it with the popup.
+    /// Web links reach the router even while the feature is off or the app is
+    /// quitting; only rule matching follows the enable choice.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls { links.route(url) }
+    }
+
+    /// Reopen also arrives without a click, e.g. after confirming the default
+    /// browser. Return to a visible window instead of replacing it with the popup.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         refreshPreferences()
         if activeSetupDraft == nil, let window = [settingsWindow, activityWindow, arrangementWindow].compactMap({ $0 }).first(where: \.isVisible) {
@@ -1134,6 +1146,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             preferences.set(value.mouseAcceleration, forKey: "mouse.proposedAcceleration")
             preferences.set(value.mouseTracking, forKey: "mouse.proposedTracking")
             note = "No pointer settings applied. Use explicit Apply in Input settings."
+        case .links:
+            note = links.isDefaultBrowser ? "Rules apply to new links." : "Make Better macOS your default browser in Links settings to route links."
         case .windows:
             if let windowPositions {
                 if value.windowsPaused != old.windowsPaused { windowPositions.paused = value.windowsPaused }
@@ -1665,6 +1679,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         awakeFeature.shutdown()
         audio?.stop()
         clipboard?.stop()
+        links.setActive(false)
         quitGuard?.stop()
         menuBar?.stop()
         sourceUpdater.stop()

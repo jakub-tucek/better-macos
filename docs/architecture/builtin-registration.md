@@ -5,7 +5,7 @@ feature lifecycle framework. All owners remain compiled into the app executable.
 
 ## Presentation catalog
 
-[BuiltinFeatures.swift](../../Sources/App/BuiltinFeatures.swift) registers eleven `AppModule` identities and six widget
+[BuiltinFeatures.swift](../../Sources/App/BuiltinFeatures.swift) registers twelve `AppModule` identities and six widget
 kinds. The catalog contains values only: titles, descriptions, dashboard
 destinations, Settings membership/order and widget ownership/suggestion order.
 Existing `AppModule`, `SettingsGroup` and `WidgetKind` properties are compatibility

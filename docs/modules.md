@@ -7,7 +7,7 @@ not a completed lifecycle refactor; see [move evidence](validation/source-organi
 
 ## Modules, not a plugin system
 
-The eleven [AppModule](../Sources/App/AppModules.swift) cases retain persisted enable-choice IDs
+The twelve [AppModule](../Sources/App/AppModules.swift) cases retain persisted enable-choice IDs
 (`ModuleSettings`). [BuiltinFeatures.swift](../Sources/App/BuiltinFeatures.swift) registers inert
 titles, descriptions, dashboard destinations, Settings order and six widget definitions;
 existing enum properties delegate to that catalog without constructing owners.
@@ -27,7 +27,7 @@ setup and native host integration; `Core/` owns host transactions, readiness and
 shared command execution; `SharedUI/` holds the shared Settings/widget shell,
 feature configuration views and `StoredState`. `Features/<owner>/` co-locates
 feature implementations: Displays, Windows, Audio, Bluetooth, Clipboard, Mouse,
-Animations, MenuBar, QuitGuard and KeepAwake. Shared display geometry, refresh and
+Animations, MenuBar, QuitGuard, KeepAwake and Links. Shared display geometry, refresh and
 cursor recovery remain together under Displays; Windows retains its own owner/UI.
 These folders are not module/package boundaries: no lifecycle extraction occurred.
 `Sources/App/main.swift` remains the app/helper/CLI entry point; tests retain
@@ -174,6 +174,25 @@ Cleanup describes the relevant owner and path, not proof of live acceptance.
   failure; actions and post-chooser selections recheck host admission. Shutdown
   keeps the existing best-effort cleanup, without adding a quit veto. See the
   [owned-feature contract and evidence](architecture/keep-awake-feature.md).
+
+### Links · `links`
+
+- **Owner:** [LinksModule.swift](../Sources/Features/Links/LinksModule.swift) owns persisted rules
+  (`links.config`), destination discovery and hand-off through an injected `LinkBrowserBackend`.
+  Matching policy (domain with optional path, contains, `*` pattern) is pure Foundation in
+  [LinkRouting.swift](../Sources/Features/Links/LinkRouting.swift).
+- **UI:** Links settings via [LinksSettingsView.swift](../Sources/Features/Links/LinksSettingsView.swift);
+  no widget or TCC grant. `Info.plist` declares http/https so the app can be chosen as the default
+  browser; only the explicit **Make default browser** action changes that, never setup.
+- **Boundary:** the host always constructs the owner. `application(_:open:)` routes every incoming
+  link regardless of feature choice or host admission: a disabled feature or closed host skips rules
+  and opens the fallback, then Safari, so links are never dropped. Settings edits, test opens and the
+  default-browser change recheck host admission. Chrome profiles open through a short-lived
+  `.crwebloc`; other Chromium browsers get `--profile-directory`. macOS protects a browser's
+  data folder; choosing that folder in **Allow access to … profiles** is the per-folder consent
+  that lets discovery read `Local State`. Profiles can also be added by folder name.
+- **Resources/cleanup:** an App Nap–preventing activity (idle sleep still allowed) while enabled;
+  stale `.crwebloc` files are removed at launch. Disabling keeps rules.
 
 ### Window positions · `windows`
 

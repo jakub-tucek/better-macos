@@ -11,5 +11,10 @@
     <key>LSMinimumSystemVersion</key><string>15.0</string>
     <key>NSBluetoothAlwaysUsageDescription</key><string>Better macOS lists paired Bluetooth devices and reconnects only the devices you choose.</string>
     <key>LSUIElement</key><true/>
+    <key>CFBundleURLTypes</key><array><dict>
+        <key>CFBundleURLName</key><string>Web links</string>
+        <key>CFBundleTypeRole</key><string>Viewer</string>
+        <key>CFBundleURLSchemes</key><array><string>http</string><string>https</string></array>
+    </dict></array>
     <key>NSHighResolutionCapable</key><true/>
 </dict></plist>

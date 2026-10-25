@@ -285,10 +285,10 @@ private func runBuiltinCatalogTests() {
            "the hidden main menu provides standard text-editing shortcuts")
     expect(!shortcuts.contains { $0.hasPrefix("q:") }, "the main menu adds no ⌘Q that could bypass Hold to quit or host quit approval")
     expect(BuiltinFeatures.definitions.map(\.module) == AppModule.allCases, "catalog registers every stable feature exactly once without changing setup order")
-    expect(AppModule.allCases.map(\.rawValue) == ["monitors", "arrangement", "bluetooth", "audio", "spaces", "menuBar", "quitGuard", "keepAwake", "windows", "clipboard", "mouse"], "feature persistence IDs remain stable")
-    let groups: [(SettingsGroup, [AppModule])] = [(.general, []), (.quickActions, []), (.displays, [.monitors, .arrangement, .windows]), (.sound, [.audio, .bluetooth]), (.input, [.quitGuard, .mouse]), (.system, [.spaces, .menuBar, .keepAwake]), (.clipboard, [.clipboard])]
+    expect(AppModule.allCases.map(\.rawValue) == ["monitors", "arrangement", "bluetooth", "audio", "spaces", "menuBar", "quitGuard", "keepAwake", "windows", "clipboard", "mouse", "links"], "feature persistence IDs remain stable")
+    let groups: [(SettingsGroup, [AppModule])] = [(.general, []), (.quickActions, []), (.displays, [.monitors, .arrangement, .windows]), (.sound, [.audio, .bluetooth]), (.input, [.quitGuard, .mouse]), (.system, [.spaces, .menuBar, .keepAwake]), (.clipboard, [.clipboard]), (.links, [.links])]
     for (group, modules) in groups { expect(group.modules == modules, "catalog preserves Settings order for \(group.rawValue)") }
-    let destinations: [DashboardTab] = [.monitors, .monitors, .bluetooth, .audio, .spaces, .menuBar, .keyboard, .keepAwake, .windows, .clipboard, .mouse]
+    let destinations: [DashboardTab] = [.monitors, .monitors, .bluetooth, .audio, .spaces, .menuBar, .keyboard, .keepAwake, .windows, .clipboard, .mouse, .links]
     expect(AppModule.allCases.map(\.dashboardFeature) == destinations, "catalog preserves shared display and keyboard navigation")
     expect(Set(BuiltinFeatures.widgets.map(\.kind)) == Set(WidgetKind.allCases) && BuiltinFeatures.widgets.count == 6, "catalog registers each widget exactly once")
     expect(WidgetKind.allCases.map(\.rawValue) == ["keepAwake", "audio", "displays", "windows", "clipboard", "bluetooth"], "widget persistence IDs remain stable")
@@ -1239,7 +1239,7 @@ private func runNativeUIInteractionTests() {
     let beforeReopen = presented.count
     _ = host.applicationShouldHandleReopen(NSApp, hasVisibleWindows: true)
     expect(presented.count == beforeReopen + 1 && presented.last === settings && settings.isVisible,
-           "an unclicked reopen (e.g. a system confirmation) returns to visible Settings instead of the popup")
+           "an unclicked reopen (e.g. default-browser confirmation) returns to visible Settings instead of the popup")
 
     model.onRunSetup()
     let setupWindow = presented.last!

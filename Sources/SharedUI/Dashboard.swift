@@ -14,6 +14,7 @@ enum DashboardTab: String, CaseIterable {
     case windows = "Windows"
     case clipboard = "Clipboard"
     case mouse = "Mouse"
+    case links = "Links"
 
     static var features: [DashboardTab] { allCases.filter { $0 != .modules } }
     static let quickFeatures: [DashboardTab] = [.monitors, .keepAwake, .audio, .clipboard, .windows]
@@ -30,6 +31,7 @@ enum DashboardTab: String, CaseIterable {
         case .windows: return "macwindow.on.rectangle"
         case .clipboard: return "clipboard"
         case .mouse: return "computermouse"
+        case .links: return "arrow.triangle.branch"
         }
     }
 }
@@ -74,7 +76,8 @@ struct DashboardNavigation: Equatable {
             ("--show-modules", .modules), ("--show-spaces", .spaces),
             ("--show-menu-bar", .menuBar), ("--show-keyboard", .keyboard),
             ("--show-keep-awake", .keepAwake), ("--show-mouse", .mouse),
-            ("--show-audio", .audio), ("--show-clipboard", .clipboard), ("--show-windows", .windows)
+            ("--show-audio", .audio), ("--show-clipboard", .clipboard), ("--show-windows", .windows),
+            ("--show-links", .links)
         ]
         for (flag, feature) in flags where arguments.contains(flag) { result.show(feature) }
         return result
@@ -85,6 +88,7 @@ struct DashboardNavigation: Equatable {
 /// update values without destroying the UI or closing its containing popover.
 final class DashboardModel: ObservableObject {
     @Published var windowPositions: WindowPositions?
+    @Published var links: LinksModule?
     @Published var audioDevices: [AudioDevice] = []
     @Published var audioRoutes: [AudioDirection: String] = [:]
     @Published var audioPreferences: [AudioDirection: [String]] = [:]
@@ -463,6 +467,10 @@ struct DashboardView: View {
                     case .mouse:
                         if model.enabledModules.contains(.mouse) { mouse }
                         else { disabledModule("Mouse") }
+                    case .links:
+                        if draftMode { Text("Add rules and make Better macOS your default browser in Links settings after setup. Setup never changes your default browser.") }
+                        else if model.enabledModules.contains(.links), let links = model.links { LinksSettingsView(module: links) }
+                        else { disabledModule("Links") }
                     }
         }
         .alert(disconnectDisablesRule ? "Disconnect and turn off auto-reconnect?" : "Disconnect this device?", isPresented: $showDisconnectWarning) {
