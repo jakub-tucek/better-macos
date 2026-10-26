@@ -6,6 +6,13 @@ struct LinksSettingsView: View {
     @StoredState private var newProfileBrowser = ""
     @StoredState private var newProfileName = ""
     @StoredState private var newProfileFolder = ""
+    @StoredState private var selecting = false
+    @StoredState private var selectedRules: Set<UUID> = []
+    @StoredState private var bulkTarget = ""
+    @StoredState private var showingImport = false
+    @StoredState private var importText = ""
+    @StoredState private var importKind = LinkRuleKind.domain
+    @StoredState private var importTarget = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -18,6 +25,7 @@ struct LinksSettingsView: View {
             rules
             if !module.profileBrowsers.isEmpty { profiles }
         }.onAppear(perform: module.refresh)
+            .onChange(of: module.config.rules.map(\.id)) { _, ids in selectedRules.formIntersection(ids) }
     }
 
     private var defaultBrowser: some View {
@@ -52,6 +60,14 @@ struct LinksSettingsView: View {
                 Spacer()
                 Button { module.update { $0.rules.append(LinkRule(target: $0.fallback)) } } label: { Label("Add rule", systemImage: "plus") }
             }
+            HStack {
+                Button("Paste rules…") { importTarget = module.config.fallback; showingImport.toggle() }
+                if !module.config.rules.isEmpty {
+                    Button(selecting ? "Done selecting" : "Select rules") { selecting.toggle(); selectedRules.removeAll(); bulkTarget = module.config.fallback }
+                }
+            }
+            if showingImport { importRules }
+            if selecting { bulkActions }
             if module.config.rules.isEmpty {
                 Text("No rules yet. Add one like: Domain github.com/your-team → Chrome · Work.")
                     .font(.callout).foregroundStyle(.secondary)
@@ -69,6 +85,11 @@ struct LinksSettingsView: View {
         let number = (module.config.rules.firstIndex { $0.id == value.id } ?? 0) + 1
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
+                if selecting {
+                    Toggle("Select rule \(number)", isOn: Binding(get: { selectedRules.contains(value.id) }, set: { selected in
+                        if selected { selectedRules.insert(value.id) } else { selectedRules.remove(value.id) }
+                    })).toggleStyle(.checkbox).labelsHidden().accessibilityLabel("Select rule \(number)")
+                }
                 Toggle("Rule \(number)", isOn: rule.enabled).toggleStyle(.switch).controlSize(.small)
                     .accessibilityLabel("Enable rule \(number)")
                 Spacer()
@@ -93,6 +114,59 @@ struct LinksSettingsView: View {
             } else if value.pattern.trimmingCharacters(in: .whitespaces).isEmpty {
                 Text(value.kind.help).font(.caption).foregroundStyle(.secondary)
             }
+        }
+    }
+
+    private var bulkActions: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("\(selectedRules.count) selected").font(.callout)
+                Button("Select all") { selectedRules = Set(module.config.rules.map(\.id)) }
+                Button("Clear selection") { selectedRules.removeAll() }.disabled(selectedRules.isEmpty)
+            }
+            HStack {
+                destinationPicker("Open selected in", selection: $bulkTarget)
+                Button("Apply") { module.editRules(selectedRules, action: .destination(bulkTarget)) }
+                    .disabled(selectedRules.isEmpty || !module.destinations.contains { $0.id == bulkTarget })
+            }
+            HStack {
+                Button("Enable") { module.editRules(selectedRules, action: .enabled(true)) }
+                Button("Disable") { module.editRules(selectedRules, action: .enabled(false)) }
+                Button("Delete selected", role: .destructive) { module.editRules(selectedRules, action: .delete) }
+            }.disabled(selectedRules.isEmpty)
+            Divider()
+        }
+    }
+
+    private var importRules: some View {
+        let prepared = LinkBulkImport(text: importText, kind: importKind, target: importTarget, existing: module.config.rules)
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Paste one URL or match per line. New rules go after existing rules.")
+                .font(.caption).foregroundStyle(.secondary)
+            Picker("Match", selection: $importKind) {
+                ForEach(LinkRuleKind.allCases) { Text($0.title).tag($0) }
+            }
+            Text(importKind == .domain ? "Domain keeps the host and path, includes subdomains, and ignores query parameters and fragments. Use Pattern to match those; ports require Pattern or Contains." : importKind.help)
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            TextEditor(text: $importText).font(.body.monospaced()).frame(height: 120)
+                .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.secondary.opacity(0.3)))
+                .accessibilityLabel("Rules to add, one per line")
+            destinationPicker("Open new rules in", selection: $importTarget)
+            Text("\(prepared.patterns.count) new rules · \(prepared.duplicates) duplicates skipped")
+                .font(.caption).foregroundStyle(.secondary)
+            if !prepared.invalidLines.isEmpty {
+                Label("Check lines: \(prepared.invalidLines.map(String.init).joined(separator: ", ")). Enter web URLs or domains.", systemImage: "exclamationmark.triangle")
+                    .font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                Button("Add \(prepared.patterns.count) rules") {
+                    if module.addRules(text: importText, kind: importKind, target: importTarget) {
+                        importText = ""; showingImport = false
+                    }
+                }.disabled(!prepared.canAdd || !module.destinations.contains { $0.id == importTarget })
+                Button("Cancel") { showingImport = false; importText = "" }
+            }
+            Divider()
         }
     }
 

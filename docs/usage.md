@@ -63,6 +63,13 @@ can refuse an action rather than redirect it.
 | Clipboard | Capture, exclusions, retention, privacy, storage recovery |
 | Links | Default browser, fallback browser, ordered routing rules, test link |
 
+In Links, **Select rules** enables bulk browser/profile changes, Enable, Disable,
+and Delete selected. **Paste rules…** accepts one URL or match per line with one
+shared destination and match type. Domain imports keep host/path and ignore query
+parameters/fragments; use Pattern for those. Invalid domain lines block the import.
+Duplicates with the same match type, text and destination are skipped. New rules
+append in pasted order, so existing rules keep priority. Pasting never opens links.
+
 Popup **Edit** supports Add, ordering, compact/expanded presentation, Remove, and
 Restore suggested. **Done** saves; **Cancel** discards the draft. Recovery controls
 and an active awake session's Stop remain reachable without widgets. Clipboard

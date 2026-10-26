@@ -28,3 +28,14 @@ keyboard/VoiceOver, permission-flow, hardware or power-measurement acceptance.
 Expanded profile-editor interaction and full native scrolling acceptance remain open.
 
 Architecture and contribution rules: [static registration](../architecture/builtin-registration.md).
+
+## Links bulk editing
+
+The later bulk-edit implementation passed **5,326 isolated checks**, supporting
+suites and 13 installer scenarios through the same partial pipeline above.
+`build/links-bulk-test.log` records the run; `links-bulk-{lint,format,fixtures}.log`
+record pinned checks and hidden-window rendering. Focused cases cover selected-only
+edits, stable IDs/order, append priority, persistence, duplicate handling, invalid
+line rejection, CRLF line numbers, host admission and absence of browser effects.
+The 680-point rule list was inspected; expanded importer/selection interaction and
+VoiceOver remain native acceptance gaps. The existing full-suite OS blocker remains.

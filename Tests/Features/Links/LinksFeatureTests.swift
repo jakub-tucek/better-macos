@@ -63,6 +63,49 @@ func runLinksTests() {
     runLinkMatchingTests()
     runLinkOwnerTests()
     runRegisteredLinkTests()
+    runLinkBulkTests()
+}
+
+private func runLinkBulkTests() {
+    let first = LinkRule(pattern: "first.example", target: "old")
+    let second = LinkRule(pattern: "second.example", target: "old")
+    let third = LinkRule(pattern: "third.example", target: "old")
+    var config = LinkRoutingConfig(rules: [first, second, third])
+    config.editRules([first.id, third.id, UUID()], action: .destination("work:Profile 1"))
+    expect(config.rules.map(\.target) == ["work:Profile 1", "old", "work:Profile 1"] && config.rules.map(\.id) == [first.id, second.id, third.id], "Bulk destination changes only selected rules and preserves priority and IDs")
+    config.editRules([first.id, third.id], action: .enabled(false))
+    expect(config.rules.map(\.enabled) == [false, true, false], "Bulk disable preserves unselected rules")
+    config.editRules([first.id], action: .enabled(true))
+    expect(config.rules.map(\.enabled) == [true, true, false], "Bulk enable touches only selected rules")
+    config.editRules([first.id, third.id], action: .delete)
+    expect(config.rules == [second], "Bulk deletion preserves the unselected rule exactly")
+    let prepared = LinkBulkImport(text: " https://Example.com/team?q=1#part \n\nexample.com/team\nother.example", kind: .domain, target: "browser", existing: [])
+    expect(prepared.patterns == ["example.com/team", "other.example"] && prepared.duplicates == 1 && prepared.canAdd, "Pasted domains preserve order, trim blanks, normalize URLs and skip duplicates")
+    let invalid = LinkBulkImport(text: "good.example\nfile:///tmp/test\n*.example.com\nhttps://a.com:8080\nnot a host", kind: .domain, target: "browser", existing: [])
+    expect(!invalid.canAdd && invalid.invalidLines == [2, 3, 4, 5], "Invalid domain lines block the entire import with original line numbers")
+    expect(LinkBulkImport(text: "good.example\r\nfile:///tmp/test", kind: .domain, target: "browser", existing: []).invalidLines == [2], "Windows line endings retain correct invalid-line numbers")
+    expect(!LinkBulkImport(text: "https://", kind: .pattern, target: "browser", existing: []).canAdd, "Scheme-only patterns cannot create empty rules")
+    let patterns = LinkBulkImport(text: "https://example.com/*?project=work*", kind: .pattern, target: "browser", existing: [])
+    expect(patterns.patterns == ["example.com/*?project=work*"], "Pattern import preserves wildcards and query matching")
+    let suite = "better-macos.bulk-links.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let backend = FakeLinkBackend()
+    backend.found = [LinkDestination(id: "browser", name: "Browser", appPath: "/B")]
+    let owner = LinksModule(defaults: defaults, backend: backend)
+    owner.refresh()
+    owner.update { $0.rules = [first] }
+    expect(owner.addRules(text: "example.com\nother.example", kind: .domain, target: "browser"), "Owner commits valid bulk import")
+    expect(owner.config.rules.map(\.pattern) == ["first.example", "example.com", "other.example"], "Bulk import appends after existing rules")
+    expect(!owner.addRules(text: "example.com", kind: .domain, target: "browser"), "Repeated imports skip existing identical rules")
+    let before = owner.config
+    expect(!owner.addRules(text: "good.example\nfile:///tmp/test", kind: .domain, target: "browser") && owner.config == before, "Invalid import makes no partial edits")
+    owner.acceptsActions = { false }
+    owner.editRules(Set(owner.config.rules.map(\.id)), action: .delete)
+    expect(!owner.addRules(text: "new.example", kind: .domain, target: "browser") && owner.config == before, "Bulk edit and import both obey closed host admission")
+    let reloaded = LinksModule(defaults: defaults, backend: backend)
+    expect(reloaded.config == before, "Bulk changes persist through the existing configuration format")
+    expect(backend.opened.isEmpty && backend.defaultRequests == 0 && backend.accessRequests.isEmpty, "Bulk editing never opens links or requests browser permissions")
 }
 
 private func runRegisteredLinkTests() {
