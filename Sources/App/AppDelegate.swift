@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var windowActionRequest = UUID()
     private var popupSourceApp: NSRunningApplication?
     private var clipboard: ClipboardModule?
+    private let links: LinksModule
     private let injectedMouseLifecycle: MouseLifecycle?
     private lazy var mouseLifecycle = injectedMouseLifecycle ?? MouseLifecycle(settings: modules)
     private let sourceUpdater = SourceUpdater()
@@ -99,6 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let terminationReply: (NSApplication, Bool) -> Void
 
      init(commandRunner: CommandRunning = CommandRunner(), spaces: SpacesModule? = nil, windowPositions: WindowPositions? = nil, clipboard: ClipboardModule? = nil, mouseLifecycle: MouseLifecycle? = nil, model: DashboardModel = DashboardModel(), preferences: UserDefaults = .standard,
+          linkBackend: LinkBrowserBackend? = nil,
           makeAudio: (() -> AudioModule)? = nil, makeKeepAwake: (() -> KeepAwakeModule)? = nil, makeBluetooth: (() -> BluetoothModule)? = nil,
           makeMenuBar: (() -> MenuBarModule)? = nil, menuBarSpacing: MenuBarSpacing? = nil, animations: AnimationPreferences? = nil,
           chooseKeepAwakeApps: @escaping KeepAwakePresentation.ChooseApps = KeepAwakePresentation.chooseApplications,
@@ -144,7 +146,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         self.clipboard = clipboard
         self.injectedMouseLifecycle = mouseLifecycle
         self.terminationReply = terminationReply
+        self.links = LinksModule(defaults: preferences, backend: linkBackend ?? SystemLinkBrowserBackend())
         super.init()
+          links.acceptsActions = { [weak self] in self?.transactions.acceptsActions == true }
+          model.links = links
           awakeFeature.activity = activity
          awakePresentation.didPublish = { [weak self] in self?.refreshKeepAwakeStatus($0) }
          configureActions()
@@ -196,6 +201,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         do { try safety.start() }
         catch { showError(ToggleError(message: "Could not start the recovery watchdog: \(error.localizedDescription)")) }
         configureDisplayRefresh()
+        NSApp.mainMenu = Self.makeMainMenu()
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "Better macOS")
         item.button?.target = self
@@ -227,6 +233,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if CommandLine.arguments.contains("--show-dashboard"), !DashboardNavigation.launch(arguments: CommandLine.arguments).isSetup {
             DispatchQueue.main.async { [weak self] in self?.showDashboard() }
         }
+    }
+
+    /// Menu-bar apps still need a (hidden) main menu: text editing shortcuts are
+    /// key equivalents of Edit items. No ⌘Q item, so quitting stays with Hold to
+    /// quit and host quit approval.
+    static func makeMainMenu() -> NSMenu {
+        let main = NSMenu()
+        let app = NSMenuItem(); app.submenu = NSMenu(title: "Better macOS")
+        app.submenu?.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        main.addItem(app)
+        let edit = NSMenuItem(); let menu = NSMenu(title: "Edit"); edit.submenu = menu
+        menu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        menu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        menu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        menu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        menu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        main.addItem(edit)
+        return main
     }
 
     private func configureDisplayRefresh() {
@@ -535,6 +561,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             clipboard = nil
         }
         refreshClipboard()
+        links.setActive(modules.enabled.contains(.links))
         mouseLifecycle.reconcile()
         awakeFeature.reconcile(enabled: modules.enabled.contains(.keepAwake))
         if modules.enabled.contains(.quitGuard) {
@@ -720,7 +747,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @discardableResult
     func presentStatusQuickMenu(relativeTo anchor: NSView, orderFront: Bool = true) -> NSPanel? {
         guard transactions.acceptsActions else { return nil }
-        prepareSurface()
+        prepareSurface(keeping: activeSetupDraft == nil ? nil : setupWindow)
         windowActionRequest = UUID()
         popupSourceApp = NSWorkspace.shared.frontmostApplication
         popover.performClose(nil)
@@ -754,13 +781,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    /// Web links reach the router even while the feature is off or the app is
+    /// quitting; only rule matching follows the enable choice.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls { links.route(url) }
+    }
+
+    /// Reopen also arrives without a click, e.g. after confirming the default
+    /// browser. Return to a visible window instead of replacing it with the popup.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         refreshPreferences()
-        showDashboard()
+        if activeSetupDraft == nil, let window = [settingsWindow, activityWindow, arrangementWindow].compactMap({ $0 }).first(where: \.isVisible) {
+            presentWindow(window)
+        } else { showDashboard() }
         return true
     }
 
     private func showDashboard() {
+        // An in-progress setup is the primary surface; never hide it behind the popup.
+        if activeSetupDraft != nil, setupWindow != nil { showSetup(); return }
         refreshDisplaysForPresentation()
         if model.navigation.isSetup {
             let group = model.navigation.feature.map(SettingsGroup.forFeature)
@@ -1107,6 +1146,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             preferences.set(value.mouseAcceleration, forKey: "mouse.proposedAcceleration")
             preferences.set(value.mouseTracking, forKey: "mouse.proposedTracking")
             note = "No pointer settings applied. Use explicit Apply in Input settings."
+        case .links:
+            note = links.isDefaultBrowser ? "Rules apply to new links." : "Make Better macOS your default browser in Links settings to route links."
         case .windows:
             if let windowPositions {
                 if value.windowsPaused != old.windowsPaused { windowPositions.paused = value.windowsPaused }
@@ -1638,6 +1679,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         awakeFeature.shutdown()
         audio?.stop()
         clipboard?.stop()
+        links.setActive(false)
         quitGuard?.stop()
         menuBar?.stop()
         sourceUpdater.stop()

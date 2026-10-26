@@ -23,13 +23,14 @@ Use guided setup to review each feature, or choose **Easy setup · enable all**.
 | Hold to quit | Hold ⌘Q through a countdown to avoid accidental quits. |
 | Animations | Reduce selected system effects, with optional fast horizontal desktop switching. Some animations remain. |
 | Menu bar | Experimental icon spacing and a divider for hiding less-used icons. |
+| Links | Make Better macOS your default browser and send each link to a chosen browser or Chromium profile by domain, text, or `*` pattern. Off or quitting, links still open in your fallback browser. |
 | Mouse | Experimental mouse-class acceleration/tracking overrides with explicit Apply and Restore. |
 
 ## How you use it
 
 - **Left-click the menu-bar icon:** your chosen quick-action widgets.
 - **Right-click:** Window actions, Quick actions, Keep awake, Settings, and Quit.
-- **Settings:** seven tabs for configuration; **General → Run setup again** revisits setup.
+- **Settings:** eight tabs for configuration; **General → Run setup again** revisits setup.
 - **Quick actions → Edit:** add, reorder, or remove widgets. Removing a widget does not disable its feature or delete its data.
 
 Window and Keep awake palettes offer larger, keyboard-navigable controls. Opening a palette changes nothing until you choose an action. [Usage, shortcuts, and defaults →](docs/usage.md)

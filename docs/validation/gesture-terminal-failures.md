@@ -30,12 +30,19 @@ bash Tests/gesture-terminal-proof.sh --characterize   # C green; known Swift hol
 bash Tests/gesture-terminal-proof.sh --require-safety # explicitly red for remaining Swift holes, exits 1
 ```
 
-`test.sh` runs only `--instant-safety`. It checks **114 assertions** across both
-directions: successful order/properties, failed began without continuation,
-failed changed followed by ended with a false overall result, and failed ended
-with no retry. C production/fixture units compile with `-Wall -Wextra -Werror`;
-the no-live-post object-symbol guard remains active. Pre-27 allocation-path
-coverage only; the fixture refuses the augmented macOS 27 path.
+`test.sh` runs only `--instant-safety`. It checks **270 assertions** across both
+directions on the macOS 27 augmented path, where each phase allocates and posts
+a dock swipe carrying the IOHID payload, then a plain gesture companion:
+successful order/properties (phase alias, sign-inverted progress, velocity only
+on ended, payload gesture record and velocity record), failed began or its
+companion without continuation, failed changed or its companion followed by
+ended with a false overall result, and failed ended or its companion with no
+retry. C production/fixture units compile with `-Wall -Wextra -Werror`; the
+no-live-post object-symbol guard remains active. The fixture refuses pre-27
+hosts, which Better macOS no longer supports. Reintroducing the original
+`changed && ended` short circuit on macOS 27 yields **270 checks / 16 failures**.
+
+The pre-27 history below (114 assertions) is preserved as recorded.
 
 New regression against the original C source from `21ec11a`, compiled in an
 invocation-owned temporary directory with the same fake poster, exits 1:
@@ -244,8 +251,9 @@ bash Tests/gesture-terminal-proof.sh --require-safety
 
 The first command exits 0 when the known holes reproduce. The explicit second
 command exits **1**, intentionally red against production. Neither is included
-in `test.sh`. Compiler/fixture setup errors exit nonzero; C explicitly refuses
-the macOS 27 augmented-payload allocation order rather than claiming coverage.
+in `test.sh`. Compiler/fixture setup errors exit nonzero. At the time, C explicitly
+refused the macOS 27 augmented-payload allocation order rather than claiming
+coverage; the instant fixture now covers only that path.
 
 Observed trace:
 

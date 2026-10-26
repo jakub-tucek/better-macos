@@ -38,7 +38,7 @@ remain loaded until their work is safe.
 | Right-click menu-bar icon | Window actions, Quick actions, Keep awake, Settings, Quit |
 | Window actions palette | Illustrated window layouts and display movement |
 | Keep awake palette | Duration presets, custom duration, display wake, extension, End session |
-| Settings | Configuration in seven tabs; reused rather than opening another window |
+| Settings | Configuration in eight tabs; reused rather than opening another window |
 | Clipboard panel · ⌘⇧V | Search, select, copy, pin, and delete history entries |
 | General → Show activity… | Session-only operation outcomes, not technical logs |
 
@@ -59,6 +59,7 @@ can refuse an action rather than redirect it.
 | Input | Hold to quit and explicit Mouse Apply/Restore |
 | System | Animations, menu-bar controls, Keep awake defaults/app rules |
 | Clipboard | Capture, exclusions, retention, privacy, storage recovery |
+| Links | Default browser, fallback browser, ordered routing rules, test link |
 
 Popup **Edit** supports Add, ordering, compact/expanded presentation, Remove, and
 Restore suggested. **Done** saves; **Cancel** discards the draft. Recovery controls

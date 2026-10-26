@@ -445,6 +445,7 @@ try runDiagnosticsTests()
 try runActivityTests()
 try runUITests()
 try runClipboardTests()
+runLinksTests()
 
 final class FakeRunner: CommandRunning {
     var current: [BluetoothDevice] = [speaker]

@@ -3,7 +3,7 @@ import SwiftUI
 
 enum SettingsGroup: String, CaseIterable, Identifiable {
     case general = "General", quickActions = "Quick actions", displays = "Displays"
-    case sound = "Sound & connections", input = "Input", system = "System", clipboard = "Clipboard"
+    case sound = "Sound & connections", input = "Input", system = "System", clipboard = "Clipboard", links = "Links"
     var id: String { rawValue }
     var symbol: String {
         switch self {
@@ -14,6 +14,7 @@ enum SettingsGroup: String, CaseIterable, Identifiable {
         case .input: return "keyboard"
         case .system: return "slider.horizontal.3"
         case .clipboard: return "clipboard"
+        case .links: return "arrow.triangle.branch"
         }
     }
     var modules: [AppModule] { BuiltinFeatures.modules(in: self) }
@@ -26,6 +27,7 @@ enum SettingsGroup: String, CaseIterable, Identifiable {
         case .input: return "Tune your mouse and keyboard behavior."
         case .system: return "Control sleep, animations, and the menu bar."
         case .clipboard: return "Choose what to capture and how long to keep it."
+        case .links: return "Send each web link to the right browser or profile."
         }
     }
     static func forFeature(_ feature: DashboardTab) -> SettingsGroup {
@@ -999,12 +1001,16 @@ final class SettingsTabButton: NSButton {
         }
     }
     override func keyDown(with event: NSEvent) {
-        if event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
-           event.keyCode == 123 || event.keyCode == 124,
+        let plain = event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty
+        if plain, event.keyCode == 123 || event.keyCode == 124,
            let stack = superview as? NSStackView {
             let buttons = stack.arrangedSubviews.compactMap { $0 as? SettingsTabButton }
             let index = max(0, min(buttons.count - 1, tag + (event.keyCode == 124 ? 1 : -1)))
             window?.makeFirstResponder(buttons[index])
+        } else if plain, event.keyCode == 49 {
+            // Like the arrows, Space selects without system Full Keyboard Access,
+            // which NSButton otherwise requires.
+            performClick(nil)
         } else { super.keyDown(with: event) }
     }
 }
