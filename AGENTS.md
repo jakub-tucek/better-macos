@@ -2,6 +2,7 @@
 
 ## Read by task
 
+- For screens, widgets, palettes or setup UI, read [UI/UX handoff](docs/ui-ux-handoff.md).
 - For user-facing behavior, shortcuts, installation, permissions or privacy, read
   [usage](docs/usage.md). Use [the docs index](docs/README.md) to find other guides.
 - For feature ownership, shared dependencies, UI entry points or cleanup, read

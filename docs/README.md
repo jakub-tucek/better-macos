@@ -11,6 +11,7 @@
 
 ## Developing
 
+- [UI/UX handoff: visual style, surfaces, setup, and interaction checks](ui-ux-handoff.md)
 - [Build, test, lint, and format commands; tested toolchains](development.md)
 - [Feature owners, UI entry points, shared services, and source credits](modules.md)
 - [Host coordination glossary](glossary.md)
