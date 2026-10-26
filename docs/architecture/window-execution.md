@@ -54,6 +54,25 @@ exclusions, and explicitly cancels queued layout restoration immediately before 
 manual move. The session rechecks admission and its generation after discovery;
 re-registering does not authorize an old callback or an invalidated action.
 
+Foreground activation now reconciles Windows through the same host readiness
+snapshot. This catches Accessibility grants/revocations without waiting for a
+display event, preserves healthy registrations and respects the saved Off choice.
+It retains watchdog, layout-freshness and host-admission checks.
+
+### Permission-return regression · 2026-10-26
+
+An injected production host/owner test reproduced requested shortcuts remaining
+unregistered after a permission grant (`build/window-access-red.log`). Foreground
+activation refreshed screen edges and Hold to quit but omitted Windows. Adding its
+existing reconciliation path fixes that test; cases cover repeated activation,
+revocation/regrant, no window writes, watchdog loss and explicit Off.
+
+`build/window-access-test.log` passed **5,350 isolated checks**, supporting suites,
+build/packaging fixtures and 13 installer scenarios via the pipeline after the
+known macOS 27 gesture gate. Pinned lint, format and whitespace passed. This is
+isolated registration evidence; the user's exact foreground-app shortcut behavior
+still needs live confirmation. The full-suite OS gate remains open.
+
 `WindowShortcutPresetRegistration<Native>` owns the all-or-nothing preset, acquisition
 order and cleanup: clear callback, release acquired keys in registration order, then
 remove the handler. Even a resource returned with a failing status is cleaned up.

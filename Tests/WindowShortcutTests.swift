@@ -125,6 +125,7 @@ private func runWindowActionPaletteTests() {
 }
 
 func runWindowShortcutTests() {
+    runWindowShortcutAccessReturnTests()
     runShortcutSessionTests()
     runWindowActionPaletteTests()
     let main = WindowDisplay(id: "main", bounds: CGRect(x: 0, y: 25, width: 1201, height: 801))
@@ -314,6 +315,40 @@ func runWindowShortcutTests() {
     let restartCount = backend.writes.count
     registration.callback?(.restore)
     expect(backend.writes.count == restartCount && owner.shortcutStatus.contains("No original"), "owner stop and restart clear session frames")
+    owner.stop()
+}
+
+private func runWindowShortcutAccessReturnTests() {
+    let suite = "better-macos.window-access-return.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let backend = ShortcutTestBackend(), registration = ShortcutTestRegistration()
+    backend.permitted = false
+    defaults.set(true, forKey: "windows.shortcuts")
+    let owner = WindowPositions(backend: backend, defaults: defaults, shortcuts: registration)
+    var ready = true
+    let host = AppDelegate(windowPositions: owner, preferences: defaults, accessibilityCheck: { backend.permitted },
+        controlStateSnapshot: { SystemControlLifecycle.State(watchdogReady: ready, displaySettling: false, layoutFresh: true) })
+    owner.reconcile(ready: true, settled: true)
+    expect(registration.starts == 0 && !owner.shortcutsActive, "Denied Accessibility leaves requested window shortcuts inactive")
+    backend.permitted = true
+    host.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+    expect(registration.starts == 1 && owner.shortcutsActive, "Returning after Accessibility grant registers requested window shortcuts without a display change")
+    host.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+    expect(registration.starts == 1, "Repeated foreground refresh keeps healthy shortcut registrations")
+    backend.permitted = false
+    host.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+    expect(!owner.shortcutsActive, "Revoked Accessibility releases registered window shortcuts on return")
+    backend.permitted = true
+    host.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+    expect(registration.starts == 2 && owner.shortcutsActive && backend.writes.isEmpty, "Permission recovery re-registers without moving a window")
+    ready = false
+    host.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+    expect(!owner.shortcutsActive, "Foreground shortcut refresh retains watchdog readiness guards")
+    ready = true
+    owner.shortcutsEnabled = false
+    host.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+    expect(registration.starts == 2 && !owner.shortcutsActive, "Permission refresh preserves an explicit shortcuts Off choice")
     owner.stop()
 }
 

@@ -1356,7 +1356,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationDidBecomeActive(_ notification: Notification) {
         refreshLoginStatus()
-        if transactions.acceptsActions { updateScreenEdges(); retryQuitGuard() }
+        if transactions.acceptsActions { updateScreenEdges(); retryQuitGuard(); reconcileWindows() }
     }
 
     private func refreshLoginStatus() {
