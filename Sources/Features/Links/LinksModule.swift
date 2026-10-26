@@ -14,6 +14,8 @@ protocol LinkBrowserBackend {
     func requestProfileAccess(browser: String) -> Bool
     func isDefaultBrowser() -> Bool
     func makeDefaultBrowser(completion: @escaping (Error?) -> Void)
+    /// Replace only web schemes still owned by this app; preserve external changes.
+    func relinquishDefaultBrowser(to destination: LinkDestination, completion: @escaping (Error?) -> Void)
 }
 
 enum LinkProfileAccessResult: Equatable {
@@ -40,6 +42,7 @@ final class LinksModule: ObservableObject {
     @Published private(set) var isDefaultBrowser = false
     @Published private(set) var message = ""
     @Published private(set) var active = false
+    @Published private(set) var changingDefaultBrowser = false
     /// Installed browsers that support profiles, for adding a profile by hand.
     @Published private(set) var profileBrowsers: [LinkDestination] = []
     /// Profile browsers whose profile list macOS blocked; access can be requested.
@@ -203,13 +206,50 @@ final class LinksModule: ObservableObject {
     }
 
     func makeDefaultBrowser() {
-        guard acceptsActions() else { return }
+        guard acceptsActions(), active, !changingDefaultBrowser else { return }
+        changingDefaultBrowser = true
         backend.makeDefaultBrowser { [weak self] error in
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
+                changingDefaultBrowser = false
                 isDefaultBrowser = backend.isDefaultBrowser()
                 message = error.map { "Default browser was not changed: \($0.localizedDescription)" }
                     ?? "Better macOS now receives web links."
+            }
+        }
+    }
+
+    /// Explicit disable only. Quit leaves the browser association intact.
+    func prepareDisable(completion: @escaping (Result<Void, ModuleChoiceFailure>) -> Void) {
+        guard acceptsActions(), !changingDefaultBrowser else {
+            completion(.failure(ModuleChoiceFailure(detail: "Browser change is busy.", message: "Wait for the browser change to finish, then retry.")))
+            return
+        }
+        guard backend.isDefaultBrowser() else { isDefaultBrowser = false; completion(.success(())); return }
+        refresh()
+        let browserID = LinkDestination.splitProfileID(config.fallback)?.bundleID ?? config.fallback
+        guard let browser = destinations.first(where: { $0.id == browserID && $0.profile == nil }) ?? backend.systemFallback() else {
+            completion(.failure(ModuleChoiceFailure(detail: "No fallback browser available.", message: "Choose an installed fallback browser before turning Links off.")))
+            return
+        }
+        changingDefaultBrowser = true
+        var completed = false
+        backend.relinquishDefaultBrowser(to: browser) { [self] error in
+            DispatchQueue.main.async { [self] in
+                guard !completed else { return }
+                completed = true
+                changingDefaultBrowser = false
+                isDefaultBrowser = backend.isDefaultBrowser()
+                if let error {
+                    message = "Links could not be turned off: \(error.localizedDescription)"
+                    completion(.failure(ModuleChoiceFailure(detail: message, message: message)))
+                } else if isDefaultBrowser {
+                    message = "Better macOS still receives web links. Retry turning Links off or change the default browser in System Settings."
+                    completion(.failure(ModuleChoiceFailure(detail: message, message: message)))
+                } else {
+                    message = "Links is off. Web links were handed back to \(browser.name)."
+                    completion(.success(()))
+                }
             }
         }
     }
@@ -302,8 +342,31 @@ struct SystemLinkBrowserBackend: LinkBrowserBackend {
     }
 
     func isDefaultBrowser() -> Bool {
-        guard let current = NSWorkspace.shared.urlForApplication(toOpen: Self.probe) else { return false }
+        ["http", "https"].contains { ownsScheme($0) }
+    }
+
+    private func ownsScheme(_ scheme: String) -> Bool {
+        guard let probe = URL(string: "\(scheme)://example.com"),
+              let current = NSWorkspace.shared.urlForApplication(toOpen: probe) else { return false }
         return Bundle(url: current)?.bundleIdentifier == Bundle.main.bundleIdentifier
+    }
+
+    func relinquishDefaultBrowser(to destination: LinkDestination, completion: @escaping (Error?) -> Void) {
+        let app = URL(fileURLWithPath: destination.appPath)
+        guard let id = Bundle(url: app)?.bundleIdentifier, id != Bundle.main.bundleIdentifier else {
+            completion(ToggleError(message: "Fallback browser is unavailable.")); return
+        }
+        func restore(_ schemes: ArraySlice<String>) {
+            guard let scheme = schemes.first else { completion(nil); return }
+            guard ownsScheme(scheme) else { restore(schemes.dropFirst()); return }
+            NSWorkspace.shared.setDefaultApplication(at: app, toOpenURLsWithScheme: scheme) { error in
+                DispatchQueue.main.async {
+                    if let error { completion(error) }
+                    else { restore(schemes.dropFirst()) }
+                }
+            }
+        }
+        restore(["http", "https"][...])
     }
 
     func makeDefaultBrowser(completion: @escaping (Error?) -> Void) {

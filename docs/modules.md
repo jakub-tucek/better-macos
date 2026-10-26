@@ -196,7 +196,9 @@ Cleanup describes the relevant owner and path, not proof of live acceptance.
   [LinkRouting.swift](../Sources/Features/Links/LinkRouting.swift).
 - **UI:** Links settings via [LinksSettingsView.swift](../Sources/Features/Links/LinksSettingsView.swift);
   no widget or TCC grant. `Info.plist` declares http/https so the app can be chosen as the default
-  browser; only the explicit **Make default browser** action changes that, never setup.
+   browser; **Make default browser** claims web links. Explicit disable hands owned HTTP/HTTPS
+   associations to the configured fallback browser (Safari if unavailable) before committing Off.
+   Setup never claims the default; deselecting previously enabled Links uses the same disable path.
 - **Boundary:** the host always constructs the owner. `application(_:open:)` routes every incoming
   link regardless of feature choice or host admission: a disabled feature or closed host skips rules
   and opens the fallback, then Safari, so links are never dropped. Settings edits, test opens and the
@@ -205,7 +207,9 @@ Cleanup describes the relevant owner and path, not proof of live acceptance.
   data folder; choosing that folder in **Allow access to … profiles** is the per-folder consent
   that lets discovery read `Local State`. Profiles can also be added by folder name.
 - **Resources/cleanup:** an App Nap–preventing activity (idle sleep still allowed) while enabled;
-  stale `.crwebloc` files are removed at launch. Disabling keeps rules.
+   stale `.crwebloc` files are removed at launch. Disabling keeps rules and profile choices.
+   Failed browser handoff retains the enabled choice and exposes a retryable error. Quit does not
+   change the default browser; associations already changed externally are preserved.
 
 ### Window positions · `windows`
 

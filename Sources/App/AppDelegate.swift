@@ -469,9 +469,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func setModule(_ module: AppModule, enabled: Bool, completion: @escaping (Bool) -> Void = { _ in }) {
+        let previousFailure = moduleFailures[module]
         moduleFailures[module] = nil
         guard transactions.acceptsActions, !model.stoppingModules.contains(module) else {
             moduleFailures[module] = "Shutdown or feature recovery is in progress."; completion(false); return
+        }
+        if module == .links, !enabled, let owner = featureOwners.owner(.links, as: LinksModule.self) {
+            model.stoppingModules.insert(module)
+            owner.prepareDisable { [weak self] result in
+                guard let self else { return }
+                model.stoppingModules.remove(module)
+                switch result {
+                case .success:
+                    if model.errorMessage == previousFailure { model.errorMessage = nil }
+                    modules.set(module, enabled: false)
+                    updateModules()
+                    completion(true)
+                case .failure(let failure):
+                    moduleFailures[module] = failure.detail
+                    if let message = failure.message { model.errorMessage = message }
+                    completion(false)
+                }
+            }
+            return
         }
         if module == .mouse {
             guard mouseLifecycle.setEnabled(enabled) else { moduleFailures[module] = mouseLifecycle.errorMessage ?? "Mouse restoration failed."; completion(false); return }

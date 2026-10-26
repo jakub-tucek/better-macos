@@ -10,7 +10,7 @@ enum LinksFeatureRegistration: FeatureRegistration {
     static let settings = [FeatureSettingsDefinition(group: .links, symbol: "arrow.triangle.branch", summary: "Send each web link to the right browser or profile.")]
     static let setup: [AppModule: FeatureSetupDescription] = [.links: .init(
         introduction: "Open work links in your work browser profile and everything else in your personal one. Rules match a domain, text in the link, or a wildcard pattern.",
-        effect: "Rules apply only after you make Better macOS your default browser in Settings. If the feature is off, links still open in your chosen fallback browser.",
+        effect: "Rules apply only after you make Better macOS your default browser in Settings. Turning Links off hands web links back to your fallback browser.",
         summary: "Configure link rules and your default browser in Links settings after setup.")]
     static let launchArguments: [String: DashboardTab] = ["--show-links": .links]
     static func makeOwner(_ context: FeatureContext) -> FeatureOwner? {

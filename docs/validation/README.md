@@ -54,6 +54,9 @@ documented in [the offline characterization](gesture-terminal-failures.md).
 
 ## Evidence index
 
+- [Links disable/default-browser handoff](links-disable.md): 5,376 isolated checks
+  and supporting fixtures; live browser-association changes remain unverified.
+
 - [Setup recovery and lightweight native UI host](setup-recovery.md):
   5,363 isolated checks and 44 native UI checks; simulated OS boundaries.
   Full-suite gesture fixture remains blocked by its macOS 27 requirement.

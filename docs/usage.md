@@ -7,6 +7,11 @@ instructions, not a new live acceptance run. [Known validation gaps](validation/
 
 ## Start here
 
+Turning **Links** off hands web links back to its selected fallback browser (Safari
+if that browser is unavailable). Profile choices and rules stay saved. If macOS
+refuses the change, Links stays enabled and reports the error; retry disabling it.
+Quitting Better macOS does not change your default browser.
+
 Setup's **Save for later** keeps your draft and current step. **Resume saved draft**
 rechecks permissions before continuing; **Cancel** discards the draft. Changes stay
 staged until **Finish**. Accessibility checks cover Windows, matched screen edges,

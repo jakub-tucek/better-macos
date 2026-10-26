@@ -35,8 +35,10 @@ struct LinksSettingsView: View {
                 }
                 Spacer(minLength: 0)
             }
-            if !module.isDefaultBrowser { Button("Make default browser", action: module.makeDefaultBrowser).buttonStyle(.borderedProminent) }
+            if !module.isDefaultBrowser { Button("Make default browser", action: module.makeDefaultBrowser).buttonStyle(.borderedProminent).disabled(module.changingDefaultBrowser) }
             destinationPicker("Everything else opens in", selection: Binding(get: { module.config.fallback }, set: { target in module.update { $0.fallback = target } }))
+            Text("Turning Links off makes this fallback browser handle web links directly. Your rules and profile choices are kept.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if module.destinations.isEmpty { Text("No browsers found. Install a browser, then refresh.").font(.caption).foregroundStyle(.secondary) }
             Button("Refresh browsers", action: module.refresh).controlSize(.small)
         }

@@ -45,6 +45,16 @@ private final class FakeLinkBackend: LinkBrowserBackend {
     var openError: Error?
     var isDefault = false
     var defaultRequests = 0
+    var relinquished: [LinkDestination] = []
+    var relinquishChangesDefault = true
+    var relinquishCompletion: ((Error?) -> Void)?
+    func relinquishDefaultBrowser(to destination: LinkDestination, completion: @escaping (Error?) -> Void) {
+        relinquished.append(destination)
+        relinquishCompletion = { [self] error in
+            if error == nil && relinquishChangesDefault { isDefault = false }
+            completion(error)
+        }
+    }
     var unreadable: [String] = []
     var discoveries = 0
     func discover() -> LinkDiscovery {
@@ -72,6 +82,65 @@ func runLinksTests() {
     runRegisteredLinkTests()
     runLinkTextOwnerTests()
     runLinkRuleTextTests()
+    runLinkDisableTests()
+}
+
+private func runLinkDisableTests() {
+    let suite = "better-macos.links-disable.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    for module in AppModule.allCases { defaults.set(module == .links, forKey: "modules.\(module.rawValue)") }
+    let backend = FakeLinkBackend()
+    backend.isDefault = true
+    backend.found = [LinkDestination(id: "com.google.Chrome", name: "Chrome", appPath: "/C")]
+    let owner = LinksModule(defaults: defaults, backend: backend)
+    owner.update { $0.fallback = "com.google.Chrome:Profile 1" }
+    owner.setActive(true)
+    let model = DashboardModel()
+    let host = AppDelegate(model: model, preferences: defaults, featureFactories: [.links: { _ in owner }])
+    model.onModuleChanged(.links, false)
+    expect(backend.relinquished.last?.id == "com.google.Chrome" && defaults.bool(forKey: "modules.links"), "Disabling Links hands the default to the fallback browser before committing Off")
+    expect(model.stoppingModules.contains(.links), "Browser handoff keeps host cleanup busy")
+    model.onModuleChanged(.links, false)
+    expect(backend.relinquished.count == 1, "Repeated disable cannot start a second browser handoff")
+    backend.relinquishCompletion?(ToggleError(message: "Denied"))
+    RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+    expect(defaults.bool(forKey: "modules.links") && owner.active && model.errorMessage?.contains("Denied") == true, "Failed browser handoff retains enabled Links and exposes the failure")
+    backend.relinquishChangesDefault = false
+    model.onModuleChanged(.links, false)
+    backend.relinquishCompletion?(nil)
+    RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+    expect(defaults.bool(forKey: "modules.links") && model.errorMessage?.contains("still receives") == true, "Disable verifies the default changed even when macOS reports success")
+    backend.relinquishChangesDefault = true
+    model.onModuleChanged(.links, false)
+    backend.relinquishCompletion?(nil)
+    RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+    expect(!defaults.bool(forKey: "modules.links") && !owner.active && !backend.isDefault, "Successful handoff commits disabled Links")
+    expect(model.errorMessage == nil, "Successful disable retry clears its own failure")
+    expect(owner.config.fallback == "com.google.Chrome:Profile 1", "Disabling preserves profile choices and rules")
+    model.onModuleChanged(.links, true)
+    expect(backend.defaultRequests == 0, "Re-enabling never silently reclaims the default browser")
+    let externalCount = backend.relinquished.count
+    model.errorMessage = "Other feature failure"
+    model.onModuleChanged(.links, false)
+    expect(backend.relinquished.count == externalCount && !defaults.bool(forKey: "modules.links") && model.errorMessage == "Other feature failure", "Disable preserves another default browser and unrelated failures")
+    model.onModuleChanged(.links, true)
+    owner.update { $0.fallback = "missing.browser" }
+    backend.isDefault = true
+    model.onModuleChanged(.links, false)
+    expect(backend.relinquished.last?.id == "com.apple.Safari", "An unavailable fallback uses the system fallback browser")
+    backend.relinquishCompletion?(nil)
+    RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+    model.onModuleChanged(.links, true)
+    backend.isDefault = true
+    let count = backend.relinquished.count
+    owner.stopFeature()
+    expect(backend.relinquished.count == count && backend.isDefault, "Quit stops routing rules without changing the default browser")
+    owner.acceptsActions = { false }
+    var refused = false
+    owner.prepareDisable { if case .failure = $0 { refused = true } }
+    expect(refused && backend.relinquished.count == count, "Direct disable preparation also checks host admission")
+    withExtendedLifetime(host) {}
 }
 
 private func runLinkTextOwnerTests() {
