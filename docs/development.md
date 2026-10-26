@@ -59,6 +59,8 @@ bash scripts/dev bootstrap       # download verified, pinned development tools
 bash scripts/dev lint            # SwiftLint, warnings fail; no fixes or cache
 bash scripts/dev format-check    # SwiftFormat --lint; no rewrites or cache
 bash scripts/dev build           # existing build.sh; bootstrap is NOT required
+bash scripts/dev ui-test         # real SwiftUI controls, simulated OS boundaries
+bash scripts/dev ui-test --interactive # visible test host with permission toggles
 bash Tests/swiftui-compatibility.sh # compile production state alias with selected tools
 bash scripts/dev-tools-test.sh   # offline tooling regressions after bootstrap
 bash Tests/packaging.sh          # inspect notices/signature after a successful build
@@ -70,7 +72,7 @@ install or launch it. Existing signing configuration still applies; use
 `BETTER_MACOS_SIGNING_IDENTITY=- bash scripts/dev build` for explicit ad-hoc signing.
 
 The full regression entry point is `bash test.sh` (build, packaging/build fixtures,
-ten Swift Testing policy tests in three suites, legacy isolated runner and installer
+ten Swift Testing policy tests in three suites, legacy isolated runner, native UI host and installer
 fixtures). [Named policy-suite commands and compilation ownership](swiftpm.md#commands-repository-root)
 are available separately; other feature suites still use the legacy runner.
 See [validation](validation/README.md) and
@@ -86,6 +88,21 @@ GUI startup; it does not pick an arbitrary latest helper when the running build
 has no suitable startup evidence. Use explicit PID/session selection for a known
 historical run. Level configuration is resolved per process startup; building a
 bundle does not apply it to the already-running process or authorize a relaunch.
+
+## Lightweight native UI tests
+
+`bash scripts/dev ui-test` builds and runs `build/Better macOS UI Test Host.app`
+(about 12 MB). It needs a macOS GUI session, no VM or OS image. The default run
+stays nonactivating and invokes accessibility actions on its own real SwiftUI
+controls. `--interactive` shows simulated permission toggles and a Return to app
+button for foreground-refresh checks. Close the window to exit.
+
+The host has a separate bundle identity and a unique, cleaned preference suite.
+It injects permission requests, setup application and settings navigation; it does
+not start production feature owners, register global keys, move other windows or
+grant TCC access. Signing uses the same configured identity as local app builds.
+These checks cover setup recovery and global alerts, not VoiceOver or actual OS
+permission/shortcut behavior. See [recorded coverage](validation/setup-recovery.md).
 
 ## Pinned development tools
 

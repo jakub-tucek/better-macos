@@ -152,7 +152,10 @@ struct SetupConfiguration: Codable, Equatable {
         case .quitGuard: return ["quitGuard.enabled": quitGuard, "quitGuard.duration": quitDuration]
         case .spaces: return ["animations.enabled": animations, "spaces.enabled": spaces, "spaces.speed": speed]
         case .clipboard: return ["clipboard.persistence": clipboardPersistence, "clipboard.days": clipboardDays, "clipboard.exclusions": clipboardExclusions]
-        case .windows: return ["windows.auto": windowsAutomatic, "windows.paused": windowsPaused, "windows.selected": windowsSelected, "windows.exclusions": windowsExclusions]
+        case .windows:
+            var values: [String: Any] = ["windows.auto": windowsAutomatic, "windows.paused": windowsPaused, "windows.selected": windowsSelected, "windows.exclusions": windowsExclusions]
+            if let windowsShortcuts { values["windows.shortcuts"] = windowsShortcuts }
+            return values
         case .monitors: return ["monitors.confirmDisable": confirmDisplays]
         case .arrangement: return ["arrangement.matchEdges": matchEdges]
         case .mouse: return ["mouse.proposedAcceleration": mouseAcceleration, "mouse.proposedTracking": mouseTracking]
@@ -166,6 +169,7 @@ struct SetupCheckpoint: Codable {
     var selected: [String]
     var configuration: SetupConfiguration
     var widgets: WidgetLayout
+    var step: String?
 }
 
 final class SetupDraft: ObservableObject {
@@ -191,6 +195,7 @@ final class SetupDraft: ObservableObject {
     private static let checkpointKey = "ui.setup.draft.v1"
     private var widgetsVisited = false
     private var checkpointing = false
+    private var preservingDraftOnClose = false
     private let suggestWidgetsOnFirstVisit: Bool
     var onDiscover: (SetupDraft) -> Void = { _ in }
     var onBluetoothPermission: () -> Void = {}
@@ -301,6 +306,7 @@ final class SetupDraft: ObservableObject {
         syncSelection()
     }
     @discardableResult func finish(using apply: (SetupDraft, @escaping ([String]) -> Void) -> Void) -> Bool {
+        onRetryPermissions()
         guard step == .review, !applying, unresolvedPermissions.isEmpty else { return false }
         applying = true
         apply(self) { [self] result in results = result; applying = false; step = .results }
@@ -308,9 +314,17 @@ final class SetupDraft: ObservableObject {
     }
     @discardableResult func cancel() -> Bool {
         guard !applying else { return false }
+        preservingDraftOnClose = false
         discardCheckpoint(); return true
     }
+    func saveForLater() {
+        guard !applying else { return }
+        saveCheckpoint(); preservingDraftOnClose = true
+    }
+    func allowClose() -> Bool { preservingDraftOnClose ? !applying : cancel() }
     func next() {
+        guard !applying else { return }
+        onRetryPermissions()
         if case .access(let module) = step, !accessGranted(for: module) { return }
         if case .configure(let module) = step, requiresAccess(for: module), !accessGranted(for: module) {
             step = .access(module); return
@@ -325,6 +339,7 @@ final class SetupDraft: ObservableObject {
         step = steps[index + 1]
     }
     func back() {
+        guard !applying else { return }
         guard let index = steps.firstIndex(of: step), index > 0 else { return }; step = steps[index - 1]
     }
     func copyDiscovery(_ model: DashboardModel) {
@@ -344,7 +359,7 @@ final class SetupDraft: ObservableObject {
         return value
     }
     func saveCheckpoint() {
-        let value = SetupCheckpoint(selected: selected.map(\.rawValue), configuration: configuration, widgets: widgets)
+        let value = SetupCheckpoint(selected: selected.map(\.rawValue), configuration: configuration, widgets: widgets, step: checkpointStep)
         if let data = try? JSONEncoder().encode(value) { defaults.set(data, forKey: Self.checkpointKey) }
     }
     func autosaveCheckpoint() {
@@ -352,14 +367,32 @@ final class SetupDraft: ObservableObject {
         saveCheckpoint()
     }
     func resumeCheckpoint() {
-        guard var saved = checkpoint else { return }
+        guard !applying, var saved = checkpoint else { return }
         saved.configuration.normalize(); saved.widgets.normalize()
         selected = Set(saved.selected.compactMap(AppModule.init(rawValue:)))
         saved.configuration.install(in: controls)
         windowsAutomatic = saved.configuration.windowsAutomatic; windowsPaused = saved.configuration.windowsPaused
         windowsSelected = saved.configuration.windowsSelected; windowsExclusions = saved.configuration.windowsExclusions
         windowsShortcuts = saved.configuration.windowsShortcuts ?? windowsShortcuts
-        widgets = saved.widgets; widgetsVisited = true; checkpointing = true; syncSelection(); step = .feature(Self.featureOrder[0])
+        widgets = saved.widgets; widgetsVisited = true; checkpointing = true; preservingDraftOnClose = false; syncSelection()
+        onRetryPermissions()
+        let restored = steps.first { Self.key(for: $0) == saved.step } ?? .feature(Self.featureOrder[0])
+        if case .configure(let module) = restored, !accessGranted(for: module) { step = .access(module) }
+        else if (restored == .review || restored == .widgets) && !unresolvedPermissions.isEmpty { step = .permissions }
+        else { step = restored }
+    }
+    private var checkpointStep: String { Self.key(for: step) }
+    private static func key(for step: Step) -> String {
+        switch step {
+        case .welcome: return "welcome"
+        case .feature(let module): return "feature:\(module.rawValue)"
+        case .access(let module): return "access:\(module.rawValue)"
+        case .configure(let module): return "configure:\(module.rawValue)"
+        case .permissions: return "permissions"
+        case .widgets: return "widgets"
+        case .review: return "review"
+        case .results: return "permissions"
+        }
     }
     func discardCheckpoint() { checkpointing = false; defaults.removeObject(forKey: Self.checkpointKey) }
     static func clearCheckpoint(defaults: UserDefaults = .standard) { defaults.removeObject(forKey: checkpointKey) }
@@ -446,22 +479,22 @@ struct SetupWizard: View {
             Divider()
             HStack {
                 if draft.step != .results {
-                    Button("Cancel") { if draft.cancel() { close() } }.buttonStyle(.plain).foregroundStyle(.secondary)
+                    Button("Cancel") { if draft.cancel() { close() } }.buttonStyle(.plain).foregroundStyle(.secondary).accessibilityIdentifier("setup.cancel")
                     if draft.step != .welcome { Button("Back") { draft.back() } }
-                    if draft.step != .welcome { Button("Save for later") { draft.saveCheckpoint(); close() } }
+                    if draft.step != .welcome { Button("Save for later") { draft.saveForLater(); close() }.accessibilityIdentifier("setup.saveLater") }
                 }
                 Spacer()
                 if draft.step == .results { Button("Close", action: close) }
-                else if draft.step == .review { Button("Finish") { draft.onRetryPermissions(); draft.finish(using: model.onFinishSetup) }.buttonStyle(.borderedProminent).disabled(!draft.unresolvedPermissions.isEmpty) }
+                else if draft.step == .review { Button("Finish") { draft.finish(using: model.onFinishSetup) }.buttonStyle(.borderedProminent).disabled(!draft.unresolvedPermissions.isEmpty).accessibilityIdentifier("setup.finish") }
                 else if case .feature(let module) = draft.step {
                     Button("Skip this feature") { draft.choose(module, enabled: false) }
-                    Button("Enable & configure") { draft.choose(module, enabled: true) }.buttonStyle(.borderedProminent)
+                    Button("Enable & configure") { draft.choose(module, enabled: true) }.buttonStyle(.borderedProminent).accessibilityIdentifier("setup.enable")
                 }
                 else if case .access(let module) = draft.step {
                     Button("Skip this feature") { draft.skipAccess(module) }
-                    Button("Continue") { draft.next() }.buttonStyle(.borderedProminent).disabled(!draft.accessGranted(for: module))
+                    Button("Continue") { draft.next() }.buttonStyle(.borderedProminent).disabled(!draft.accessGranted(for: module)).accessibilityIdentifier("setup.continue")
                 }
-                else if draft.step != .welcome { Button("Continue") { draft.next() }.buttonStyle(.borderedProminent).disabled(draft.step == .permissions && !draft.unresolvedPermissions.isEmpty) }
+                else if draft.step != .welcome { Button("Continue") { draft.next() }.buttonStyle(.borderedProminent).disabled(draft.step == .permissions && !draft.unresolvedPermissions.isEmpty).accessibilityIdentifier("setup.continue") }
             }.controlSize(.large).padding(24).disabled(draft.applying)
         }.frame(minWidth: 640, minHeight: 480)
             .background(Color(nsColor: .windowBackgroundColor))
@@ -534,8 +567,8 @@ struct SetupWizard: View {
                 welcomeRow("3", title: "Review and apply", detail: "Nothing in this draft changes your setup until you choose Finish.")
             }
             HStack {
-                Button("Let’s get started") { draft.next() }.buttonStyle(.borderedProminent)
-                Button("Easy setup · enable all") { draft.easySetup() }
+                Button("Let’s get started") { draft.next() }.buttonStyle(.borderedProminent).accessibilityIdentifier("setup.start")
+                Button("Easy setup · enable all") { draft.easySetup() }.accessibilityIdentifier("setup.easy")
                 Button("Not now", action: model.onSkipSetup)
             }.controlSize(.large).padding(.top, 8)
             Text("You can run setup again from Settings → General. Canceling keeps your current configuration.")
@@ -545,7 +578,7 @@ struct SetupWizard: View {
             if draft.hasCheckpoint {
                 DashboardCard {
                     Text("A saved draft is available. It is not applied automatically.")
-                    Button("Resume saved draft") { draft.resumeCheckpoint() }
+                    Button("Resume saved draft") { draft.resumeCheckpoint() }.accessibilityIdentifier("setup.resume")
                     Button("Discard saved draft") { draft.discardCheckpoint(); draft.objectWillChange.send() }
                 }
             }
@@ -657,7 +690,7 @@ struct SetupWizard: View {
                         outcomeIcon(outcome, enabled: draft.selected.contains(module))
                         switch outcome {
                         case .applied: EmptyView()
-                        default: Button("Review") { model.onOpenSettings(SettingsGroup.forFeature(module.dashboardFeature)) }
+                        default: Button("Review") { model.onOpenSettings(SettingsGroup.forFeature(module.dashboardFeature)) }.accessibilityIdentifier("setup.review.\(module.rawValue)")
                         }
                     }.padding(12).modifier(AppSurface())
                 }
@@ -699,10 +732,15 @@ struct SetupWizard: View {
             }
             Text(bluetooth ? "Lets Better macOS discover paired devices and connect the ones you choose. It does not pair new devices during setup." : "Lets Better macOS control supported windows and respond to your keyboard or screen-edge actions. Enable Better macOS in Privacy & Security → Accessibility.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if !bluetooth {
+                Text("Needed for: " + SetupDraft.featureOrder.filter { draft.requiresAccessibility(for: $0) }.map(\.title).joined(separator: ", "))
+                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
             if !granted {
                 HStack {
                     Button(bluetooth ? "Allow Bluetooth…" : "Open Accessibility settings…", action: bluetooth ? draft.onBluetoothPermission : model.onAccessibilitySettings)
-                    Button("Check again", action: draft.onRetryPermissions)
+                        .accessibilityIdentifier(bluetooth ? "setup.bluetooth" : "setup.accessibility")
+                    Button("Check again", action: draft.onRetryPermissions).accessibilityIdentifier(bluetooth ? "setup.checkBluetooth" : "setup.checkAccessibility")
                 }
                 Text("Grant access to continue, or skip this feature for now.").font(.caption).foregroundStyle(.secondary)
             }

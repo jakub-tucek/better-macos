@@ -54,6 +54,10 @@ documented in [the offline characterization](gesture-terminal-failures.md).
 
 ## Evidence index
 
+- [Setup recovery and lightweight native UI host](setup-recovery.md):
+  5,363 isolated checks and 44 native UI checks; simulated OS boundaries.
+  Full-suite gesture fixture remains blocked by its macOS 27 requirement.
+
 - [Feature-local registration and Links UI](feature-local-registration.md):
   5,310 isolated checks and supporting fixtures passed; full-suite gesture fixture
   remains blocked by its macOS 27 requirement on this macOS 26 host.

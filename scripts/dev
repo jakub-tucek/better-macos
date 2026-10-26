@@ -73,8 +73,12 @@ case "${1:-help}" in
         shift
         exec bash "$ROOT/scripts/diagnostics" "$@"
         ;;
+    ui-test)
+        shift
+        exec bash "$ROOT/Tests/ui-harness.sh" "$@"
+        ;;
     help|--help|-h)
-        echo "Usage: bash scripts/dev {bootstrap|build|lint|format-check|logs}"
+        echo "Usage: bash scripts/dev {bootstrap|build|lint|format-check|logs|ui-test}"
         echo "Checks never rewrite sources. Build does not require bootstrap."
         ;;
     *) fail "Unknown command '$1'; use bash scripts/dev help." ;;

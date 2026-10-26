@@ -327,7 +327,8 @@ private func runWindowShortcutAccessReturnTests() {
     defaults.set(true, forKey: "windows.shortcuts")
     let owner = WindowPositions(backend: backend, defaults: defaults, shortcuts: registration)
     var ready = true
-    let host = AppDelegate(windowPositions: owner, preferences: defaults, accessibilityCheck: { backend.permitted },
+    let model = DashboardModel()
+    let host = AppDelegate(windowPositions: owner, model: model, preferences: defaults, accessibilityCheck: { backend.permitted },
         controlStateSnapshot: { SystemControlLifecycle.State(watchdogReady: ready, displaySettling: false, layoutFresh: true) })
     owner.reconcile(ready: true, settled: true)
     expect(registration.starts == 0 && !owner.shortcutsActive, "Denied Accessibility leaves requested window shortcuts inactive")
@@ -349,6 +350,18 @@ private func runWindowShortcutAccessReturnTests() {
     owner.shortcutsEnabled = false
     host.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
     expect(registration.starts == 2 && !owner.shortcutsActive, "Permission refresh preserves an explicit shortcuts Off choice")
+    registration.succeeds = false
+    owner.shortcutsEnabled = true
+    expect(model.windowShortcutIssue != nil && model.statusNeedsAttention && model.widgetLayout.entries.isEmpty,
+           "Shortcut registration failures reach the global warning even without a widget")
+    model.errorMessage = "Unrelated issue"
+    registration.succeeds = true
+    model.onRetryWindowShortcuts()
+    expect(owner.shortcutsActive && model.windowShortcutIssue == nil && model.errorMessage == "Unrelated issue",
+           "Global shortcut retry clears its own issue without clearing unrelated failures")
+    backend.succeeds = false
+    owner.performShortcut(.left)
+    expect(model.windowShortcutIssue?.contains("could not reach") == true, "Failed window movement is visible in the global issue surface")
     owner.stop()
 }
 

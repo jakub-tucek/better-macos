@@ -15,6 +15,7 @@ final class WindowShortcutSession {
     private var originalFrames: [String: CGRect] = [:]
     private(set) var active = false
     private(set) var status = "Shortcuts are off."
+    private(set) var issue: String?
     var admitsAction: () -> Bool = { false }
     var isExcluded: (String) -> Bool = { _ in true }
     var beforeMove: () -> Void = {}
@@ -44,6 +45,7 @@ final class WindowShortcutSession {
         guard enabled, admitted else {
             if !admitted || active || attempted { invalidate() }
             status = enabled ? "Waiting for Accessibility access and stable displays." : "Shortcuts are off."
+            issue = enabled ? status : nil
             return
         }
         guard !attempted else { return }
@@ -56,6 +58,7 @@ final class WindowShortcutSession {
         guard generation == ticket else { registration.stop(); return }
         active = registered
         status = active ? "Ready · acts on the focused window." : "Shortcuts unavailable. Quit other window managers, then retry."
+        issue = active ? nil : status
     }
 
     func perform(_ action: WindowShortcutAction) {
@@ -71,13 +74,14 @@ final class WindowShortcutSession {
         do {
             guard let window = try backend.focusedWindow(), window.supported, !isExcluded(window.app),
                   ticket == generation, admitsPalette() else {
-                status = "Focus a supported window in an app that is not excluded."; return nil
+                reportIssue("Focus a supported window in an app that is not excluded."); return nil
             }
             let displays = backend.displays()
-            guard !displays.isEmpty else { status = "No available destination display."; return nil }
+            guard !displays.isEmpty else { reportIssue("No available destination display."); return nil }
             status = "Choose an action for the focused window."
+            issue = nil
             return Target(window: window, displays: displays, generation: ticket)
-        } catch { status = "Window discovery failed: \(error.localizedDescription)"; return nil }
+        } catch { reportIssue("Window discovery failed: \(error.localizedDescription)"); return nil }
     }
 
     func apply(_ action: WindowShortcutAction, to target: Target) -> Bool {
@@ -95,19 +99,19 @@ final class WindowShortcutSession {
         let window: PositionedWindow
         do {
             guard let focused = try backend.focusedWindow(), focused.supported, !isExcluded(focused.app) else {
-                status = "Focus a supported window in an app that is not excluded."; return false
+                reportIssue("Focus a supported window in an app that is not excluded."); return false
             }
             window = focused
-        } catch { status = "Window discovery failed: \(error.localizedDescription)"; return false }
+        } catch { reportIssue("Window discovery failed: \(error.localizedDescription)"); return false }
         let displays = backend.displays()
         if let target {
             guard window.token == target.window.token, window.app == target.window.app,
                   displays == target.displays else {
-                status = "The target window or displays changed. Reopen Window actions."; return false
+                reportIssue("The target window or displays changed. Reopen Window actions."); return false
             }
         }
         guard let frame = action.destination(for: window.frame, displays: displays, original: originalFrames[window.token]) else {
-            status = action == .restore ? "No original size saved for this window." : "No available destination display."; return false
+            reportIssue(action == .restore ? "No original size saved for this window." : "No available destination display."); return false
         }
         guard displays == backend.displays(), generation == ticket, admitted() else { return false }
         beforeMove()
@@ -119,10 +123,12 @@ final class WindowShortcutSession {
         if backend.moveFocused(window, to: frame) {
             if action == .restore { originalFrames.removeValue(forKey: window.token) }
             status = "\(action.title) applied."
+            issue = nil
             return true
         } else {
-            status = "Window could not reach the requested size or position. The app may limit resizing; try Restore original size."
+            reportIssue("Window could not reach the requested size or position. The app may limit resizing; try Restore original size.")
             return false
         }
     }
+    private func reportIssue(_ message: String) { status = message; issue = message }
 }

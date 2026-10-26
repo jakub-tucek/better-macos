@@ -446,6 +446,7 @@ try runActivityTests()
 try runUITests()
 try RegisteredFeatureTests.run()
 runScreenEdgeAccessTests()
+runSetupResumeTests()
 runQuitGuardAccessTests()
 try runClipboardTests()
 

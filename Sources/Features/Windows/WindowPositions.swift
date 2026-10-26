@@ -92,6 +92,8 @@ final class WindowPositions: ObservableObject {
     @Published private var shortcutsValue: Bool
     @Published private(set) var shortcutsActive = false
     @Published private(set) var shortcutStatus = "Shortcuts are off."
+    @Published private(set) var shortcutIssue: String?
+    var onShortcutStatusChange: () -> Void = {}
     var shortcutsEnabled: Bool {
         get { shortcutsValue }
         set {
@@ -169,6 +171,8 @@ final class WindowPositions: ObservableObject {
             guard let self else { return }
             self.shortcutsActive = self.shortcutSession.active
             self.shortcutStatus = self.shortcutSession.status
+            self.shortcutIssue = self.shortcutSession.issue
+            self.onShortcutStatusChange()
         }
     }
 

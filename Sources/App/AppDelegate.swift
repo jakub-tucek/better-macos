@@ -168,7 +168,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
           model.featureOwners = featureOwners
           awakeFeature.activity = activity
          awakePresentation.didPublish = { [weak self] in self?.refreshKeepAwakeStatus($0) }
-         configureActions()
+          configureActions()
+          bindWindowShortcutStatus()
           windowPositions?.acceptsActions = { [weak self] in self?.transactions.acceptsActions == true }
           windowPositions?.activity = activity
           clipboard?.acceptsActions = { [weak self] in self?.transactions.acceptsActions == true }
@@ -375,6 +376,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             guard let self, transactions.acceptsActions else { return }
             retryQuitGuard()
         }
+        model.onRetryWindowShortcuts = { [weak self] in
+            guard let self, transactions.acceptsActions else { return }
+            reconcileWindows()
+            windowPositions?.retryShortcuts()
+        }
         model.onCompactMenuBarChanged = { [weak self] enabled in
             guard let self, transactions.acceptsActions else { return }
             do { try menuBarSpacing.setEnabled(enabled) } catch { showError(error) }
@@ -514,7 +520,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func refreshStatusIndicator() {
         let description = model.statusNeedsAttention ? "Better macOS — attention needed" : (model.keepAwakeActive ? "Better macOS — keeping awake" : "Better macOS")
         item?.button?.image = NSImage(systemSymbolName: model.statusSymbol, accessibilityDescription: description)
-        item?.button?.toolTip = model.screenEdgesIssue ?? model.quitGuardIssue ?? model.errorMessage ?? description
+        item?.button?.toolTip = model.screenEdgesIssue ?? model.quitGuardIssue ?? model.windowShortcutIssue ?? model.errorMessage ?? description
     }
 
     private func refreshQuitGuard() {
@@ -558,6 +564,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             windowPositions = nil
         }
         model.windowPositions = windowPositions
+        bindWindowShortcutStatus()
         windowPositions?.onShowActions = { [weak self] in self?.showWindowActions(fromPopup: false) }
         windowPositions?.onDismissActions = { [weak self] in
             self?.windowActionRequest = UUID()
@@ -983,7 +990,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard sender === setupWindow else { return true }
-        return activeSetupDraft?.cancel() ?? true
+        return activeSetupDraft?.allowClose() ?? true
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -993,8 +1000,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func configureSetup(_ draft: SetupDraft) {
         draft.onRetryPermissions = { [weak self, weak draft] in
-            guard self?.actionHost != nil, let draft else { return }
-            draft.accessibilityGranted = AXIsProcessTrusted()
+            guard let self, actionHost != nil, let draft else { return }
+            draft.accessibilityGranted = accessibilityCheck()
             draft.bluetoothGranted = CBManager.authorization == .allowedAlways
         }
         draft.onBluetoothPermission = { [weak self] in
@@ -1016,7 +1023,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             guard let self, transactions.acceptsActions else { return }
             draft.discoveryStatus = "Reading available devices…"
             let readAudio = draft.selected.contains(.audio)
-            let readBluetooth = draft.selected.contains(.bluetooth) && CBManager.authorization == .allowedAlways
+            let wantsBluetooth = draft.selected.contains(.bluetooth)
+            let readBluetooth = wantsBluetooth && CBManager.authorization == .allowedAlways
             recoveryQueue.async { [weak self, weak draft] in
                 guard let self else { return }
                 var messages: [String] = []
@@ -1028,7 +1036,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 if readBluetooth, let path = CommandRunner.find("blueutil") {
                     do { devices = try BluetoothBackend(runner: commandRunner, blueutil: path, audioTool: nil).devices() }
                     catch { messages.append(error.localizedDescription) }
-                } else if !readBluetooth { messages.append("Bluetooth discovery needs access; request it in the permissions step, then return here.") }
+                } else if wantsBluetooth && !readBluetooth { messages.append("Bluetooth discovery needs access; request it in the permissions step, then return here.") }
                 DispatchQueue.main.async { [weak self, weak draft] in
                     guard self?.actionHost != nil, let draft else { return }
                     if let audioDevices { draft.controls.audioDevices = audioDevices }
@@ -1088,7 +1096,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 setupDesktopReconciliationPending = false
                 _ = model.onSaveWidgets(requestedWidgets)
                 uiStore.complete(); draft.discardCheckpoint()
-                completion(results + ["Quick-action layout saved. Your selected policies are ready; no timed awake session, window capture, or pointer Apply was started."])
+                completion(results + ["Quick-action layout saved. Review feature results above for anything needing attention. No timed awake session, window capture, or pointer Apply was started."])
                 return
             }
             let module = AppModule.allCases[index]
@@ -1357,6 +1365,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidBecomeActive(_ notification: Notification) {
         refreshLoginStatus()
         if transactions.acceptsActions { updateScreenEdges(); retryQuitGuard(); reconcileWindows() }
+        activeSetupDraft?.onRetryPermissions()
     }
 
     private func refreshLoginStatus() {
@@ -1393,6 +1402,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func reconcileWindows() {
         reconcileWindows(state: controlState)
+    }
+
+    private func bindWindowShortcutStatus() {
+        windowPositions?.onShortcutStatusChange = { [weak self] in self?.refreshWindowShortcutStatus() }
+        refreshWindowShortcutStatus()
+    }
+
+    private func refreshWindowShortcutStatus() {
+        model.windowShortcutIssue = windowPositions?.shortcutIssue
+        model.windowShortcutNeedsAccess = windowPositions?.shortcutsEnabled == true && windowPositions?.permitted == false
     }
 
     func reconcileWindows(state: SystemControlLifecycle.State) {

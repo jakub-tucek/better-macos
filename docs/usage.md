@@ -7,6 +7,14 @@ instructions, not a new live acceptance run. [Known validation gaps](validation/
 
 ## Start here
 
+Setup's **Save for later** keeps your draft and current step. **Resume saved draft**
+rechecks permissions before continuing; **Cancel** discards the draft. Changes stay
+staged until **Finish**. Accessibility checks cover Windows, matched screen edges,
+Hold to quit and desktop switching independently of Bluetooth.
+
+Window-shortcut failures now appear in global alerts and the menu-bar warning.
+Use **Retry shortcuts** after resolving a conflict, or open **Window settings…**.
+
 ### Better macOS identity
 
 The app, executable, repository and preference domain use the Better macOS name.

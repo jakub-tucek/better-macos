@@ -189,6 +189,15 @@ struct SafetyAlerts: View {
                 Button("Recovery diagnostics") { model.onOpenSettings(.general) }
             }
             if let message = model.errorMessage { Text(message).foregroundStyle(.orange).textSelection(.enabled) }
+            if let issue = model.windowShortcutIssue {
+                Label("Window actions: " + issue, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("issues.windowShortcuts")
+                if model.windowShortcutNeedsAccess { Button("Open Accessibility settings…", action: model.onAccessibilitySettings) }
+                HStack {
+                    Button("Retry shortcuts", action: model.onRetryWindowShortcuts).accessibilityIdentifier("issues.retryWindowShortcuts")
+                    Button("Window settings…") { model.onOpenSettings(.displays) }.accessibilityIdentifier("issues.windowSettings")
+                }
+            }
             if let issue = model.quitGuardIssue {
                 Label(issue, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
