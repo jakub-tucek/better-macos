@@ -286,7 +286,7 @@ private func runBuiltinCatalogTests() {
     expect(!shortcuts.contains { $0.hasPrefix("q:") }, "the main menu adds no ⌘Q that could bypass Hold to quit or host quit approval")
     expect(BuiltinFeatures.definitions.map(\.module) == AppModule.allCases, "catalog registers every stable feature exactly once without changing setup order")
     expect(AppModule.allCases.map(\.rawValue) == ["monitors", "arrangement", "bluetooth", "audio", "spaces", "menuBar", "quitGuard", "keepAwake", "windows", "clipboard", "mouse", "links", "battery"], "existing feature persistence IDs remain stable with Battery appended")
-    let groups: [(SettingsGroup, [AppModule])] = [(.general, []), (.quickActions, []), (.displays, [.monitors, .arrangement, .windows]), (.sound, [.audio, .bluetooth]), (.input, [.quitGuard, .mouse]), (.system, [.spaces, .menuBar, .keepAwake, .battery]), (.clipboard, [.clipboard]), (.links, [.links])]
+    let groups: [(SettingsGroup, [AppModule])] = [(.general, []), (.quickActions, []), (.displays, [.monitors, .arrangement, .windows]), (.sound, [.audio, .bluetooth]), (.input, [.quitGuard, .mouse]), (.system, [.spaces, .menuBar, .keepAwake]), (.clipboard, [.clipboard]), (.links, [.links]), (.battery, [.battery])]
     for (group, modules) in groups { expect(group.modules == modules, "catalog preserves Settings order for \(group.rawValue)") }
     let destinations: [DashboardTab] = [.monitors, .monitors, .bluetooth, .audio, .spaces, .menuBar, .keyboard, .keepAwake, .windows, .clipboard, .mouse, .links, .battery]
     expect(AppModule.allCases.map(\.dashboardFeature) == destinations, "catalog preserves shared display and keyboard navigation")
@@ -443,9 +443,34 @@ func renderReleaseUIFixtures(directory: String? = nil) throws {
         model.enabledModules.insert(.battery)
         model.batterySnapshot = BatterySnapshot(availability: .available, percent: 80, externalPower: true, charging: false,
                                                 condition: "Good", cycles: 58, temperature: 35.1, sampledAt: Date(timeIntervalSince1970: 100))
-        let battery = mount(AnyView(BatteryStatusView(snapshot: model.batterySnapshot).padding(20)
-            .frame(maxWidth: .infinity, maxHeight: .infinity).background(Color(nsColor: .windowBackgroundColor))), dark: dark, width: 400, height: 240)
-        try snapshot(battery, "battery-details-\(suffix)"); battery.orderOut(nil)
+        model.batterySnapshot.adapterWatts = 20.5; model.batterySnapshot.adapterRatedWatts = 65
+        model.batterySnapshot.batteryWatts = 0; model.batterySnapshot.systemWatts = 20.5
+        model.batterySnapshot.voltage = 12.2; model.batterySnapshot.amperage = 0
+        model.settingsGroup = .battery
+        for width: CGFloat in [680, 1000] {
+            let battery = mount(AnyView(SettingsView(model: model)), dark: dark, width: width, height: 820)
+            try snapshot(battery, "battery-details-\(Int(width))-\(suffix)"); battery.orderOut(nil)
+        }
+        let baseBattery = model.batterySnapshot
+        for scenario in ["charging", "discharging", "assisting", "unknown", "absent"] {
+            model.batterySnapshot = baseBattery
+            switch scenario {
+            case "charging":
+                model.batterySnapshot.charging = true; model.batterySnapshot.batteryWatts = 24
+                model.batterySnapshot.adapterWatts = 40; model.batterySnapshot.systemWatts = 16
+                model.batterySnapshot.amperage = 2
+            case "discharging", "assisting":
+                model.batterySnapshot.externalPower = scenario == "assisting"
+                model.batterySnapshot.adapterWatts = scenario == "assisting" ? 20 : 0
+                model.batterySnapshot.batteryWatts = -12; model.batterySnapshot.amperage = -1
+                model.batterySnapshot.systemWatts = scenario == "assisting" ? 32 : 12
+            case "unknown": model.batterySnapshot = BatterySnapshot(availability: .available)
+            default: model.batterySnapshot = BatterySnapshot(availability: .absent)
+            }
+            let battery = mount(AnyView(SettingsView(model: model)), dark: dark, width: 1000, height: 820)
+            try snapshot(battery, "battery-\(scenario)-\(suffix)"); battery.orderOut(nil)
+        }
+        model.batterySnapshot = baseBattery
         model.settingsGroup = .general
         let general = mount(AnyView(SettingsView(model: model)), dark: dark)
         try snapshot(general, "settings-general-\(suffix)"); general.orderOut(nil)
@@ -1224,6 +1249,10 @@ private func runNativeUIInteractionTests() {
            "rejected production Done retains the editable draft instead of losing it during quit admission")
     popup.cancel()
 
+    model.onOpenSettings(SettingsGroup.forFeature(.battery))
+    expect(UILaunchRoute.launch(arguments: ["--show-battery"]) == .settings(.battery), "Battery launch flag opens its dedicated details page")
+    expect(model.settingsGroup.modules == [.battery] && presented.last?.title == "Better macOS Settings",
+           "Battery widget details route opens Battery directly rather than unrelated System controls")
     model.onOpenSettings(.quickActions)
     let settings = presented.last!
     let content = settings.contentViewController

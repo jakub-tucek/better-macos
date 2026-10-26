@@ -22,3 +22,32 @@ No valid signing identities were available at validation time. Ad-hoc test build
 do not establish installed-app acceptance. Desktop/no-battery behavior, unavailable
 metrics and lifecycle transitions have isolated coverage; live VoiceOver and broader
 hardware acceptance remain open.
+
+## Direct details and power flow · 2026-10-26
+
+Follow-up based on `6ff4146`. The widget header routed to the System group, whose
+first controls were unrelated to Battery. `build/battery-details-red.log` records
+the failing production host-route assertion. Battery now owns a dedicated Settings
+category; the header arrow, explicit Battery details action and `--show-battery`
+launch route target it. Feature-specific destinations avoid relying on a feature's
+position inside a shared scrolling category.
+
+The read-only backend decodes SystemPowerIn/SystemLoad as milliwatts and battery
+voltage/current as millivolts/milliamps. Signed current handles unsigned IOKit
+two's-complement values. Adapter rating is displayed separately, never substituted
+for live input. Missing/invalid data and negative derived consumption stay unknown;
+unplugged snapshots ignore stale adapter telemetry. Refresh interval is five seconds.
+
+`build/battery-details-test.log`: **5,215 isolated checks**, supporting suites and
+13 installer scenarios passed with explicit ad-hoc signing. Pinned lint/format and
+whitespace checks passed. Regression coverage includes the host destination, launch
+flag, charging, discharging, adapter-assisted discharge, telemetry units, missing
+values, rating-only input and contradictory power balance.
+
+Light/dark fixtures include 680/1000-point Settings widths, charge/discharge,
+adapter-assisted discharge, absent hardware and unavailable metrics. Inspected
+snapshots show visible Battery navigation, power cards and wrapped detail text;
+the narrow view scrolls for further details. A local read-only observation reported
+20.492 W input/system load, a separate 65 W adapter rating and zero battery current.
+This is not wall-meter calibration or cross-model acceptance. Live VoiceOver and
+unplug/replug behavior still require hardware acceptance.

@@ -79,7 +79,7 @@ struct DashboardNavigation: Equatable {
             ("--show-menu-bar", .menuBar), ("--show-keyboard", .keyboard),
             ("--show-keep-awake", .keepAwake), ("--show-mouse", .mouse),
             ("--show-audio", .audio), ("--show-clipboard", .clipboard), ("--show-windows", .windows),
-            ("--show-links", .links)
+            ("--show-links", .links), ("--show-battery", .battery)
         ]
         for (flag, feature) in flags where arguments.contains(flag) { result.show(feature) }
         return result
@@ -475,8 +475,8 @@ struct DashboardView: View {
                         else if model.enabledModules.contains(.links), let links = model.links { LinksSettingsView(module: links) }
                         else { disabledModule("Links") }
                     case .battery:
-                        if draftMode { Text("After Finish, see battery charge, power source, condition, cycle count and temperature in System settings or the Battery widget. No extra permissions or charging changes.") }
-                        else if model.enabledModules.contains(.battery) { BatteryStatusView(snapshot: model.batterySnapshot) }
+                        if draftMode { Text("After Finish, see live power flow, charge, condition, cycle count and temperature in Battery settings or the Battery widget. No extra permissions or charging changes.") }
+                        else if model.enabledModules.contains(.battery) { BatteryDetailsView(snapshot: model.batterySnapshot) }
                         else { disabledModule("Battery") }
                     }
         }

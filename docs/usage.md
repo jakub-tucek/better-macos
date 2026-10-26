@@ -57,7 +57,8 @@ can refuse an action rather than redirect it.
 | Displays | Monitor switching, arrangement, matched edges, window layouts and shortcuts |
 | Sound & connections | Output/microphone preferences, Bluetooth targets and protection |
 | Input | Hold to quit and explicit Mouse Apply/Restore |
-| System | Animations, menu-bar controls, Keep awake defaults/app rules, Battery |
+| System | Animations, menu-bar controls, Keep awake defaults/app rules |
+| Battery | Power-flow estimates, charge, condition, cycles, temperature and electrical readings |
 | Clipboard | Capture, exclusions, retention, privacy, storage recovery |
 | Links | Default browser, fallback browser, ordered routing rules, test link |
 
@@ -171,16 +172,26 @@ snapping, custom bindings, full-screen control, or Space assignments are provide
 
 ## Battery monitoring
 
-**System → Battery** shows built-in battery charge, power source, charging state,
+**Settings → Battery** shows built-in battery charge, power source, charging state,
 condition, cycle count and temperature where macOS exposes them. Add **Battery** in
 Quick actions for a compact charge/status widget; expand it for details. It is not
-pinned automatically. Monitoring refreshes every 30 seconds while enabled and the
+pinned automatically. **Battery details** and the widget header arrow open the Battery
+page directly. `--show-battery` opens that same page on launch.
+Monitoring refreshes every five seconds while enabled and the
 app is running. Disabling the module stops monitoring and clears the current reading.
 
 Battery is read-only: no charge limits, discharge commands, power-setting writes,
 extra permissions or stored history. Missing readings show **Unavailable**; desktop
 Macs show **No built-in battery**. “Not charging” reports the observed state without
 guessing whether a charge limit, temperature or another system policy caused it.
+
+The power-flow diagram separates live adapter input from its rated maximum. Battery
+power comes from voltage × signed current: positive means charging, negative means
+supplying the Mac. System consumption uses reported power telemetry when available,
+otherwise adapter input minus battery power. These are estimates, not wall-meter
+measurements; sensors can update at different times. Missing or contradictory readings
+stay unavailable. Unplugging discards stale adapter telemetry. A battery can supply
+power while an adapter is connected; the diagram shows both sources in that case.
 
 ## Clipboard privacy and retention
 

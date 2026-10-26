@@ -70,10 +70,12 @@ Cleanup describes the relevant owner and path, not proof of live acceptance.
 
 ### Battery · `battery`
 
-- **Owner/UI:** `Sources/Features/Battery/BatteryModule.swift`; System settings and optional Battery widget.
+- **Owner/UI:** `Sources/Features/Battery/BatteryModule.swift`; dedicated Battery settings and optional Battery widget.
 - **Reads:** IOKit power-source descriptions for the internal battery, plus optional
-  AppleSmartBattery cycle count and temperature. Unknown metrics remain unavailable.
-- **Lifecycle:** immediate snapshot then a 30-second timer; disable/quit invalidates
+  AppleSmartBattery cycle count, temperature, voltage/current, adapter rating and
+  power telemetry. Unknown metrics remain unavailable; ratings never substitute for
+  measured power. System draw can be derived from adapter input minus battery power.
+- **Lifecycle:** immediate snapshot then a five-second timer; disable/quit invalidates
   the timer and clears the reading. No writes, helper, history, or sleep assertions.
 - **Checks:** injected readings and pure decoding tests in `Tests/BatteryTests.swift`;
   light/dark presentation fixtures in `Tests/UITests.swift`.

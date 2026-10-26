@@ -4,6 +4,7 @@ import SwiftUI
 enum SettingsGroup: String, CaseIterable, Identifiable {
     case general = "General", quickActions = "Quick actions", displays = "Displays"
     case sound = "Sound & connections", input = "Input", system = "System", clipboard = "Clipboard", links = "Links"
+    case battery = "Battery"
     var id: String { rawValue }
     var symbol: String {
         switch self {
@@ -15,6 +16,7 @@ enum SettingsGroup: String, CaseIterable, Identifiable {
         case .system: return "slider.horizontal.3"
         case .clipboard: return "clipboard"
         case .links: return "arrow.triangle.branch"
+        case .battery: return "battery.100percent"
         }
     }
     var modules: [AppModule] { BuiltinFeatures.modules(in: self) }
@@ -28,6 +30,7 @@ enum SettingsGroup: String, CaseIterable, Identifiable {
         case .system: return "Control sleep, animations, and the menu bar."
         case .clipboard: return "Choose what to capture and how long to keep it."
         case .links: return "Send each web link to the right browser or profile."
+        case .battery: return "Live power flow and battery details. Read-only."
         }
     }
     static func forFeature(_ feature: DashboardTab) -> SettingsGroup {
@@ -616,7 +619,9 @@ struct QuickWidget: View {
                     case .windows: windows
                     case .clipboard: clipboard
                     case .bluetooth: bluetooth
-                    case .battery: BatteryStatusView(snapshot: model.batterySnapshot, expanded: entry.expanded)
+                    case .battery:
+                        BatteryStatusView(snapshot: model.batterySnapshot, expanded: entry.expanded)
+                        AppActionRow(title: "Battery details", symbol: "arrow.up.right", action: { model.onOpenSettings(.battery) })
                     }
                 }
             }
@@ -951,7 +956,7 @@ struct SettingsCategoryNavigation: NSViewRepresentable {
         control.spacing = 6
         control.setAccessibilityLabel("Settings categories")
         for (index, group) in SettingsGroup.allCases.enumerated() {
-            let button = SettingsTabButton(title: group == .sound ? "Sound" : group.rawValue,
+            let button = SettingsTabButton(title: group == .sound ? "Sound" : group == .quickActions ? "Actions" : group.rawValue,
                                            target: context.coordinator, action: #selector(Coordinator.select(_:)))
             button.tag = index
             button.isBordered = false
