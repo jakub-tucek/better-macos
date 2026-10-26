@@ -107,6 +107,8 @@ struct QuitHUD: View {
 
 final class QuitGuard {
     private let defaults: UserDefaults
+    private let permissionCheck: () -> Bool
+    private let makeTap: (UnsafeMutableRawPointer) -> CFMachPort?
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
     private var timer: Timer?
@@ -131,29 +133,29 @@ final class QuitGuard {
     }
     private var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
 
-    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
-
-    func setEnabled(_ enabled: Bool) throws {
-        if enabled { try start() } else { stop() }
-        defaults.set(enabled, forKey: "quitGuard.enabled")
-        onChange?()
+    init(defaults: UserDefaults = .standard, permissionCheck: @escaping () -> Bool = { AXIsProcessTrusted() },
+         makeTap: @escaping (UnsafeMutableRawPointer) -> CFMachPort? = QuitGuard.makeSystemTap) {
+        self.defaults = defaults; self.permissionCheck = permissionCheck; self.makeTap = makeTap
     }
 
-    func startIfEnabled() throws { if enabled { try start() } }
+    func setEnabled(_ enabled: Bool) throws {
+        defaults.set(enabled, forKey: "quitGuard.enabled")
+        defer { onChange?() }
+        if enabled { try start() } else { stop() }
+    }
+
+    func startIfEnabled() throws {
+        guard enabled else { return }
+        if !permissionCheck() { stop() }
+        try start()
+    }
 
     private func start() throws {
         guard !isRunning else { return }
         stop()
-        guard AXIsProcessTrusted() else { throw ToggleError(message: "Hold to quit requires Accessibility access. Grant access, then enable it again.") }
-        let types: [CGEventType] = [.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown]
-        let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
-        guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
-                                         eventsOfInterest: mask, callback: { _, type, event, context in
-            guard let context else { return Unmanaged.passUnretained(event) }
-            let owner = Unmanaged<QuitGuard>.fromOpaque(context).takeUnretainedValue()
-            return owner.handle(type, event: event) ? nil : Unmanaged.passUnretained(event)
-        }, userInfo: Unmanaged.passUnretained(self).toOpaque()) else {
-            throw ToggleError(message: "Could not enable Hold to quit. Check Accessibility access.")
+        guard permissionCheck() else { throw ToggleError(message: "Hold to quit is waiting for Accessibility access. It will retry when you return to Better macOS.") }
+        guard let tap = makeTap(Unmanaged.passUnretained(self).toOpaque()) else {
+            throw ToggleError(message: "macOS could not start the Hold to quit keyboard listener. Retry, or restart Better macOS if access was just changed.")
         }
         guard let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) else {
             CFMachPortInvalidate(tap)
@@ -169,6 +171,17 @@ final class QuitGuard {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.cancel() })
         }
         onChange?()
+    }
+
+    static func makeSystemTap(context: UnsafeMutableRawPointer) -> CFMachPort? {
+        let types: [CGEventType] = [.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown]
+        let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
+        return CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
+                                         eventsOfInterest: mask, callback: { _, type, event, context in
+            guard let context else { return Unmanaged.passUnretained(event) }
+            let owner = Unmanaged<QuitGuard>.fromOpaque(context).takeUnretainedValue()
+            return owner.handle(type, event: event) ? nil : Unmanaged.passUnretained(event)
+        }, userInfo: context)
     }
 
     private static func isCommandOnly(_ flags: CGEventFlags) -> Bool {

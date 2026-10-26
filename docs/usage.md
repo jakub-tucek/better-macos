@@ -84,6 +84,11 @@ and the menu-bar icon shows a warning. Returning to the app rechecks access with
 bypassing watchdog/display readiness. An enabled but stale macOS entry may need
 toggling off/on or removing and re-adding after an ad-hoc rebuild.
 
+Hold to quit also keeps its requested On choice while Accessibility is missing.
+Enabling it opens Accessibility settings; returning to Better macOS retries the
+keyboard listener automatically. You do not need to toggle Hold to quit off/on.
+Its warning clears when the listener starts or you explicitly turn the feature off.
+
 Popup **Edit** supports Add, ordering, compact/expanded presentation, Remove, and
 Restore suggested. **Done** saves; **Cancel** discards the draft. Recovery controls
 and an active awake session's Stop remain reachable without widgets. Clipboard

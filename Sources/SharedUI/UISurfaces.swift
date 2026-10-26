@@ -189,6 +189,12 @@ struct SafetyAlerts: View {
                 Button("Recovery diagnostics") { model.onOpenSettings(.general) }
             }
             if let message = model.errorMessage { Text(message).foregroundStyle(.orange).textSelection(.enabled) }
+            if let issue = model.quitGuardIssue {
+                Label(issue, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                if model.quitGuardNeedsAccess { Button("Open Accessibility settings…", action: model.onAccessibilitySettings) }
+                Button("Check Hold to quit again", action: model.onRetryQuitGuard)
+            }
             if let issue = model.screenEdgesIssue {
                 Label(issue, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)

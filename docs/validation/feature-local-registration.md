@@ -65,3 +65,22 @@ this is not proof of the GUI process's TCC attribution or the cause of a stale g
 No macOS permission entry was reset or changed by these checks. Live grant repair,
 event-tap activation, keyboard/VoiceOver acceptance and the existing macOS 27
 full-suite gesture gate remain open.
+
+## Hold to quit permission recovery
+
+The owner previously saved `quitGuard.enabled` only after listener startup, losing
+the requested On choice when permission was denied. Foreground activation also
+had no Hold to quit retry. `build/quit-access-red.log` reproduces the lost request.
+The owner now saves intent before activation; the host opens Accessibility on an
+explicit blocked enable and retries the retained owner on return. Dedicated status
+distinguishes permission denial from listener failure and preserves unrelated errors.
+
+`build/quit-access-test.log` passed **5,338 isolated checks**, supporting suites,
+build/packaging fixtures and 13 installer scenarios through the partial pipeline.
+Injected permission checks and tap factories verify denied/granted transitions,
+saved intent, automatic host retry, explicit disable, and warning ownership without
+installing a real event tap. An intermediate run exposed unnecessary runtime-status
+writes from foreground checks with no owner; the retry now requires a loaded owner,
+and the existing login preference-immutability regression passes. Pinned lint,
+format and whitespace checks passed. Native TCC grant repair and keyboard listener
+acceptance remain unverified; the existing full-suite OS blocker remains.

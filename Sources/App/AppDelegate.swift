@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let makeMenuBar: () -> MenuBarModule
     private var menuBar: MenuBarModule?
     private var quitGuard: QuitGuard?
+    private let makeQuitGuard: () -> QuitGuard
     private var windowPositions: WindowPositions?
     private let windowActionPalette = WindowActionPaletteController()
     private let keepAwakePalette = KeepAwakePaletteController()
@@ -105,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
      init(commandRunner: CommandRunning = CommandRunner(), spaces: SpacesModule? = nil, windowPositions: WindowPositions? = nil, clipboard: ClipboardModule? = nil, mouseLifecycle: MouseLifecycle? = nil, model: DashboardModel = DashboardModel(), preferences: UserDefaults = .standard,
           featureFactories: [AppModule: FeatureOwners.Factory] = [:],
+          makeQuitGuard: (() -> QuitGuard)? = nil,
           accessibilityCheck: @escaping () -> Bool = { AXIsProcessTrusted() },
           openAccessibility: @escaping () -> Void = {
               _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
@@ -125,6 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
           terminationReply: @escaping (NSApplication, Bool) -> Void = { $0.reply(toApplicationShouldTerminate: $1) }) {
          self.transactions = transactions
           self.accessibilityCheck = accessibilityCheck
+          self.makeQuitGuard = makeQuitGuard ?? { QuitGuard(defaults: preferences, permissionCheck: accessibilityCheck) }
           self.openAccessibility = openAccessibility
          self.loginService = loginService
           self.diagnostics = diagnostics
@@ -362,14 +365,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         awakePresentation.bind(awakeFeature)
         model.onQuitGuardChanged = { [weak self] enabled in
             guard let self, transactions.acceptsActions else { return }
-            do { try quitGuard?.setEnabled(enabled) } catch { showError(error) }
+            do { try quitGuard?.setEnabled(enabled); model.quitGuardIssue = nil }
+            catch { model.quitGuardIssue = error.localizedDescription }
             refreshQuitGuard()
+            if enabled && model.quitGuardNeedsAccess { openAccessibility() }
         }
         model.onQuitGuardDurationChanged = { [weak self] in self?.actionHost?.quitGuard?.duration = $0 }
         model.onRetryQuitGuard = { [weak self] in
             guard let self, transactions.acceptsActions else { return }
-            do { try quitGuard?.startIfEnabled() } catch { showError(error) }
-            refreshQuitGuard()
+            retryQuitGuard()
         }
         model.onCompactMenuBarChanged = { [weak self] enabled in
             guard let self, transactions.acceptsActions else { return }
@@ -510,14 +514,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func refreshStatusIndicator() {
         let description = model.statusNeedsAttention ? "Better macOS — attention needed" : (model.keepAwakeActive ? "Better macOS — keeping awake" : "Better macOS")
         item?.button?.image = NSImage(systemSymbolName: model.statusSymbol, accessibilityDescription: description)
-        item?.button?.toolTip = model.screenEdgesIssue ?? model.errorMessage ?? description
+        item?.button?.toolTip = model.screenEdgesIssue ?? model.quitGuardIssue ?? model.errorMessage ?? description
     }
 
     private func refreshQuitGuard() {
         model.quitGuardEnabled = quitGuard?.enabled ?? false
         model.quitGuardActive = quitGuard?.isRunning ?? false
         model.quitGuardDuration = quitGuard?.duration ?? 3
+        model.quitGuardNeedsAccess = model.quitGuardEnabled && !accessibilityCheck()
+        if !model.quitGuardEnabled || model.quitGuardActive { model.quitGuardIssue = nil }
         publishModuleStatus()
+    }
+
+    private func retryQuitGuard() {
+        guard transactions.acceptsActions, let quitGuard else { return }
+        do { try quitGuard.startIfEnabled(); model.quitGuardIssue = nil; moduleFailures.removeValue(forKey: .quitGuard) }
+        catch { model.quitGuardIssue = error.localizedDescription }
+        refreshQuitGuard()
     }
 
     private func refreshMenuBar() {
@@ -587,7 +600,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         awakeFeature.reconcile(enabled: modules.enabled.contains(.keepAwake))
         if modules.enabled.contains(.quitGuard) {
             if quitGuard == nil {
-                let module = QuitGuard(defaults: preferences)
+                let module = makeQuitGuard()
                 quitGuard = module
                 module.onChange = { [weak self] in self?.refreshQuitGuard() }
                 module.onError = { [weak self] error in
@@ -595,7 +608,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     self?.model.tab = .keyboard
                     self?.showDashboard()
                 }
-                do { try module.startIfEnabled() } catch { moduleFailures[.quitGuard] = error.localizedDescription; showError(error) }
+                retryQuitGuard()
             }
         } else {
             quitGuard?.onChange = nil
@@ -1343,7 +1356,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationDidBecomeActive(_ notification: Notification) {
         refreshLoginStatus()
-        if transactions.acceptsActions { updateScreenEdges() }
+        if transactions.acceptsActions { updateScreenEdges(); retryQuitGuard() }
     }
 
     private func refreshLoginStatus() {

@@ -132,7 +132,9 @@ final class DashboardModel: ObservableObject {
     @Published var screenEdgesNeedsAccess = false
     @Published var screenEdgesIssue: String?
     var onCheckScreenEdgeAccess: () -> Void = {}
-    var statusNeedsAttention: Bool { screenEdgesIssue != nil || errorMessage != nil || keepAwakeProtectionFailed }
+    @Published var quitGuardNeedsAccess = false
+    @Published var quitGuardIssue: String?
+    var statusNeedsAttention: Bool { screenEdgesIssue != nil || quitGuardIssue != nil || errorMessage != nil || keepAwakeProtectionFailed }
     var statusSymbol: String { statusNeedsAttention ? "exclamationmark.triangle.fill" : (keepAwakeActive ? DashboardTab.keepAwake.symbol : "slider.horizontal.3") }
     @Published var activeMonitorCount = 0
     @Published var displaySupported = false
