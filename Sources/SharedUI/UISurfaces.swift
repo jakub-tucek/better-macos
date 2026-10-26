@@ -189,6 +189,16 @@ struct SafetyAlerts: View {
                 Button("Recovery diagnostics") { model.onOpenSettings(.general) }
             }
             if let message = model.errorMessage { Text(message).foregroundStyle(.orange).textSelection(.enabled) }
+            if let issue = model.screenEdgesIssue {
+                Label(issue, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                if model.screenEdgesNeedsAccess {
+                    Text("If Better macOS is already enabled there, switch it off and on. If access still fails after a rebuild, remove the old entry and add the app from Applications again.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Open Accessibility settings…", action: model.onAccessibilitySettings)
+                }
+                Button("Check again", action: model.onCheckScreenEdgeAccess)
+            }
             if model.animationRecoveryRequired { Button("Restore original animations", action: model.onRestoreAnimations).disabled(model.animationsBusy) }
             if model.menuBarRecoveryRequired { Button("Restore menu-bar spacing", action: model.onRestoreMenuBarSpacing) }
             if model.mouseRecoveryRequired { Button("Retry mouse restoration", action: model.onRestoreMouse) }

@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Combine
 import CoreBluetooth
 import os
 
@@ -98,9 +99,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var needsDisplayRecovery: Bool { displayRecoveryPending() || rollbackUUID != nil }
     var setupSession: SetupDraft? { activeSetupDraft }
     private let terminationReply: (NSApplication, Bool) -> Void
+    private let accessibilityCheck: () -> Bool
+    private let openAccessibility: () -> Void
+    private var statusObservation: AnyCancellable?
 
      init(commandRunner: CommandRunning = CommandRunner(), spaces: SpacesModule? = nil, windowPositions: WindowPositions? = nil, clipboard: ClipboardModule? = nil, mouseLifecycle: MouseLifecycle? = nil, model: DashboardModel = DashboardModel(), preferences: UserDefaults = .standard,
           featureFactories: [AppModule: FeatureOwners.Factory] = [:],
+          accessibilityCheck: @escaping () -> Bool = { AXIsProcessTrusted() },
+          openAccessibility: @escaping () -> Void = {
+              _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
+              if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") { NSWorkspace.shared.open(url) }
+          },
           makeAudio: (() -> AudioModule)? = nil, makeKeepAwake: (() -> KeepAwakeModule)? = nil, makeBluetooth: (() -> BluetoothModule)? = nil,
           makeMenuBar: (() -> MenuBarModule)? = nil, menuBarSpacing: MenuBarSpacing? = nil, animations: AnimationPreferences? = nil,
           chooseKeepAwakeApps: @escaping KeepAwakePresentation.ChooseApps = KeepAwakePresentation.chooseApplications,
@@ -115,6 +124,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
           activity: ActivityJournal = ActivityJournal(),
           terminationReply: @escaping (NSApplication, Bool) -> Void = { $0.reply(toApplicationShouldTerminate: $1) }) {
          self.transactions = transactions
+          self.accessibilityCheck = accessibilityCheck
+          self.openAccessibility = openAccessibility
          self.loginService = loginService
           self.diagnostics = diagnostics
           self.activity = activity
@@ -148,6 +159,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         self.terminationReply = terminationReply
         self.featureOwners = FeatureOwners(context: FeatureContext(preferences: preferences, acceptsActions: { transactions.acceptsActions }), overrides: featureFactories)
         super.init()
+          statusObservation = model.objectWillChange.sink { [weak self] in
+              DispatchQueue.main.async { [weak self] in self?.refreshStatusIndicator() }
+          }
           model.featureOwners = featureOwners
           awakeFeature.activity = activity
          awakePresentation.didPublish = { [weak self] in self?.refreshKeepAwakeStatus($0) }
@@ -313,9 +327,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             applySetup(draft, completion: completion)
         }
         model.onAccessibilitySettings = { [weak self] in
-            guard self?.actionHost != nil,
-                  let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else { return }
-            NSWorkspace.shared.open(url)
+            guard let self, transactions.acceptsActions else { return }
+            openAccessibility()
+        }
+        model.onCheckScreenEdgeAccess = { [weak self] in
+            guard let self, transactions.acceptsActions else { return }
+            updateScreenEdges()
         }
         model.onAudioSelect = { [weak self] uid, direction in self?.actionHost?.audio?.select(uid, direction: direction) }
         model.onAudioAutomatic = { [weak self] in self?.actionHost?.audio?.automatic = $0 }
@@ -377,7 +394,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             guard let self, transactions.acceptsActions else { return }
             preferences.set(enabled, forKey: "arrangement.matchEdges")
             refreshPreferences()
-            updateScreenEdges()
+            if enabled && model.screenEdgesNeedsAccess { openAccessibility() }
         }
         model.onKeepDisabled = { [weak self] uuid in
             guard let self, transactions.acceptsActions, rollbackUUID == uuid else { return }
@@ -486,9 +503,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func refreshKeepAwakeStatus(_ state: KeepAwakeFeature.State) {
-        item?.button?.image = NSImage(systemSymbolName: state.active ? DashboardTab.keepAwake.symbol : "slider.horizontal.3", accessibilityDescription: state.active ? "Better macOS — Keep awake active" : "Better macOS")
-        item?.button?.toolTip = state.protectionFailed ? "Better macOS — keep awake needs retry" : (state.active ? "Better macOS — keeping awake" : "Better macOS")
+        refreshStatusIndicator()
         publishModuleStatus()
+    }
+
+    private func refreshStatusIndicator() {
+        let description = model.statusNeedsAttention ? "Better macOS — attention needed" : (model.keepAwakeActive ? "Better macOS — keeping awake" : "Better macOS")
+        item?.button?.image = NSImage(systemSymbolName: model.statusSymbol, accessibilityDescription: description)
+        item?.button?.toolTip = model.screenEdgesIssue ?? model.errorMessage ?? description
     }
 
     private func refreshQuitGuard() {
@@ -1321,6 +1343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationDidBecomeActive(_ notification: Notification) {
         refreshLoginStatus()
+        if transactions.acceptsActions { updateScreenEdges() }
     }
 
     private func refreshLoginStatus() {
@@ -1345,9 +1368,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func updateScreenEdges() {
-        do { try controlLifecycle.reconcile(controlState) }
-        catch { showError(error) }
+        var state = controlState
+        model.screenEdgesNeedsAccess = state.cursorRequested && state.arrangementEnabled && !accessibilityCheck()
+        model.screenEdgesIssue = model.screenEdgesNeedsAccess ? "Match screen edges is blocked: macOS has not granted Accessibility access to this running app." : nil
+        if model.screenEdgesNeedsAccess { state.cursorRequested = false }
+        do { try controlLifecycle.reconcile(state) }
+        catch { model.screenEdgesIssue = error.localizedDescription }
         model.screenEdgesActive = screenEdges?.isRunning == true
+        refreshStatusIndicator()
     }
 
     private func reconcileWindows() {

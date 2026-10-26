@@ -372,6 +372,15 @@ private func runAudioPreferenceAdditionTests() {
 
 /// Early-exit synthetic route. Own windows, isolated defaults, no runtime host.
 func renderReleaseUIFixtures(directory: String? = nil) throws {
+    let accessModel = DashboardModel()
+    accessModel.watchdogReady = true
+    accessModel.screenEdgesNeedsAccess = true
+    accessModel.screenEdgesIssue = "Match screen edges is blocked: macOS has not granted Accessibility access to this running app."
+    for dark in [false, true] {
+        try renderFeatureFixture(SafetyAlerts(model: accessModel).padding(20)
+            .frame(width: 420, height: 360, alignment: .topLeading).background(Color(nsColor: .windowBackgroundColor)),
+            name: "screen-edge-access", directory: directory, dark: dark, width: 420, height: 360)
+    }
     try RegisteredFeatureTests.render(directory: directory)
     _ = NSApplication.shared
     let root = directory.map { URL(fileURLWithPath: $0, isDirectory: true) }

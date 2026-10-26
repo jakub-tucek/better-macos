@@ -129,6 +129,11 @@ final class DashboardModel: ObservableObject {
     @Published var confirmMonitorDisable = false
     @Published var matchScreenEdges = false
     @Published var screenEdgesActive = false
+    @Published var screenEdgesNeedsAccess = false
+    @Published var screenEdgesIssue: String?
+    var onCheckScreenEdgeAccess: () -> Void = {}
+    var statusNeedsAttention: Bool { screenEdgesIssue != nil || errorMessage != nil || keepAwakeProtectionFailed }
+    var statusSymbol: String { statusNeedsAttention ? "exclamationmark.triangle.fill" : (keepAwakeActive ? DashboardTab.keepAwake.symbol : "slider.horizontal.3") }
     @Published var activeMonitorCount = 0
     @Published var displaySupported = false
     @Published var displaySettling = true
@@ -865,7 +870,7 @@ struct DashboardView: View {
             if isSetup { DashboardSwitchRow(title: "Match screen edges", isOn: Binding(
                 get: { model.matchScreenEdges }, set: model.onMatchScreenEdgesChanged))
             if model.matchScreenEdges && !model.screenEdgesActive {
-                Text("Paused — waiting for stable displays or Accessibility access.")
+                Text(model.screenEdgesIssue ?? "Paused — waiting for stable displays and recovery monitoring.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             }

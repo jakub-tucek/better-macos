@@ -445,6 +445,7 @@ try runDiagnosticsTests()
 try runActivityTests()
 try runUITests()
 try RegisteredFeatureTests.run()
+runScreenEdgeAccessTests()
 try runClipboardTests()
 
 final class FakeRunner: CommandRunning {
