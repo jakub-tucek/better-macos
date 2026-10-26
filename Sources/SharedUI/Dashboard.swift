@@ -138,7 +138,7 @@ final class DashboardModel: ObservableObject {
     @Published var windowShortcutNeedsAccess = false
     var onRetryWindowShortcuts: () -> Void = {}
     var statusNeedsAttention: Bool { screenEdgesIssue != nil || quitGuardIssue != nil || windowShortcutIssue != nil || errorMessage != nil || keepAwakeProtectionFailed }
-    var statusSymbol: String { statusNeedsAttention ? "exclamationmark.triangle.fill" : (keepAwakeActive ? DashboardTab.keepAwake.symbol : "slider.horizontal.3") }
+    var statusSymbol: String { statusNeedsAttention ? "exclamationmark.triangle.fill" : (keepAwakeActive ? DashboardTab.keepAwake.symbol : "desktopcomputer") }
     @Published var activeMonitorCount = 0
     @Published var displaySupported = false
     @Published var displaySettling = true

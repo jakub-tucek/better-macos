@@ -220,7 +220,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         configureDisplayRefresh()
         NSApp.mainMenu = Self.makeMainMenu()
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "Better macOS")
+        item.button?.image = MenuBarIcon.image(for: model, description: "Better macOS")
         item.button?.target = self
         item.button?.action = #selector(toggleDashboard)
         item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -519,7 +519,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func refreshStatusIndicator() {
         let description = model.statusNeedsAttention ? "Better macOS — attention needed" : (model.keepAwakeActive ? "Better macOS — keeping awake" : "Better macOS")
-        item?.button?.image = NSImage(systemSymbolName: model.statusSymbol, accessibilityDescription: description)
+        item?.button?.image = MenuBarIcon.image(for: model, description: description)
         item?.button?.toolTip = model.screenEdgesIssue ?? model.quitGuardIssue ?? model.windowShortcutIssue ?? model.errorMessage ?? description
     }
 
