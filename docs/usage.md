@@ -63,12 +63,26 @@ can refuse an action rather than redirect it.
 | Clipboard | Capture, exclusions, retention, privacy, storage recovery |
 | Links | Default browser, fallback browser, ordered routing rules, test link |
 
-In Links, **Select rules** enables bulk browser/profile changes, Enable, Disable,
-and Delete selected. **Paste rules…** accepts one URL or match per line with one
-shared destination and match type. Domain imports keep host/path and ignore query
-parameters/fragments; use Pattern for those. Invalid domain lines block the import.
-Duplicates with the same match type, text and destination are skipped. New rules
-append in pasted order, so existing rules keep priority. Pasting never opens links.
+Links uses a text editor: **one rule per line**, saved explicitly with **Save rules**.
+Existing rules populate the editor. Use browser/profile names or IDs from the list:
+
+```text
+github.com/your-team -> Safari
+pattern: *.example.com/* -> com.google.Chrome
+off: contains: project=work -> com.google.Chrome:Profile 1
+```
+
+Domain is the default match type. `contains:` matches text anywhere; `pattern:`
+supports wildcards; `off:` disables a rule. First matching enabled line wins.
+Delete a line to remove it; blank text removes all rules when saved. Invalid lines
+block the entire save. Quoted fields preserve unusual match text. Editing never
+opens links, and Discard changes restores the saved rules.
+
+If Match screen edges lacks Accessibility access, enabling it opens Accessibility
+settings. The popup and Settings show **Open Accessibility settings… / Check again**,
+and the menu-bar icon shows a warning. Returning to the app rechecks access without
+bypassing watchdog/display readiness. An enabled but stale macOS entry may need
+toggling off/on or removing and re-adding after an ad-hoc rebuild.
 
 Popup **Edit** supports Add, ordering, compact/expanded presentation, Remove, and
 Restore suggested. **Done** saves; **Cancel** discards the draft. Recovery controls

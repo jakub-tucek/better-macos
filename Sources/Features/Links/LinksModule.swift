@@ -111,17 +111,13 @@ final class LinksModule: ObservableObject {
         return destinations.first { $0.id == id }
     }
 
-    func editRules(_ ids: Set<UUID>, action: LinkBulkAction) {
-        update { $0.editRules(ids, action: action) }
-    }
-
     @discardableResult
-    func addRules(text: String, kind: LinkRuleKind, target: String) -> Bool {
-        guard acceptsActions(), destinations.contains(where: { $0.id == target }) else { return false }
-        let prepared = LinkBulkImport(text: text, kind: kind, target: target, existing: config.rules)
-        guard prepared.canAdd else { return false }
-        update { config in config.rules += prepared.patterns.map { LinkRule(kind: kind, pattern: $0, target: target) } }
-        return true
+    func saveRuleText(_ text: String, expected: [LinkRule]) -> Bool {
+        guard acceptsActions(), config.rules == expected else { return false }
+        let parsed = LinkRuleText.parse(text, destinations: destinations, existing: config.rules)
+        guard parsed.errors.isEmpty else { return false }
+        update { $0.rules = parsed.rules }
+        return config.rules == parsed.rules
     }
 
     /// Presentation reads only the current snapshot; typing never discovers or opens a browser.

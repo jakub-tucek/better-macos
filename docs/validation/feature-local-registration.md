@@ -39,3 +39,29 @@ edits, stable IDs/order, append priority, persistence, duplicate handling, inval
 line rejection, CRLF line numbers, host admission and absence of browser effects.
 The 680-point rule list was inspected; expanded importer/selection interaction and
 VoiceOver remain native acceptance gaps. The existing full-suite OS blocker remains.
+
+## Accessibility status and text rules
+
+The bulk-edit UI above was replaced by one staged text editor at user request.
+Existing rules round-trip through `kind: match -> destination`, including disabled
+rules, profiles, unavailable saved targets and quoted special characters. Validation
+blocks whole saves on malformed lines/unknown destinations; concurrent edits and
+closed host admission also refuse the save. Existing persistence remains unchanged.
+
+An injected host regression first failed because enabling screen-edge matching did
+not open Accessibility settings (`build/screen-edge-access-red.log`). The fix adds
+a denied-access status, explicit Settings/recheck actions, foreground rechecking
+and a warning status icon that takes priority over Keep awake. Permission recovery
+still respects watchdog/display readiness and preserves unrelated errors.
+
+The partial pipeline passed **5,330 isolated checks**, supporting suites, packaging/
+build fixtures and 13 installer scenarios (`build/access-text-test.log`). Pinned
+lint/format and whitespace checks passed. Light/dark fixtures rendered; the narrow
+Links editor and 420-point access warning were inspected. Logs:
+`build/access-text-{lint,format,fixtures,fixture-build}.log`.
+
+The installed ad-hoc binary's command-line permission probe returned not granted;
+this is not proof of the GUI process's TCC attribution or the cause of a stale grant.
+No macOS permission entry was reset or changed by these checks. Live grant repair,
+event-tap activation, keyboard/VoiceOver acceptance and the existing macOS 27
+full-suite gesture gate remain open.
