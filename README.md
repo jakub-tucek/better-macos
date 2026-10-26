@@ -2,11 +2,13 @@
 
 **Fix macOS annoyances without installing a dozen apps.**
 
-Window tiling, display controls, audio routing, clipboard history, and more in one modular app. Run setup, enable what you need, leave the rest off.
+Window tiling, display controls, audio routing, clipboard history, battery monitoring, and more in one modular app. Run setup, enable what you need, leave the rest off.
 
 Tile windows with keyboard shortcuts and restore saved layouts when you reconnect a display. Turn off a connected screen without unplugging it, arrange your monitors, and move the pointer across mismatched screen edges. Set preferred speakers and microphones, reconnect selected Bluetooth devices, and switch audio to them.
 
 Keep your Mac awake for a task or while chosen apps run. Search clipboard history, prevent accidental ⌘Q quits, reduce system animations, speed up desktop switching, adjust mouse acceleration, and tidy menu-bar spacing and icons.
+
+See how much power your Mac draws from its adapter and battery, with a live power-flow view and battery health details.
 
 Use guided setup to review each feature, or choose **Easy setup · enable all**. Configure features separately and pin the controls you use to the menu-bar popup. Fresh installs include all feature modules and six compact widgets; setup lets you review their settings and required permissions before applying your choices.
 
@@ -35,6 +37,16 @@ Use guided setup to review each feature, or choose **Easy setup · enable all**.
 - **Quick actions → Edit:** add, reorder, or remove widgets. Removing a widget does not disable its feature or delete its data.
 
 Window and Keep awake palettes offer larger, keyboard-navigable controls. Opening a palette changes nothing until you choose an action. [Usage, shortcuts, and defaults →](docs/usage.md)
+
+### Battery details
+
+Open **Settings → Battery**, or add the **Battery** widget through **Quick actions → Edit** and click **Battery details**.
+
+- See adapter input, estimated Mac consumption, and battery charging/discharging power in watts.
+- Check charge, condition, cycle count, temperature, voltage, and current where available.
+- Readings refresh every five seconds. The adapter’s rated maximum is separate from its live power output; missing readings show **Unavailable**.
+
+Battery monitoring is **read-only**: no charging changes, extra permissions, or stored history. [How readings work →](docs/usage.md#battery-monitoring)
 
 ## Install from source
 
