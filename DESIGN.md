@@ -1,4 +1,4 @@
-# UI/UX handoff
+# Design
 
 Use this when adding or changing a screen, widget, palette, or setup step.
 
@@ -37,7 +37,7 @@ actions; pair status colors with text or icons.
 - Stage edits until **Finish**. Preserve saved choices on repeat setup. Offer
   **Easy setup · enable all**, followed by access checks and review.
 - Show per-feature results with icons, clear outcomes, and a working Review link
-  when attention is needed. Keep defaults aligned with [usage](usage.md).
+  when attention is needed. Keep defaults aligned with [usage](docs/usage.md).
 - Treat feature enablement, widget visibility, and live operation as separate
   choices. Route actions through existing host/owner callbacks.
 
@@ -47,5 +47,5 @@ Check light/dark appearance, minimum window width, scrolling, keyboard access,
 accessible labels, and Reduce Motion for animations. Exercise the actual link or
 button path, including reopening an existing window. Show empty, unavailable, and
 failure states. Use isolated UI fixtures and relevant regression tests; record live
-checks separately from fixture evidence. See [development](development.md) for
-commands and [module guide](modules.md#find-the-ui-first) for UI ownership.
+checks separately from fixture evidence. See [development](docs/development.md) for
+commands and [module guide](docs/modules.md#find-the-ui-first) for UI ownership.
