@@ -15,4 +15,18 @@ func runLinkRuleTextTests() {
     expect(!ambiguous.errors.isEmpty, "Ambiguous browser names require stable IDs")
     expect(LinkRuleText.parse("\n  \n", destinations: destinations, existing: rules).rules.isEmpty, "Blank text explicitly removes all rules")
     expect(LinkRuleText.parse("site → Safari", destinations: destinations, existing: []).errors.isEmpty, "Pasted arrow characters also separate match and destination")
+    var draft = LinkRulesDraft()
+    draft.load(rules)
+    expect(draft.mode == .visual && !draft.changed, "Visual mode starts from saved rules without pending changes")
+    draft.edit { $0[0].pattern = "edited.example"; $0[1].enabled = true }
+    expect(draft.changed && draft.select(.text, destinations: destinations) && draft.text.contains("edited.example"), "Switching to Text preserves unsaved visual edits")
+    draft.text = "contains: work -> Safari"
+    expect(draft.select(.visual, destinations: destinations) && draft.rules.count == 1 && draft.rules[0].kind == .contains && draft.rules[0].pattern == "work", "Switching to Visual uses the current unsaved text")
+    let pending = draft.rules
+    draft.select(.text, destinations: destinations)
+    draft.text = "broken line"
+    expect(!draft.select(.visual, destinations: destinations) && draft.mode == .text && draft.text == "broken line" && draft.rules == pending,
+           "Invalid text blocks mode switching without discarding the draft")
+    draft.load(rules)
+    expect(!draft.changed && draft.rules == rules && draft.text == LinkRuleText.render(rules), "Discard reloads the same saved rules in either mode")
 }

@@ -63,8 +63,11 @@ can refuse an action rather than redirect it.
 | Clipboard | Capture, exclusions, retention, privacy, storage recovery |
 | Links | Default browser, fallback browser, ordered routing rules, test link |
 
-Links uses a text editor: **one rule per line**, saved explicitly with **Save rules**.
-Existing rules populate the editor. Use browser/profile names or IDs from the list:
+Links offers **Visual / Text** modes sharing one unsaved draft. Visual mode provides
+rule toggles, match and destination fields, reordering and deletion. Text mode uses
+**one rule per line**. Both apply edits with **Save rules**; switching modes preserves
+unsaved edits. Invalid text must be fixed before switching to Visual. Existing rules
+populate both editors. Use browser/profile names or IDs from the list:
 
 ```text
 github.com/your-team -> Safari

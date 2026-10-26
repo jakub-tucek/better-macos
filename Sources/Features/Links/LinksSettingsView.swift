@@ -14,7 +14,7 @@ struct LinksSettingsView: View {
                 Label(module.message, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
             }
-            section { LinkRulesTextEditor(module: module) }
+            section { LinkRulesEditor(module: module) }
             tryLink
             if !module.profileBrowsers.isEmpty { profiles }
         }.onAppear(perform: module.refresh)

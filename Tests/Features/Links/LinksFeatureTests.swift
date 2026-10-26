@@ -23,6 +23,13 @@ enum LinksFeatureTests: FeatureTestSuite {
                 owner.update { config in config.rules = scenario == "empty" ? [] : [LinkRule(pattern: "github.com/your-team", target: "com.google.Chrome"), LinkRule(kind: .pattern, pattern: "console.cloud.google.com/*project=work*", target: "com.apple.Safari")] }
                 if scenario == "missing" { owner.update { $0.fallback = "missing.browser" } }
                 owner.refresh()
+                if scenario == "rules" {
+                    for mode in LinkRulesDraft.Mode.allCases {
+                        try renderFeatureFixture(LinkRulesEditor(module: owner, initialMode: mode).padding(20)
+                            .frame(width: 680, height: 700, alignment: .topLeading).background(Color(nsColor: .windowBackgroundColor)),
+                            name: "links-editor-\(mode.rawValue.lowercased())", directory: directory, dark: dark, width: 680, height: 700)
+                    }
+                }
                 for width: CGFloat in [680, 1000] {
                     try renderFeatureFixture(SettingsView(model: model), name: "links-\(scenario)", directory: directory, dark: dark, width: width)
                 }
