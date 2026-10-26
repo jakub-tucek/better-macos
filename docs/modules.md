@@ -7,7 +7,7 @@ not a completed lifecycle refactor; see [move evidence](validation/source-organi
 
 ## Modules, not a plugin system
 
-The twelve [AppModule](../Sources/App/AppModules.swift) cases retain persisted enable-choice IDs
+The thirteen [AppModule](../Sources/App/AppModules.swift) cases retain persisted enable-choice IDs
 (`ModuleSettings`). [BuiltinFeatures.swift](../Sources/App/BuiltinFeatures.swift) registers inert
 titles, descriptions, dashboard destinations, Settings order and seven widget definitions (six suggested);
 existing enum properties delegate to that catalog without constructing owners.
@@ -44,7 +44,7 @@ for the broader lifecycle work that remains proposed.
 - [AppStyle.swift](../Sources/SharedUI/AppStyle.swift): shared headings, neutral
   surfaces, contrast-aware borders, icon badges and compact launch rows. Used by
   Quick actions, Settings, setup, the right-click menu and action palettes.
-- [UISurfaces.swift](../Sources/SharedUI/UISurfaces.swift): `SettingsGroup`, six `WidgetKind` cases,
+- [UISurfaces.swift](../Sources/SharedUI/UISurfaces.swift): `SettingsGroup`, seven `WidgetKind` cases,
   widget editor/popup, Settings shell, and quick-action views.
 - [StatusQuickMenu.swift](../Sources/SharedUI/StatusQuickMenu.swift): fixed-size,
   nonactivating right-click panel, retained view tree, keyboard selection and
