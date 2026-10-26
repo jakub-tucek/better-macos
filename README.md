@@ -1,10 +1,14 @@
 # Better macOS
 
-**A menu-bar app for window layouts, displays, audio, clipboard history, and everyday macOS annoyances.**
+**Fix macOS annoyances without installing a dozen apps.**
 
-Snap a window across monitors. Keep your Mac awake during a task. Pick speakers and microphone separately. Find something you copied earlier. Better macOS puts these controls in one app, with each feature enabled separately.
+Window tiling, display controls, audio routing, clipboard history, and more in one modular app. Run setup, enable what you need, leave the rest off.
 
-Fresh installs start with features off. Choose what you need in guided setup or Settings, then add your everyday controls to the menu-bar popup.
+Tile windows with keyboard shortcuts and restore saved layouts when you reconnect a display. Turn off a connected screen without unplugging it, arrange your monitors, and move the pointer across mismatched screen edges. Set preferred speakers and microphones, reconnect selected Bluetooth devices, and switch audio to them.
+
+Keep your Mac awake for a task or while chosen apps run. Search clipboard history, prevent accidental ⌘Q quits, reduce system animations, speed up desktop switching, adjust mouse acceleration, and tidy menu-bar spacing and icons.
+
+Use guided setup to review each feature, or choose **Easy setup · enable all**. Configure features separately and pin the controls you use to the menu-bar popup. Fresh installs include all feature modules and six compact widgets; setup lets you review their settings and required permissions before applying your choices.
 
 ## What it does
 
@@ -15,7 +19,7 @@ Fresh installs start with features off. Choose what you need in guided setup or 
 | Audio | Choose output and microphone independently; set preferred devices and fallbacks. |
 | Bluetooth reconnect | Reconnect chosen paired devices or connect/disconnect manually when helper reads are verified. Conflicting helper/macOS status blocks control. |
 | Keep awake | Prevent idle sleep for a timer or while selected apps run, optionally keeping the display awake too. |
-| Clipboard | Search text/PNG history with ⌘⇧V, pin entries, and copy them back without automatic paste. Capture is opt-in and paused each launch. |
+| Clipboard | Search text/PNG history with ⌘⇧V, pin entries, and copy them back without automatic paste. Choose automatic recording at startup; history stays in memory unless you enable disk storage. |
 | Hold to quit | Hold ⌘Q through a countdown to avoid accidental quits. |
 | Animations | Reduce selected system effects, with optional fast horizontal desktop switching. Some animations remain. |
 | Menu bar | Experimental icon spacing and a divider for hiding less-used icons. |
