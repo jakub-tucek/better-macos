@@ -9,7 +9,7 @@ not a completed lifecycle refactor; see [move evidence](validation/source-organi
 
 The twelve [AppModule](../Sources/App/AppModules.swift) cases retain persisted enable-choice IDs
 (`ModuleSettings`). [BuiltinFeatures.swift](../Sources/App/BuiltinFeatures.swift) registers inert
-titles, descriptions, dashboard destinations, Settings order and six widget definitions;
+titles, descriptions, dashboard destinations, Settings order and seven widget definitions (six suggested);
 existing enum properties delegate to that catalog without constructing owners.
 Developers compile feature owners into the app through [build.sh](../build.sh).
 
@@ -27,7 +27,7 @@ setup and native host integration; `Core/` owns host transactions, readiness and
 shared command execution; `SharedUI/` holds the shared Settings/widget shell,
 feature configuration views and `StoredState`. `Features/<owner>/` co-locates
 feature implementations: Displays, Windows, Audio, Bluetooth, Clipboard, Mouse,
-Animations, MenuBar, QuitGuard, KeepAwake and Links. Shared display geometry, refresh and
+Animations, MenuBar, QuitGuard, KeepAwake, Links and Battery. Shared display geometry, refresh and
 cursor recovery remain together under Displays; Windows retains its own owner/UI.
 These folders are not module/package boundaries: no lifecycle extraction occurred.
 `Sources/App/main.swift` remains the app/helper/CLI entry point; tests retain
@@ -67,6 +67,16 @@ view implementations live in those files unless a dedicated UI file is listed.
 Cleanup describes the relevant owner and path, not proof of live acceptance.
 
 ## Feature owners
+
+### Battery · `battery`
+
+- **Owner/UI:** `Sources/Features/Battery/BatteryModule.swift`; System settings and optional Battery widget.
+- **Reads:** IOKit power-source descriptions for the internal battery, plus optional
+  AppleSmartBattery cycle count and temperature. Unknown metrics remain unavailable.
+- **Lifecycle:** immediate snapshot then a 30-second timer; disable/quit invalidates
+  the timer and clears the reading. No writes, helper, history, or sleep assertions.
+- **Checks:** injected readings and pure decoding tests in `Tests/BatteryTests.swift`;
+  light/dark presentation fixtures in `Tests/UITests.swift`.
 
 ### Monitor switching · `monitors`
 

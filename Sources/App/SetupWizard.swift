@@ -157,6 +157,7 @@ struct SetupConfiguration: Codable, Equatable {
         case .arrangement: return ["arrangement.matchEdges": matchEdges]
         case .mouse: return ["mouse.proposedAcceleration": mouseAcceleration, "mouse.proposedTracking": mouseTracking]
         case .links: return [:]
+        case .battery: return [:]
         }
     }
 }
@@ -170,7 +171,7 @@ struct SetupCheckpoint: Codable {
 
 final class SetupDraft: ObservableObject {
     enum Step: Hashable { case welcome, feature(AppModule), access(AppModule), configure(AppModule), permissions, widgets, review, results }
-    static let featureOrder: [AppModule] = [.windows, .monitors, .arrangement, .keepAwake, .audio, .bluetooth, .clipboard, .quitGuard, .mouse, .spaces, .menuBar, .links]
+    static let featureOrder: [AppModule] = [.windows, .monitors, .arrangement, .keepAwake, .audio, .bluetooth, .clipboard, .quitGuard, .mouse, .spaces, .menuBar, .links, .battery]
     @Published var selected: Set<AppModule>
     @Published var step: Step = .welcome
     @Published var widgets: WidgetLayout
@@ -406,6 +407,7 @@ extension AppModule {
         case .clipboard: return "Find something you copied earlier. Search your local history, pin useful items and choose what stays on disk."
         case .quitGuard: return "Avoid an accidental ⌘Q. Hold the shortcut for a moment when you really want to quit."
         case .mouse: return "Tune supported mouse pointer acceleration and tracking. Preview your choices here and apply them explicitly in Settings."
+        case .battery: return "Check your MacBook’s charge, power source, battery condition, cycle count and temperature from the menu bar."
         case .spaces: return "Reduce Dock and Finder animations, and optionally use faster keyboard-driven desktop switching."
         case .menuBar: return "Keep the menu bar tidy. Adjust icon spacing or tuck less-used icons behind a divider."
         case .links: return "Open work links in your work browser profile and everything else in your personal one. Rules match a domain, text in the link, or a wildcard pattern."
@@ -422,6 +424,7 @@ extension AppModule {
         case .clipboard: return "Automatic recording starts after Finish if enabled. History stays in memory unless you opt into disk storage. Disk storage is currently unencrypted; sensitive or excluded captures are rejected."
         case .quitGuard: return "Uses Accessibility for the keyboard shortcut. It requests normal quit and preserves app save prompts."
         case .mouse: return "Hardware support varies. Finish saves your proposal; only Apply in Input settings changes pointer behavior."
+        case .battery: return "Read-only monitoring. Charging stays under macOS control. Macs without a built-in battery show an empty state; unsupported readings stay unavailable."
         case .spaces: return "Applying the animation preset can restart Dock and Finder. Desktop switching needs Accessibility and a ready watchdog; it may vary by macOS version."
         case .menuBar: return "Spacing changes may require apps to restart. You place the divider with ⌘-drag; hidden icons can be revealed again."
         case .links: return "Rules apply only after you make Better macOS your default browser in Settings. If the feature is off, links still open in your chosen fallback browser."
@@ -740,6 +743,7 @@ struct SetupWizard: View {
         case .keepAwake: return "\(value.awakeMinutes)-minute default; display wake: \(value.displayAwake ? "on" : "off"); app rules: \(value.awakeApps.values.sorted().joined(separator: ", "))"
         case .clipboard: return "Automatic recording: \(value.clipboardAutomaticRecording == true ? "on" : "off"); disk history: \(value.clipboardPersistence ? "on" : "off"), \(value.clipboardDays) days; exclusions: \(value.clipboardExclusions)"
         case .mouse: return String(format: "Proposed acceleration: %@; tracking: %.2f. Finish transfers the proposal to Input settings, but never applies it.", value.mouseAcceleration ? "on" : "off", value.mouseTracking)
+        case .battery: return "Read-only battery monitoring; no charging or power-setting changes."
         case .windows: return "Keyboard shortcuts: \(value.windowsShortcuts == true ? "on" : "off"); automatic restore: \(value.windowsAutomatic ? "on" : "off"); paused: \(value.windowsPaused ? "yes" : "no"); target: \(value.windowsSelected.isEmpty ? "unique match" : value.windowsSelected); exclusions: \(value.windowsExclusions)"
         case .menuBar: return "Compact spacing: \(value.compactMenu ? "on" : "off"); icon hiding: \(value.hideMenu ? "on" : "off")"
         case .spaces: return "Animation preset: \(value.animations ? "on" : "off"); desktop switching: \(value.spaces ? "requested" : "off"); speed: \(TransitionSpeed.from(rawValue: value.speed).title)"

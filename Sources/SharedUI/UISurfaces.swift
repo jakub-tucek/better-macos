@@ -36,7 +36,7 @@ enum SettingsGroup: String, CaseIterable, Identifiable {
 }
 
 enum WidgetKind: String, CaseIterable, Identifiable, Codable {
-    case keepAwake, audio, displays, windows, clipboard, bluetooth
+    case keepAwake, audio, displays, windows, clipboard, bluetooth, battery
     var id: String { rawValue }
     var feature: DashboardTab { module.dashboardFeature }
     var title: String { BuiltinFeatures.widget(for: self).title }
@@ -84,7 +84,7 @@ struct WidgetLayout: Codable, Equatable {
     var version = 1
     var entries: [WidgetEntry] = []
     static func suggested(for modules: Set<AppModule>) -> WidgetLayout {
-        WidgetLayout(entries: BuiltinFeatures.widgets.map(\.kind)
+        WidgetLayout(entries: BuiltinFeatures.widgets.filter(\.suggested).map(\.kind)
             .filter { modules.contains($0.module) }.map { WidgetEntry($0) })
     }
     mutating func normalize() {
@@ -262,6 +262,7 @@ struct WidgetEditor: View {
         case .displays: return "Display name · On / Off"
         case .windows: return "Layout name · Restore"
         case .clipboard: return "Open history · Recording paused"
+        case .battery: return "Charge and power source"
         case .bluetooth: return "Chosen device · Connect / Disconnect"
         }
     }
@@ -615,6 +616,7 @@ struct QuickWidget: View {
                     case .windows: windows
                     case .clipboard: clipboard
                     case .bluetooth: bluetooth
+                    case .battery: BatteryStatusView(snapshot: model.batterySnapshot, expanded: entry.expanded)
                     }
                 }
             }

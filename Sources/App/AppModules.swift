@@ -17,7 +17,7 @@ enum FeatureSetupOutcome: Equatable {
 }
 
 enum AppModule: String, CaseIterable, Identifiable {
-    case monitors, arrangement, bluetooth, audio, spaces, menuBar, quitGuard, keepAwake, windows, clipboard, mouse, links
+    case monitors, arrangement, bluetooth, audio, spaces, menuBar, quitGuard, keepAwake, windows, clipboard, mouse, links, battery
     var id: String { rawValue }
     var title: String { BuiltinFeatures.definition(for: self).title }
     var detail: String { BuiltinFeatures.definition(for: self).detail }

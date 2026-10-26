@@ -285,15 +285,15 @@ private func runBuiltinCatalogTests() {
            "the hidden main menu provides standard text-editing shortcuts")
     expect(!shortcuts.contains { $0.hasPrefix("q:") }, "the main menu adds no ⌘Q that could bypass Hold to quit or host quit approval")
     expect(BuiltinFeatures.definitions.map(\.module) == AppModule.allCases, "catalog registers every stable feature exactly once without changing setup order")
-    expect(AppModule.allCases.map(\.rawValue) == ["monitors", "arrangement", "bluetooth", "audio", "spaces", "menuBar", "quitGuard", "keepAwake", "windows", "clipboard", "mouse", "links"], "feature persistence IDs remain stable")
-    let groups: [(SettingsGroup, [AppModule])] = [(.general, []), (.quickActions, []), (.displays, [.monitors, .arrangement, .windows]), (.sound, [.audio, .bluetooth]), (.input, [.quitGuard, .mouse]), (.system, [.spaces, .menuBar, .keepAwake]), (.clipboard, [.clipboard]), (.links, [.links])]
+    expect(AppModule.allCases.map(\.rawValue) == ["monitors", "arrangement", "bluetooth", "audio", "spaces", "menuBar", "quitGuard", "keepAwake", "windows", "clipboard", "mouse", "links", "battery"], "existing feature persistence IDs remain stable with Battery appended")
+    let groups: [(SettingsGroup, [AppModule])] = [(.general, []), (.quickActions, []), (.displays, [.monitors, .arrangement, .windows]), (.sound, [.audio, .bluetooth]), (.input, [.quitGuard, .mouse]), (.system, [.spaces, .menuBar, .keepAwake, .battery]), (.clipboard, [.clipboard]), (.links, [.links])]
     for (group, modules) in groups { expect(group.modules == modules, "catalog preserves Settings order for \(group.rawValue)") }
-    let destinations: [DashboardTab] = [.monitors, .monitors, .bluetooth, .audio, .spaces, .menuBar, .keyboard, .keepAwake, .windows, .clipboard, .mouse, .links]
+    let destinations: [DashboardTab] = [.monitors, .monitors, .bluetooth, .audio, .spaces, .menuBar, .keyboard, .keepAwake, .windows, .clipboard, .mouse, .links, .battery]
     expect(AppModule.allCases.map(\.dashboardFeature) == destinations, "catalog preserves shared display and keyboard navigation")
-    expect(Set(BuiltinFeatures.widgets.map(\.kind)) == Set(WidgetKind.allCases) && BuiltinFeatures.widgets.count == 6, "catalog registers each widget exactly once")
-    expect(WidgetKind.allCases.map(\.rawValue) == ["keepAwake", "audio", "displays", "windows", "clipboard", "bluetooth"], "widget persistence IDs remain stable")
+    expect(Set(BuiltinFeatures.widgets.map(\.kind)) == Set(WidgetKind.allCases) && BuiltinFeatures.widgets.count == 7, "catalog registers each widget exactly once")
+    expect(WidgetKind.allCases.map(\.rawValue) == ["keepAwake", "audio", "displays", "windows", "clipboard", "bluetooth", "battery"], "existing widget persistence IDs remain stable with Battery appended")
     expect(WidgetLayout.suggested(for: Set(AppModule.allCases)).entries.map(\.kind) == ["keepAwake", "displays", "clipboard", "audio", "windows", "bluetooth"], "catalog prioritizes Keep awake, Displays and Clipboard before other actions")
-    expect(WidgetKind.allCases.map(\.module) == [.keepAwake, .audio, .monitors, .windows, .clipboard, .bluetooth], "widgets retain distinct owning feature choices")
+    expect(WidgetKind.allCases.map(\.module) == [.keepAwake, .audio, .monitors, .windows, .clipboard, .bluetooth, .battery], "widgets retain distinct owning feature choices")
     expect(WidgetKind.windows.title == "Window layouts" && WidgetKind.displays.title == "Displays", "widget labels are not inferred from feature titles")
     expect(WidgetLayout.suggested(for: [.arrangement]).entries.isEmpty, "arrangement alone does not imply the monitor widget")
 }
@@ -440,6 +440,12 @@ func renderReleaseUIFixtures(directory: String? = nil) throws {
             awakePalette.dismiss()
         }
         let model = DashboardModel(); model.enabledModules = [.audio, .clipboard]; model.watchdogReady = true
+        model.enabledModules.insert(.battery)
+        model.batterySnapshot = BatterySnapshot(availability: .available, percent: 80, externalPower: true, charging: false,
+                                                condition: "Good", cycles: 58, temperature: 35.1, sampledAt: Date(timeIntervalSince1970: 100))
+        let battery = mount(AnyView(BatteryStatusView(snapshot: model.batterySnapshot).padding(20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity).background(Color(nsColor: .windowBackgroundColor))), dark: dark, width: 400, height: 240)
+        try snapshot(battery, "battery-details-\(suffix)"); battery.orderOut(nil)
         model.settingsGroup = .general
         let general = mount(AnyView(SettingsView(model: model)), dark: dark)
         try snapshot(general, "settings-general-\(suffix)"); general.orderOut(nil)

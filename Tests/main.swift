@@ -444,6 +444,7 @@ runKeepAwakeFeatureTests()
 try runDiagnosticsTests()
 try runActivityTests()
 try runUITests()
+runBatteryTests()
 try runClipboardTests()
 runLinksTests()
 

@@ -19,6 +19,7 @@ Use guided setup to review each feature, or choose **Easy setup · enable all**.
 | Audio | Choose output and microphone independently; set preferred devices and fallbacks. |
 | Bluetooth reconnect | Reconnect chosen paired devices or connect/disconnect manually when helper reads are verified. Conflicting helper/macOS status blocks control. |
 | Keep awake | Prevent idle sleep for a timer or while selected apps run, optionally keeping the display awake too. |
+| Battery | Read-only charge, power source, battery condition, cycle count and temperature. Optional menu-bar widget; charging stays under macOS control. |
 | Clipboard | Search text/PNG history with ⌘⇧V, pin entries, and copy them back without automatic paste. Choose automatic recording at startup; history stays in memory unless you enable disk storage. |
 | Hold to quit | Hold ⌘Q through a countdown to avoid accidental quits. |
 | Animations | Reduce selected system effects, with optional fast horizontal desktop switching. Some animations remain. |

@@ -57,7 +57,7 @@ can refuse an action rather than redirect it.
 | Displays | Monitor switching, arrangement, matched edges, window layouts and shortcuts |
 | Sound & connections | Output/microphone preferences, Bluetooth targets and protection |
 | Input | Hold to quit and explicit Mouse Apply/Restore |
-| System | Animations, menu-bar controls, Keep awake defaults/app rules |
+| System | Animations, menu-bar controls, Keep awake defaults/app rules, Battery |
 | Clipboard | Capture, exclusions, retention, privacy, storage recovery |
 | Links | Default browser, fallback browser, ordered routing rules, test link |
 
@@ -168,6 +168,19 @@ snapping, custom bindings, full-screen control, or Space assignments are provide
 - **Menu bar:** setup recommends compact spacing on and chevron/icon hiding off. ⌘-drag the divider left of the chevron
   and extra icons left of the divider. Click the chevron to hide/reveal; quitting
   reveals icons. Spacing may require app relaunch/logout. No notch-overflow panel.
+
+## Battery monitoring
+
+**System → Battery** shows built-in battery charge, power source, charging state,
+condition, cycle count and temperature where macOS exposes them. Add **Battery** in
+Quick actions for a compact charge/status widget; expand it for details. It is not
+pinned automatically. Monitoring refreshes every 30 seconds while enabled and the
+app is running. Disabling the module stops monitoring and clears the current reading.
+
+Battery is read-only: no charge limits, discharge commands, power-setting writes,
+extra permissions or stored history. Missing readings show **Unavailable**; desktop
+Macs show **No built-in battery**. “Not charging” reports the observed state without
+guessing whether a charge limit, temperature or another system policy caused it.
 
 ## Clipboard privacy and retention
 

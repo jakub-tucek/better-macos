@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var popupSourceApp: NSRunningApplication?
     private var clipboard: ClipboardModule?
     private let links: LinksModule
+    private var battery: BatteryModule?
     private let injectedMouseLifecycle: MouseLifecycle?
     private lazy var mouseLifecycle = injectedMouseLifecycle ?? MouseLifecycle(settings: modules)
     private let sourceUpdater = SourceUpdater()
@@ -509,6 +510,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func updateModules() {
         model.enabledModules = modules.enabled
+        if modules.enabled.contains(.battery) {
+            if battery == nil {
+                let module = BatteryModule()
+                battery = module
+                module.onChange = { [weak self] in self?.model.batterySnapshot = $0 }
+                module.start()
+            }
+        } else { battery?.stop(); battery = nil }
         if modules.enabled.contains(.windows) {
             if windowPositions == nil {
                 let module = WindowPositions(defaults: preferences)
@@ -1141,6 +1150,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 clipboard!.setAutomaticRecording(automatic)
             }
             note = clipboard!.automaticRecording ? "Automatic recording enabled. Disk storage is a separate choice." : "Automatic recording is off."
+        case .battery:
+            if battery?.snapshot.availability == .available { note = "Battery monitoring active. Charging stays under macOS control." }
+            else { completion(.pendingHardware(battery?.snapshot.status ?? "Battery information unavailable")); return }
         case .mouse:
             model.mouseAcceleration = value.mouseAcceleration; model.mouseTracking = value.mouseTracking
             preferences.set(value.mouseAcceleration, forKey: "mouse.proposedAcceleration")
@@ -1675,6 +1687,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        battery?.stop()
         windowPositions?.stop()
         awakeFeature.shutdown()
         audio?.stop()

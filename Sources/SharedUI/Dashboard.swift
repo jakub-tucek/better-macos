@@ -15,6 +15,7 @@ enum DashboardTab: String, CaseIterable {
     case clipboard = "Clipboard"
     case mouse = "Mouse"
     case links = "Links"
+    case battery = "Battery"
 
     static var features: [DashboardTab] { allCases.filter { $0 != .modules } }
     static let quickFeatures: [DashboardTab] = [.monitors, .keepAwake, .audio, .clipboard, .windows]
@@ -32,6 +33,7 @@ enum DashboardTab: String, CaseIterable {
         case .clipboard: return "clipboard"
         case .mouse: return "computermouse"
         case .links: return "arrow.triangle.branch"
+        case .battery: return "battery.100percent"
         }
     }
 }
@@ -198,6 +200,7 @@ final class DashboardModel: ObservableObject {
     var onKeepAwakeRemoveApp: (String) -> Void = { _ in }
     var onKeepAwakeResume: () -> Void = {}
     @Published var keepDisplayAwake = false
+    @Published var batterySnapshot = BatterySnapshot()
     @Published var clipboardRecording = false
     @Published var clipboardAutomaticRecording = false
     var onClipboardAutomaticRecording: (Bool) -> Void = { _ in }
@@ -471,6 +474,10 @@ struct DashboardView: View {
                         if draftMode { Text("Add rules and make Better macOS your default browser in Links settings after setup. Setup never changes your default browser.") }
                         else if model.enabledModules.contains(.links), let links = model.links { LinksSettingsView(module: links) }
                         else { disabledModule("Links") }
+                    case .battery:
+                        if draftMode { Text("After Finish, see battery charge, power source, condition, cycle count and temperature in System settings or the Battery widget. No extra permissions or charging changes.") }
+                        else if model.enabledModules.contains(.battery) { BatteryStatusView(snapshot: model.batterySnapshot) }
+                        else { disabledModule("Battery") }
                     }
         }
         .alert(disconnectDisablesRule ? "Disconnect and turn off auto-reconnect?" : "Disconnect this device?", isPresented: $showDisconnectWarning) {

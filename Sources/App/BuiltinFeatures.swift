@@ -15,6 +15,7 @@ struct BuiltinWidgetDefinition {
     let module: AppModule
     let title: String
     let detail: String
+    var suggested = true
 }
 
 enum BuiltinFeatures {
@@ -30,7 +31,8 @@ enum BuiltinFeatures {
         .init(module: .windows, title: "Window positions", detail: "Keyboard tiling and named layouts with optional reconnect and wake restoration.", feature: .windows, settings: .displays, settingsOrder: 2),
         .init(module: .clipboard, title: "Clipboard", detail: "Local history, search, pins, automatic recording and optional disk retention.", feature: .clipboard, settings: .clipboard, settingsOrder: 0),
         .init(module: .mouse, title: "Mouse", detail: "Opt-in mouse acceleration and tracking, with runtime restoration.", feature: .mouse, settings: .input, settingsOrder: 1),
-        .init(module: .links, title: "Links", detail: "Open each web link in the browser or browser profile you choose.", feature: .links, settings: .links, settingsOrder: 0)
+        .init(module: .links, title: "Links", detail: "Open each web link in the browser or browser profile you choose.", feature: .links, settings: .links, settingsOrder: 0),
+        .init(module: .battery, title: "Battery", detail: "Read-only charge, power source, battery condition, cycles and temperature.", feature: .battery, settings: .system, settingsOrder: 3)
     ]
 
     // Persisted-layout migration / Restore suggested order, independent of enum order.
@@ -40,7 +42,8 @@ enum BuiltinFeatures {
         .init(kind: .clipboard, module: .clipboard, title: "Clipboard", detail: "Open private history; copied content is never previewed here."),
         .init(kind: .audio, module: .audio, title: "Audio", detail: "Switch output and microphone without opening Settings."),
         .init(kind: .windows, module: .windows, title: "Window layouts", detail: "Restore named layouts on compatible displays."),
-        .init(kind: .bluetooth, module: .bluetooth, title: "Bluetooth", detail: "Connect chosen devices and see reconnect status.")
+        .init(kind: .bluetooth, module: .bluetooth, title: "Bluetooth", detail: "Connect chosen devices and see reconnect status."),
+        .init(kind: .battery, module: .battery, title: "Battery", detail: "See charge and power source; expand for battery details.", suggested: false)
     ]
 
     static func definition(for module: AppModule) -> BuiltinFeatureDefinition {
