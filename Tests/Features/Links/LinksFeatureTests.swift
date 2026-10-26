@@ -1,4 +1,36 @@
 import AppKit
+import SwiftUI
+
+enum LinksFeatureTests: FeatureTestSuite {
+    static func run() { runLinksTests() }
+    static func render(directory: String?) throws {
+        let suite = "better-macos.links-fixtures.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let backend = FakeLinkBackend()
+        backend.found = [LinkDestination(id: "com.apple.Safari", name: "Safari", appPath: "/S"),
+                         LinkDestination(id: "com.google.Chrome", name: "Google Chrome", appPath: "/C")]
+        let owner = LinksModule(defaults: defaults, backend: backend)
+        owner.refresh(); owner.setActive(true)
+        defer { owner.setActive(false) }
+        let model = DashboardModel(); model.enabledModules = [.links]; model.settingsGroup = .links; model.watchdogReady = true
+        model.featureOwners = FeatureOwners(context: FeatureContext(preferences: defaults, acceptsActions: { true }), overrides: [.links: { _ in owner }], registrations: [LinksFeatureRegistration.self])
+        for dark in [false, true] {
+            for scenario in ["empty", "rules", "blocked", "missing"] {
+                backend.isDefault = scenario != "empty"
+                backend.unreadable = scenario == "blocked" ? ["com.google.Chrome"] : []
+                owner.update { $0 = LinkRoutingConfig() }
+                owner.update { config in config.rules = scenario == "empty" ? [] : [LinkRule(pattern: "github.com/your-team", target: "com.google.Chrome"), LinkRule(kind: .pattern, pattern: "console.cloud.google.com/*project=work*", target: "com.apple.Safari")] }
+                if scenario == "missing" { owner.update { $0.fallback = "missing.browser" } }
+                owner.refresh()
+                for width: CGFloat in [680, 1000] {
+                    try renderFeatureFixture(SettingsView(model: model), name: "links-\(scenario)", directory: directory, dark: dark, width: width)
+                }
+            }
+        }
+        expect(backend.opened.isEmpty && backend.defaultRequests == 0 && backend.accessRequests.isEmpty, "Rendering Links never opens a browser, changes the default or requests folder access")
+    }
+}
 
 private final class FakeLinkBackend: LinkBrowserBackend {
     var found: [LinkDestination] = []
@@ -7,8 +39,10 @@ private final class FakeLinkBackend: LinkBrowserBackend {
     var isDefault = false
     var defaultRequests = 0
     var unreadable: [String] = []
+    var discoveries = 0
     func discover() -> LinkDiscovery {
-        LinkDiscovery(destinations: found, profileBrowsers: found.filter { $0.id == "com.google.Chrome" }.map(\.id), unreadableProfiles: unreadable)
+        discoveries += 1
+        return LinkDiscovery(destinations: found, profileBrowsers: found.filter { $0.id == "com.google.Chrome" }.map(\.id), unreadableProfiles: unreadable)
     }
     func systemFallback() -> LinkDestination? { LinkDestination(id: "com.apple.Safari", name: "Safari", appPath: "/Applications/Safari.app") }
     func open(_ url: URL, in destination: LinkDestination, completion: @escaping (Error?) -> Void) {
@@ -28,6 +62,42 @@ private final class FakeLinkBackend: LinkBrowserBackend {
 func runLinksTests() {
     runLinkMatchingTests()
     runLinkOwnerTests()
+    runRegisteredLinkTests()
+}
+
+private func runRegisteredLinkTests() {
+    let suite = "better-macos.registered-links.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let backend = FakeLinkBackend()
+    backend.found = [LinkDestination(id: "com.apple.Safari", name: "Safari", appPath: "/S"), LinkDestination(id: "work", name: "Work", appPath: "/W")]
+    let owner = LinksModule(defaults: defaults, backend: backend)
+    var admitted = true
+    var constructions = 0
+    let owners = FeatureOwners(context: .init(preferences: defaults, acceptsActions: { admitted }), overrides: [.links: { context in
+        constructions += 1; owner.acceptsActions = context.acceptsActions; return owner
+    }], registrations: [LinksFeatureRegistration.self])
+    owners.reconcile(enabled: [.links])
+    owner.update { $0.fallback = "com.apple.Safari"; $0.rules = [LinkRule(pattern: "example.com", target: "work")] }
+    owner.refresh()
+    let discoveries = backend.discoveries
+    expect(owner.preview(for: url("https://example.com")) == "Would open in Work", "Preview uses the current matching rule")
+    expect(backend.discoveries == discoveries && backend.opened.isEmpty, "Preview neither discovers browsers nor opens a link")
+    owners.reconcile(enabled: [])
+    owners.route(url("https://example.com"))
+    expect(backend.opened.last?.destination == "com.apple.Safari", "Registered disabled Links still delivers incoming URLs to fallback")
+    owners.reconcile(enabled: [.links])
+    owners.route(url("https://example.com"))
+    expect(backend.opened.last?.destination == "work", "Re-enabling the registered owner restores routing rules")
+    admitted = false
+    let count = backend.opened.count
+    owner.testOpen("https://example.com")
+    expect(backend.opened.count == count, "Closed host admission rejects user test opens")
+    owners.stop()
+    owners.route(url("https://example.com"))
+    expect(backend.opened.last?.destination == "com.apple.Safari" && backend.opened.count == count + 1, "Stopped owner still delivers incoming URLs without host admission")
+    expect(constructions == 1 && owners.owner(.links, as: LinksModule.self) === owner, "Reconciliation and stop preserve the single registered owner")
+    expect(AppModule.links.rawValue == "links" && SettingsGroup.links.rawValue == "Links", "Links retains persisted feature and Settings IDs")
 }
 
 private func url(_ string: String) -> URL { URL(string: string)! }

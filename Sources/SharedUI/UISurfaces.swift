@@ -1,10 +1,13 @@
 import AppKit
 import SwiftUI
 
-enum SettingsGroup: String, CaseIterable, Identifiable {
-    case general = "General", quickActions = "Quick actions", displays = "Displays"
-    case sound = "Sound & connections", input = "Input", system = "System", clipboard = "Clipboard", links = "Links"
-    case battery = "Battery"
+struct SettingsGroup: RawRepresentable, Hashable, CaseIterable, Identifiable {
+    let rawValue: String
+    init(_ rawValue: String) { self.rawValue = rawValue }
+    init?(rawValue: String) { guard Self.allCases.contains(where: { $0.rawValue == rawValue }) else { return nil }; self.rawValue = rawValue }
+    static let general = SettingsGroup("General"), quickActions = SettingsGroup("Quick actions"), displays = SettingsGroup("Displays")
+    static let sound = SettingsGroup("Sound & connections"), input = SettingsGroup("Input"), system = SettingsGroup("System"), clipboard = SettingsGroup("Clipboard")
+    static var allCases: [SettingsGroup] { [.general, .quickActions, .displays, .sound, .input, .system, .clipboard] + BuiltinFeatures.registrations.flatMap { $0.settings.map(\.group) } }
     var id: String { rawValue }
     var symbol: String {
         switch self {
@@ -15,8 +18,7 @@ enum SettingsGroup: String, CaseIterable, Identifiable {
         case .input: return "keyboard"
         case .system: return "slider.horizontal.3"
         case .clipboard: return "clipboard"
-        case .links: return "arrow.triangle.branch"
-        case .battery: return "battery.100percent"
+        default: return BuiltinFeatures.registrations.flatMap { $0.settings }.first { $0.group == self }?.symbol ?? "questionmark.circle"
         }
     }
     var modules: [AppModule] { BuiltinFeatures.modules(in: self) }
@@ -29,8 +31,7 @@ enum SettingsGroup: String, CaseIterable, Identifiable {
         case .input: return "Tune your mouse and keyboard behavior."
         case .system: return "Control sleep, animations, and the menu bar."
         case .clipboard: return "Choose what to capture and how long to keep it."
-        case .links: return "Send each web link to the right browser or profile."
-        case .battery: return "Live power flow and battery details. Read-only."
+        default: return BuiltinFeatures.registrations.flatMap { $0.settings }.first { $0.group == self }?.summary ?? ""
         }
     }
     static func forFeature(_ feature: DashboardTab) -> SettingsGroup {
@@ -38,8 +39,20 @@ enum SettingsGroup: String, CaseIterable, Identifiable {
     }
 }
 
-enum WidgetKind: String, CaseIterable, Identifiable, Codable {
-    case keepAwake, audio, displays, windows, clipboard, bluetooth, battery
+struct WidgetKind: RawRepresentable, Hashable, CaseIterable, Identifiable, Codable {
+    let rawValue: String
+    init(_ rawValue: String) { self.rawValue = rawValue }
+    init?(rawValue: String) { guard Self.allCases.contains(where: { $0.rawValue == rawValue }) else { return nil }; self.rawValue = rawValue }
+    static let keepAwake = WidgetKind("keepAwake"), audio = WidgetKind("audio"), displays = WidgetKind("displays")
+    static let windows = WidgetKind("windows"), clipboard = WidgetKind("clipboard"), bluetooth = WidgetKind("bluetooth")
+    static var allCases: [WidgetKind] { [.keepAwake, .audio, .displays, .windows, .clipboard, .bluetooth] + BuiltinFeatures.registrations.flatMap { $0.widgets.map(\.kind) } }
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        guard let value = Self(rawValue: raw) else { throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown widget") }
+        self = value
+    }
+    func encode(to encoder: Encoder) throws { var container = encoder.singleValueContainer(); try container.encode(rawValue) }
     var id: String { rawValue }
     var feature: DashboardTab { module.dashboardFeature }
     var title: String { BuiltinFeatures.widget(for: self).title }
@@ -86,6 +99,16 @@ struct WidgetEntry: Codable, Equatable, Identifiable {
 struct WidgetLayout: Codable, Equatable {
     var version = 1
     var entries: [WidgetEntry] = []
+    func visibleEntries(enabled: Set<AppModule>, launch: WidgetKind?) -> [WidgetEntry] {
+        var visible = entries.filter { $0.known.map { enabled.contains($0.module) } ?? false }
+        if let launch, enabled.contains(launch.module) {
+            var opened = visible.first { $0.known == launch } ?? WidgetEntry(launch)
+            opened.expanded = true
+            visible.removeAll { $0.known == launch }
+            visible.insert(opened, at: 0)
+        }
+        return visible
+    }
     static func suggested(for modules: Set<AppModule>) -> WidgetLayout {
         WidgetLayout(entries: BuiltinFeatures.widgets.filter(\.suggested).map(\.kind)
             .filter { modules.contains($0.module) }.map { WidgetEntry($0) })
@@ -265,8 +288,8 @@ struct WidgetEditor: View {
         case .displays: return "Display name · On / Off"
         case .windows: return "Layout name · Restore"
         case .clipboard: return "Open history · Recording paused"
-        case .battery: return "Charge and power source"
         case .bluetooth: return "Chosen device · Connect / Disconnect"
+        default: return kind.detail
         }
     }
 }
@@ -300,14 +323,7 @@ struct QuickActionsView: View {
         PopupSizing(contentHeight: contentHeight, chromeHeight: headerHeight + footerHeight + 2, availableHeight: model.popupHeight)
     }
     private var entries: [WidgetEntry] {
-        var entries = model.widgetLayout.entries.filter { $0.known != nil }
-        if let launch = model.launchWidget {
-            var opened = entries.first { $0.known == launch } ?? WidgetEntry(launch)
-            opened.expanded = true
-            entries.removeAll { $0.known == launch }
-            entries.insert(opened, at: 0)
-        }
-        return entries
+        model.widgetLayout.visibleEntries(enabled: model.enabledModules, launch: model.launchWidget)
     }
     var body: some View {
         VStack(spacing: 0) {
@@ -619,9 +635,8 @@ struct QuickWidget: View {
                     case .windows: windows
                     case .clipboard: clipboard
                     case .bluetooth: bluetooth
-                    case .battery:
-                        BatteryStatusView(snapshot: model.batterySnapshot, expanded: entry.expanded)
-                        AppActionRow(title: "Battery details", symbol: "arrow.up.right", action: { model.onOpenSettings(.battery) })
+                    default:
+                        if let view = BuiltinFeatures.registrations.lazy.compactMap({ $0.widgetView(model: model, entry: entry) }).first { view }
                     }
                 }
             }

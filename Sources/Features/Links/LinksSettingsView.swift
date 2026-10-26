@@ -8,18 +8,22 @@ struct LinksSettingsView: View {
     @StoredState private var newProfileFolder = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 20) {
             defaultBrowser
+            if !module.message.isEmpty {
+                Label(module.message, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+            }
+            tryLink
             rules
             if !module.profileBrowsers.isEmpty { profiles }
-            tryLink
-            if !module.message.isEmpty { Text(module.message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
         }.onAppear(perform: module.refresh)
     }
 
     private var defaultBrowser: some View {
-        DashboardCard {
-            HStack(alignment: .center, spacing: 16) {
+        section {
+            HStack(alignment: .top, spacing: 12) {
+                AppSymbolBadge(symbol: "arrow.triangle.branch")
                 if module.isDefaultBrowser {
                     Label("Better macOS opens your web links", systemImage: "checkmark.circle.fill").font(.headline)
                 } else {
@@ -28,16 +32,18 @@ struct LinksSettingsView: View {
                         Text("Clicked links follow these rules only after Better macOS becomes the default browser.")
                             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
-                    Spacer(minLength: 0)
-                    Button("Make default browser", action: module.makeDefaultBrowser).buttonStyle(.borderedProminent)
                 }
+                Spacer(minLength: 0)
             }
+            if !module.isDefaultBrowser { Button("Make default browser", action: module.makeDefaultBrowser).buttonStyle(.borderedProminent) }
             destinationPicker("Everything else opens in", selection: binding(\.fallback))
+            if module.destinations.isEmpty { Text("No browsers found. Install a browser, then refresh.").font(.caption).foregroundStyle(.secondary) }
+            Button("Refresh browsers", action: module.refresh).controlSize(.small)
         }
     }
 
     private var rules: some View {
-        DashboardCard {
+        section {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Rules").font(.headline)
@@ -50,30 +56,38 @@ struct LinksSettingsView: View {
                 Text("No rules yet. Add one like: Domain github.com/your-team → Chrome · Work.")
                     .font(.callout).foregroundStyle(.secondary)
             }
-            ForEach(binding(\.rules)) { $rule in ruleRow($rule) }
+            ForEach(binding(\.rules)) { $rule in
+                ruleRow($rule)
+                if rule.id != module.config.rules.last?.id { Divider() }
+            }
         }
     }
 
     private func ruleRow(_ rule: Binding<LinkRule>) -> some View {
         let value = rule.wrappedValue
         let first = module.config.rules.first?.id == value.id, last = module.config.rules.last?.id == value.id
-        return VStack(alignment: .leading, spacing: 4) {
+        let number = (module.config.rules.firstIndex { $0.id == value.id } ?? 0) + 1
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Toggle("Enabled", isOn: rule.enabled).labelsHidden().toggleStyle(.switch).controlSize(.mini)
-                Picker("Match", selection: rule.kind) {
-                    ForEach(LinkRuleKind.allCases) { Text($0.title).tag($0) }
-                }.labelsHidden().fixedSize()
-                TextField(value.kind.placeholder, text: rule.pattern).textFieldStyle(.roundedBorder).frame(minWidth: 160)
-                Image(systemName: "arrow.right").foregroundStyle(.secondary).accessibilityHidden(true)
-                destinationPicker("Open in", selection: rule.target).labelsHidden().frame(maxWidth: 220)
+                Toggle("Rule \(number)", isOn: rule.enabled).toggleStyle(.switch).controlSize(.small)
+                    .accessibilityLabel("Enable rule \(number)")
+                Spacer()
                 Menu {
                     Button("Move up") { module.update { $0.move(value.id, by: -1) } }.disabled(first)
                     Button("Move down") { module.update { $0.move(value.id, by: 1) } }.disabled(last)
                     Divider()
                     Button("Delete rule", role: .destructive) { module.update { config in config.rules.removeAll { $0.id == value.id } } }
                 } label: { Image(systemName: "ellipsis") }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().accessibilityLabel("Rule actions")
-            }.opacity(value.enabled ? 1 : 0.55)
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().accessibilityLabel("Rule \(number) actions")
+            }
+            HStack(spacing: 12) {
+                Picker("Match", selection: rule.kind) {
+                    ForEach(LinkRuleKind.allCases) { Text($0.title).tag($0) }
+                }.fixedSize().accessibilityLabel("Rule \(number) match type")
+                TextField(value.kind.placeholder, text: rule.pattern).textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Rule \(number) match text")
+            }
+            destinationPicker("Open in", selection: rule.target).accessibilityLabel("Rule \(number) destination")
             if value.domainLooksInvalid {
                 Text("Domains don’t take wildcards; switch to Pattern.").font(.caption).foregroundStyle(.orange)
             } else if value.pattern.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -83,8 +97,8 @@ struct LinksSettingsView: View {
     }
 
     private var profiles: some View {
-        DashboardCard {
-            Text("Browser profiles").font(.headline)
+        section {
+            Label("Browser profiles", systemImage: "person.crop.circle").font(.headline)
             if let result = module.profileAccessResult { accessResult(result) }
             if module.profilesUnreadable {
                 Text("macOS protects your browser’s data from other apps. Allow access to its folder to list profiles automatically, or add them by hand below.")
@@ -93,6 +107,7 @@ struct LinksSettingsView: View {
                     Button("Allow access to \(browser.name) profiles…") { module.requestProfileAccess(browser) }
                 }
             }
+            DisclosureGroup("Available profiles") {
             if !module.foundProfiles.isEmpty {
                 Text("Found automatically").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 ForEach(module.foundProfiles) { profile in
@@ -108,8 +123,11 @@ struct LinksSettingsView: View {
                     }
                 }
             }
-            if module.profilesUnreadable { manualProfileForm }
-            else { DisclosureGroup("Add a profile by hand") { manualProfileForm } }
+            if module.foundProfiles.isEmpty && module.config.profiles.isEmpty {
+                Text("No profiles listed yet.").font(.caption).foregroundStyle(.secondary)
+            }
+            }
+            DisclosureGroup("Add a profile by hand") { manualProfileForm.padding(.top, 8) }
         }
     }
 
@@ -128,8 +146,10 @@ struct LinksSettingsView: View {
     private func profileRow(_ name: String, detail: String, @ViewBuilder trailing: () -> some View = { EmptyView() }) -> some View {
         HStack {
             Image(systemName: "person.crop.circle").foregroundStyle(.secondary)
-            Text(name)
-            Text(detail).font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(name)
+                Text(detail).font(.caption).foregroundStyle(.secondary)
+            }.fixedSize(horizontal: false, vertical: true)
             Spacer()
             trailing()
         }
@@ -137,14 +157,14 @@ struct LinksSettingsView: View {
 
     private var manualProfileForm: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 if module.profileBrowsers.count > 1 {
                     Picker("Browser", selection: $newProfileBrowser) {
                         ForEach(module.profileBrowsers) { Text($0.name).tag($0.id) }
-                    }.labelsHidden().fixedSize()
+                    }
                 }
-                TextField("Name, e.g. Work", text: $newProfileName).textFieldStyle(.roundedBorder)
-                TextField("Folder, e.g. Profile 1", text: $newProfileFolder).textFieldStyle(.roundedBorder)
+                TextField("Name, e.g. Work", text: $newProfileName).textFieldStyle(.roundedBorder).accessibilityLabel("Profile name")
+                TextField("Folder, e.g. Profile 1", text: $newProfileFolder).textFieldStyle(.roundedBorder).accessibilityLabel("Profile folder")
                 Button("Add profile") {
                     if module.addProfile(browser: selectedProfileBrowser, directory: newProfileFolder, name: newProfileName) {
                         newProfileName = ""; newProfileFolder = ""
@@ -161,14 +181,16 @@ struct LinksSettingsView: View {
     }
 
     private var tryLink: some View {
-        DashboardCard {
-            Text("Try a link").font(.headline)
+        section {
+            Text("Preview a link").font(AppStyle.sectionTitle)
+            Text("Paste a link to check its destination. It opens only when you choose Open link.")
+                .font(.caption).foregroundStyle(.secondary)
             HStack {
-                TextField("Paste a link to see where it opens", text: $testURL).textFieldStyle(.roundedBorder)
-                Button("Open") { module.testOpen(testURL) }.disabled(LinkURL.parse(testURL) == nil)
+                TextField("https://example.com", text: $testURL).textFieldStyle(.roundedBorder).accessibilityLabel("Link to preview")
+                Button("Open link") { module.testOpen(testURL) }.disabled(LinkURL.parse(testURL) == nil)
             }
             if let url = LinkURL.parse(testURL) {
-                Label(module.destination(for: url)?.name ?? "Unavailable browser — opens in the fallback", systemImage: "arrow.turn.down.right")
+                Label(module.preview(for: url), systemImage: "arrow.turn.down.right")
                     .font(.caption).foregroundStyle(.secondary)
             } else if !testURL.isEmpty {
                 Text("Enter a full http or https link.").font(.caption).foregroundStyle(.secondary)
@@ -187,5 +209,9 @@ struct LinksSettingsView: View {
 
     private func binding<Value>(_ path: WritableKeyPath<LinkRoutingConfig, Value>) -> Binding<Value> {
         Binding(get: { module.config[keyPath: path] }, set: { value in module.update { $0[keyPath: path] = value } })
+    }
+    private func section<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: AppStyle.spacing, content: content)
+            .frame(maxWidth: .infinity, alignment: .leading).padding(16).modifier(AppSurface())
     }
 }

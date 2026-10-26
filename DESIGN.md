@@ -22,6 +22,8 @@ actions; pair status colors with text or icons.
 - **Quick actions:** compact status and frequent actions. Expanded widgets add
   detail; full configuration belongs in Settings. Keep awake, Displays, and
   Clipboard lead the suggested order. Preserve the user's saved layout.
+  Hide disabled features from the popup; retain their saved widget positions for
+  re-enabling. Keep recovery controls reachable independently of widget visibility.
 - **Settings:** group related controls. Give substantial features a focused detail
   page. A widget's details link must land on visible, relevant content, not the top
   of an unrelated group. Reuse the existing Settings window.

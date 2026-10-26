@@ -8,14 +8,50 @@ feature lifecycle framework. All owners remain compiled into the app executable.
 [BuiltinFeatures.swift](../../Sources/App/BuiltinFeatures.swift) registers thirteen `AppModule` identities and seven widget
 kinds. The catalog contains values only: titles, descriptions, dashboard
 destinations, Settings membership/order and widget ownership/suggestion order.
-Existing `AppModule`, `SettingsGroup` and `WidgetKind` properties are compatibility
-facades over those definitions. SwiftUI view dispatch stays concrete; no view or
-owner factory executes during metadata lookup.
+`AppModule`, `DashboardTab`, `SettingsGroup` and `WidgetKind` are extensible raw-value
+identities. Legacy definitions remain in the shared catalog; Links and Battery
+contribute feature-local definitions, view factories and independent owners through
+`FeatureRegistration`. No view or owner factory executes during metadata lookup.
 
 Persisted raw IDs and preference keys are unchanged. Setup still applies features
 in `AppModule.allCases` order, not Settings presentation order. Widget decoding
 still stores a raw string so unknown entries survive round trips. Removing a
 widget neither disables a feature nor clears its data.
+Disabled widgets are hidden without changing their saved layout positions.
+
+## Adding an independent feature
+
+1. Add sources under `Sources/Features/<Feature>/`. Put stable identity constants,
+   metadata, Settings/widget factories, setup copy and launch flags in
+   `<Feature>FeatureRegistration.swift`, with a matching type name conforming to
+   `FeatureRegistration`. Choose a unique order key; legacy features retain order.
+2. Use `FeatureContext` for isolated preferences and host action admission. A
+   registration may construct one independent `FeatureOwner`; its identity must
+   belong to that registration. Owners reconcile enabled state and stop idempotently.
+   Features requiring asynchronous drain, recovery or veto need explicit host
+   integration through existing typed paths, beyond this independent-owner seam.
+3. Add `Tests/Features/<Feature>/<Feature>FeatureTests.swift`, with a matching
+   `FeatureTestSuite` type. Implement `run()` and optional `render(directory:)`.
+   Inject backends and isolated preferences; fixture registries should supply only
+   their feature registration to avoid constructing unrelated production owners.
+4. Run `python3 Tests/feature-index-test.py`, build, relevant tests, lint, format
+   and whitespace checks. Update the module map and usage docs.
+
+`scripts/generate-feature-index.py` discovers app Swift sources, excluding the app
+entry point and `Sources/Features/Clipboard/Policy`. SwiftPM remains the sole ClipboardPolicy
+compiler. Test discovery includes top-level `*Tests.swift`, `Tests/Support` and
+`Tests/Features`; standalone runners and SwiftPM tests stay separate. Filenames
+must be unique within each compiler input set. Registration/suite basenames must
+be Swift identifiers. Null-delimited lists preserve paths with spaces.
+
+Generated `BuiltinFeatureIndex.swift` and `RegisteredFeatureTests.swift` live under
+ignored `build/generated`; never commit them or edit shared input lists to add a
+feature. This is build-time static discovery, with all code compiled into one app.
+
+`FeatureOwners` constructs owners once, supports injected factory overrides, and
+reconciles/stops in module order. At most one owner handles incoming web URLs.
+Links retains fallback delivery while disabled or stopped; user actions still
+require host admission. Battery owns its observable read-only snapshot and timer.
 
 ## Registered choice preparation
 
@@ -74,8 +110,9 @@ engines and generalized setup schemas remain outside this registration seam.
 
 ## Regression surface
 
-`Tests/UITests.swift` exercises catalog completeness, stable IDs, presentation
-orders, unknown widget persistence and production UI/setup owner preparation with
+`Tests/Support/BuiltinCatalogTests.swift` exercises catalog invariants; feature-local
+suites cover Links/Battery identities, owners and fixtures. `Tests/UITests.swift`
+exercises unknown widget persistence and production UI/setup owner preparation with
 injected assertion/archive failures and retries. `Tests/HostTransactionsTests.swift`
 exercises both display choices through UI/setup, durable recovery without a ready
 watchdog, accepted cleanup after admission closes, failure/retry and duplicate

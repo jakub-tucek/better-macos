@@ -54,6 +54,10 @@ documented in [the offline characterization](gesture-terminal-failures.md).
 
 ## Evidence index
 
+- [Feature-local registration and Links UI](feature-local-registration.md):
+  5,310 isolated checks and supporting fixtures passed; full-suite gesture fixture
+  remains blocked by its macOS 27 requirement on this macOS 26 host.
+
 - [Windows execution, shortcut sessions and Bluetooth cycle delivery](../architecture/bluetooth-observation.md#combined-architecture-refactors):
   behavior-preserving deepening, independently reviewed; the recorded refactor-stage run passed
   5,076 isolated checks plus named suites. Native/hardware acceptance remains open.

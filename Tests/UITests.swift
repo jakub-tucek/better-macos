@@ -86,6 +86,10 @@ func runUITests() throws {
     expect(!store.isExistingInstall, "fresh UI detection does not rely solely on missing wizard-completion key")
     let baseline = ModuleSettings(defaults: defaults).enabled
     let initialLayout = store.loadLayout(modules: baseline)
+    let visible = initialLayout.visibleEntries(enabled: [.keepAwake, .monitors], launch: .clipboard)
+    expect(visible.map(\.known) == [.keepAwake, .displays], "Quick actions hides disabled features even when requested as a temporary launch")
+    expect(initialLayout.visibleEntries(enabled: baseline, launch: nil) == initialLayout.entries,
+           "Re-enabling features restores saved widget order without deleting hidden entries")
     expect(baseline == Set(AppModule.allCases) && initialLayout.entries.count == 6 && initialLayout.entries.allSatisfy { !$0.expanded && $0.windowLayoutID.isEmpty },
            "fresh applied-settings baseline enables all modules and pins six compact widgets without device targets")
     store.save(WidgetLayout())
@@ -278,26 +282,6 @@ private func runSetupRecommendationTests() {
     expect(!owner.automaticRecording && !history.recording, "automatic-recording changes obey host admission and retain Off")
 }
 
-private func runBuiltinCatalogTests() {
-    let mainMenu = AppDelegate.makeMainMenu()
-    let shortcuts = mainMenu.items.flatMap { $0.submenu?.items ?? [] }.map { "\($0.keyEquivalent):\($0.action.map(NSStringFromSelector) ?? "")" }
-    expect(shortcuts.contains("a:selectAll:") && shortcuts.contains("v:paste:") && shortcuts.contains("c:copy:") && shortcuts.contains("x:cut:") && shortcuts.contains("z:undo:"),
-           "the hidden main menu provides standard text-editing shortcuts")
-    expect(!shortcuts.contains { $0.hasPrefix("q:") }, "the main menu adds no ⌘Q that could bypass Hold to quit or host quit approval")
-    expect(BuiltinFeatures.definitions.map(\.module) == AppModule.allCases, "catalog registers every stable feature exactly once without changing setup order")
-    expect(AppModule.allCases.map(\.rawValue) == ["monitors", "arrangement", "bluetooth", "audio", "spaces", "menuBar", "quitGuard", "keepAwake", "windows", "clipboard", "mouse", "links", "battery"], "existing feature persistence IDs remain stable with Battery appended")
-    let groups: [(SettingsGroup, [AppModule])] = [(.general, []), (.quickActions, []), (.displays, [.monitors, .arrangement, .windows]), (.sound, [.audio, .bluetooth]), (.input, [.quitGuard, .mouse]), (.system, [.spaces, .menuBar, .keepAwake]), (.clipboard, [.clipboard]), (.links, [.links]), (.battery, [.battery])]
-    for (group, modules) in groups { expect(group.modules == modules, "catalog preserves Settings order for \(group.rawValue)") }
-    let destinations: [DashboardTab] = [.monitors, .monitors, .bluetooth, .audio, .spaces, .menuBar, .keyboard, .keepAwake, .windows, .clipboard, .mouse, .links, .battery]
-    expect(AppModule.allCases.map(\.dashboardFeature) == destinations, "catalog preserves shared display and keyboard navigation")
-    expect(Set(BuiltinFeatures.widgets.map(\.kind)) == Set(WidgetKind.allCases) && BuiltinFeatures.widgets.count == 7, "catalog registers each widget exactly once")
-    expect(WidgetKind.allCases.map(\.rawValue) == ["keepAwake", "audio", "displays", "windows", "clipboard", "bluetooth", "battery"], "existing widget persistence IDs remain stable with Battery appended")
-    expect(WidgetLayout.suggested(for: Set(AppModule.allCases)).entries.map(\.kind) == ["keepAwake", "displays", "clipboard", "audio", "windows", "bluetooth"], "catalog prioritizes Keep awake, Displays and Clipboard before other actions")
-    expect(WidgetKind.allCases.map(\.module) == [.keepAwake, .audio, .monitors, .windows, .clipboard, .bluetooth, .battery], "widgets retain distinct owning feature choices")
-    expect(WidgetKind.windows.title == "Window layouts" && WidgetKind.displays.title == "Displays", "widget labels are not inferred from feature titles")
-    expect(WidgetLayout.suggested(for: [.arrangement]).entries.isEmpty, "arrangement alone does not imply the monitor widget")
-}
-
 private func runRegisteredOwnerChoiceTests() throws {
     for setup in [false, true] {
         let suite = "better-macos.registered-awake.\(UUID().uuidString)"
@@ -388,6 +372,7 @@ private func runAudioPreferenceAdditionTests() {
 
 /// Early-exit synthetic route. Own windows, isolated defaults, no runtime host.
 func renderReleaseUIFixtures(directory: String? = nil) throws {
+    try RegisteredFeatureTests.render(directory: directory)
     _ = NSApplication.shared
     let root = directory.map { URL(fileURLWithPath: $0, isDirectory: true) }
     if let root { try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true) }
@@ -440,37 +425,6 @@ func renderReleaseUIFixtures(directory: String? = nil) throws {
             awakePalette.dismiss()
         }
         let model = DashboardModel(); model.enabledModules = [.audio, .clipboard]; model.watchdogReady = true
-        model.enabledModules.insert(.battery)
-        model.batterySnapshot = BatterySnapshot(availability: .available, percent: 80, externalPower: true, charging: false,
-                                                condition: "Good", cycles: 58, temperature: 35.1, sampledAt: Date(timeIntervalSince1970: 100))
-        model.batterySnapshot.adapterWatts = 20.5; model.batterySnapshot.adapterRatedWatts = 65
-        model.batterySnapshot.batteryWatts = 0; model.batterySnapshot.systemWatts = 20.5
-        model.batterySnapshot.voltage = 12.2; model.batterySnapshot.amperage = 0
-        model.settingsGroup = .battery
-        for width: CGFloat in [680, 1000] {
-            let battery = mount(AnyView(SettingsView(model: model)), dark: dark, width: width, height: 820)
-            try snapshot(battery, "battery-details-\(Int(width))-\(suffix)"); battery.orderOut(nil)
-        }
-        let baseBattery = model.batterySnapshot
-        for scenario in ["charging", "discharging", "assisting", "unknown", "absent"] {
-            model.batterySnapshot = baseBattery
-            switch scenario {
-            case "charging":
-                model.batterySnapshot.charging = true; model.batterySnapshot.batteryWatts = 24
-                model.batterySnapshot.adapterWatts = 40; model.batterySnapshot.systemWatts = 16
-                model.batterySnapshot.amperage = 2
-            case "discharging", "assisting":
-                model.batterySnapshot.externalPower = scenario == "assisting"
-                model.batterySnapshot.adapterWatts = scenario == "assisting" ? 20 : 0
-                model.batterySnapshot.batteryWatts = -12; model.batterySnapshot.amperage = -1
-                model.batterySnapshot.systemWatts = scenario == "assisting" ? 32 : 12
-            case "unknown": model.batterySnapshot = BatterySnapshot(availability: .available)
-            default: model.batterySnapshot = BatterySnapshot(availability: .absent)
-            }
-            let battery = mount(AnyView(SettingsView(model: model)), dark: dark, width: 1000, height: 820)
-            try snapshot(battery, "battery-\(scenario)-\(suffix)"); battery.orderOut(nil)
-        }
-        model.batterySnapshot = baseBattery
         model.settingsGroup = .general
         let general = mount(AnyView(SettingsView(model: model)), dark: dark)
         try snapshot(general, "settings-general-\(suffix)"); general.orderOut(nil)
@@ -1249,10 +1203,12 @@ private func runNativeUIInteractionTests() {
            "rejected production Done retains the editable draft instead of losing it during quit admission")
     popup.cancel()
 
-    model.onOpenSettings(SettingsGroup.forFeature(.battery))
-    expect(UILaunchRoute.launch(arguments: ["--show-battery"]) == .settings(.battery), "Battery launch flag opens its dedicated details page")
-    expect(model.settingsGroup.modules == [.battery] && presented.last?.title == "Better macOS Settings",
-           "Battery widget details route opens Battery directly rather than unrelated System controls")
+    for registration in BuiltinFeatures.registrations {
+        for setting in registration.settings {
+            model.onOpenSettings(setting.group)
+            expect(model.settingsGroup == setting.group && presented.last?.title == "Better macOS Settings", "Registered details route opens its own Settings destination")
+        }
+    }
     model.onOpenSettings(.quickActions)
     let settings = presented.last!
     let content = settings.contentViewController

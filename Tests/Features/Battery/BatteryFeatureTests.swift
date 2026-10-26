@@ -1,5 +1,40 @@
 import Foundation
 import IOKit.ps
+import SwiftUI
+
+enum BatteryFeatureTests: FeatureTestSuite {
+    static func run() { runBatteryTests() }
+    static func render(directory: String?) throws {
+        let suite = "better-macos.battery-fixtures.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var reading = BatterySnapshot(availability: .available, percent: 80, externalPower: true, charging: false,
+                                      condition: "Good", cycles: 58, temperature: 35.1, adapterWatts: 20.5, adapterRatedWatts: 65,
+                                      batteryWatts: 0, systemWatts: 20.5, voltage: 12.2, amperage: 0, sampledAt: Date(timeIntervalSince1970: 100))
+        let owner = BatteryModule(read: { reading })
+        let model = DashboardModel(); model.enabledModules = [.battery]; model.settingsGroup = .battery; model.watchdogReady = true
+        model.featureOwners = FeatureOwners(context: FeatureContext(preferences: defaults, acceptsActions: { true }), overrides: [.battery: { _ in owner }], registrations: [BatteryFeatureRegistration.self])
+        let baseline = reading
+        for dark in [false, true] {
+            for scenario in ["idle", "charging", "discharging", "assisting", "unknown", "absent"] {
+                reading = baseline
+                switch scenario {
+                case "charging": reading.charging = true; reading.batteryWatts = 24; reading.adapterWatts = 40; reading.systemWatts = 16; reading.amperage = 2
+                case "discharging", "assisting":
+                    reading.externalPower = scenario == "assisting"; reading.adapterWatts = scenario == "assisting" ? 20 : 0
+                    reading.batteryWatts = -12; reading.amperage = -1; reading.systemWatts = scenario == "assisting" ? 32 : 12
+                case "unknown": reading = BatterySnapshot(availability: .available)
+                case "absent": reading = BatterySnapshot(availability: .absent)
+                default: break
+                }
+                owner.stop(); owner.start()
+                try renderFeatureFixture(SettingsView(model: model), name: "battery-\(scenario)", directory: directory, dark: dark)
+                if scenario == "idle" { try renderFeatureFixture(SettingsView(model: model), name: "battery-idle", directory: directory, dark: dark, width: 680) }
+            }
+        }
+        owner.stop()
+    }
+}
 
 func runBatteryTests() {
     let now = Date(timeIntervalSince1970: 100)

@@ -50,20 +50,13 @@ for source in CStrafe IOHIDPayload; do
         -o "build/objects/$source.o"
 done
 xcrun clang -O2 -arch arm64 -mmacosx-version-min=15.0 -c MouseHID/MouseHID.c -o build/objects/MouseHID.o
+source scripts/source-inputs.sh
 xcrun swiftc -swift-version 5 -warnings-as-errors -O -target arm64-apple-macos15.0 \
-    Sources/Core/ActivityJournal.swift Sources/SharedUI/ActivityView.swift \
-    Sources/Core/Diagnostics.swift Sources/Core/LoginDiagnostics.swift "$STAGE/DiagnosticBuild.swift" \
-    Sources/App/LoginService.swift Sources/Features/KeepAwake/KeepAwakeFeature.swift Sources/Features/KeepAwake/KeepAwakePresentation.swift \
-    Sources/SharedUI/ActionPalette.swift Sources/Features/KeepAwake/KeepAwakePalette.swift \
-    Sources/SharedUI/AppStyle.swift \
+    "${APP_SOURCES[@]}" "$STAGE/DiagnosticBuild.swift" Sources/App/main.swift Vendor/strafe/Swift/*.swift \
     -I "$CLIPBOARD_PACKAGE_MODULES" "$CLIPBOARD_PACKAGE_ARCHIVE" \
-    Sources/Features/Battery/BatteryModule.swift \
-    -I Vendor/strafe/CStrafe/include -I MouseHID Sources/SharedUI/StatusQuickMenu.swift Sources/Features/Clipboard/ClipboardModule.swift Sources/Features/Links/LinkRouting.swift Sources/Features/Links/LinksModule.swift Sources/Features/Links/LinksSettingsView.swift Sources/Features/Windows/WindowShortcuts.swift Sources/Features/Windows/WindowShortcutSession.swift Sources/Features/Windows/WindowPositions.swift Sources/Features/Windows/WindowExecution.swift Sources/Features/Windows/AXWindowNativeAccess.swift Sources/Features/Windows/WindowPositionsView.swift Sources/Features/Windows/WindowActionPalette.swift \
-    Sources/Features/Bluetooth/BluetoothCycleDelivery.swift \
-    Sources/App/AppModules.swift Sources/App/BuiltinFeatures.swift Sources/App/BuiltinChoicePreparations.swift Sources/Core/HostTransactions.swift Sources/Features/Displays/DisplayController.swift Sources/Features/Displays/DisplayTopology.swift Sources/Features/Displays/DisplayArrangementEditor.swift Sources/Features/Displays/DisplayRefreshGate.swift Sources/App/SafetyWatchdog.swift Sources/SharedUI/Dashboard.swift Sources/App/AppDelegate.swift Sources/Core/CommandRunner.swift Sources/Features/Bluetooth/BluetoothModule.swift \
-    Sources/Features/Bluetooth/BluetoothObservation.swift Sources/Features/Bluetooth/BluetoothProfilerProcess.swift Sources/App/BluetoothReadOnlyProbe.swift \
-    Sources/Features/Mouse/MouseSystemBackend.swift Sources/Features/Mouse/MouseModule.swift Sources/Features/KeepAwake/KeepAwakeModule.swift Sources/Features/QuitGuard/QuitGuard.swift Sources/Features/MenuBar/MenuBarModule.swift Sources/App/SourceUpdates.swift Sources/Core/SystemControlLifecycle.swift Sources/Features/Displays/ScreenEdges.swift Sources/Features/Animations/AnimationPreferences.swift Sources/Features/Animations/SpacesModule.swift Vendor/strafe/Swift/*.swift Sources/App/main.swift \
-    Sources/SharedUI/StoredState.swift Sources/SharedUI/UISurfaces.swift Sources/App/SetupWizard.swift Sources/Features/Audio/AudioModule.swift build/objects/CStrafe.o build/objects/IOHIDPayload.o build/objects/MouseHID.o -framework Carbon -framework CoreAudio -framework AppKit -framework ServiceManagement \
+    -I Vendor/strafe/CStrafe/include -I MouseHID \
+    build/objects/CStrafe.o build/objects/IOHIDPayload.o build/objects/MouseHID.o \
+    -framework Carbon -framework CoreAudio -framework AppKit -framework ServiceManagement \
     -framework SwiftUI -framework CoreBluetooth -framework ApplicationServices -framework CoreGraphics -framework CoreFoundation -framework IOKit \
     -o "$APP/Contents/MacOS/better-macos"
 codesign --force --sign "${SIGNING_IDENTITY:--}" "$APP"

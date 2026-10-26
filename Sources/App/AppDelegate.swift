@@ -32,8 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var windowActionRequest = UUID()
     private var popupSourceApp: NSRunningApplication?
     private var clipboard: ClipboardModule?
-    private let links: LinksModule
-    private var battery: BatteryModule?
+    private let featureOwners: FeatureOwners
     private let injectedMouseLifecycle: MouseLifecycle?
     private lazy var mouseLifecycle = injectedMouseLifecycle ?? MouseLifecycle(settings: modules)
     private let sourceUpdater = SourceUpdater()
@@ -101,7 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let terminationReply: (NSApplication, Bool) -> Void
 
      init(commandRunner: CommandRunning = CommandRunner(), spaces: SpacesModule? = nil, windowPositions: WindowPositions? = nil, clipboard: ClipboardModule? = nil, mouseLifecycle: MouseLifecycle? = nil, model: DashboardModel = DashboardModel(), preferences: UserDefaults = .standard,
-          linkBackend: LinkBrowserBackend? = nil,
+          featureFactories: [AppModule: FeatureOwners.Factory] = [:],
           makeAudio: (() -> AudioModule)? = nil, makeKeepAwake: (() -> KeepAwakeModule)? = nil, makeBluetooth: (() -> BluetoothModule)? = nil,
           makeMenuBar: (() -> MenuBarModule)? = nil, menuBarSpacing: MenuBarSpacing? = nil, animations: AnimationPreferences? = nil,
           chooseKeepAwakeApps: @escaping KeepAwakePresentation.ChooseApps = KeepAwakePresentation.chooseApplications,
@@ -147,10 +146,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         self.clipboard = clipboard
         self.injectedMouseLifecycle = mouseLifecycle
         self.terminationReply = terminationReply
-        self.links = LinksModule(defaults: preferences, backend: linkBackend ?? SystemLinkBrowserBackend())
+        self.featureOwners = FeatureOwners(context: FeatureContext(preferences: preferences, acceptsActions: { transactions.acceptsActions }), overrides: featureFactories)
         super.init()
-          links.acceptsActions = { [weak self] in self?.transactions.acceptsActions == true }
-          model.links = links
+          model.featureOwners = featureOwners
           awakeFeature.activity = activity
          awakePresentation.didPublish = { [weak self] in self?.refreshKeepAwakeStatus($0) }
          configureActions()
@@ -510,14 +508,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func updateModules() {
         model.enabledModules = modules.enabled
-        if modules.enabled.contains(.battery) {
-            if battery == nil {
-                let module = BatteryModule()
-                battery = module
-                module.onChange = { [weak self] in self?.model.batterySnapshot = $0 }
-                module.start()
-            }
-        } else { battery?.stop(); battery = nil }
+        featureOwners.reconcile(enabled: modules.enabled)
         if modules.enabled.contains(.windows) {
             if windowPositions == nil {
                 let module = WindowPositions(defaults: preferences)
@@ -570,7 +561,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             clipboard = nil
         }
         refreshClipboard()
-        links.setActive(modules.enabled.contains(.links))
         mouseLifecycle.reconcile()
         awakeFeature.reconcile(enabled: modules.enabled.contains(.keepAwake))
         if modules.enabled.contains(.quitGuard) {
@@ -793,7 +783,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Web links reach the router even while the feature is off or the app is
     /// quitting; only rule matching follows the enable choice.
     func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls { links.route(url) }
+        for url in urls { featureOwners.route(url) }
     }
 
     /// Reopen also arrives without a click, e.g. after confirming the default
@@ -1095,6 +1085,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func applySetupConfiguration(_ value: SetupConfiguration, module: AppModule, completion: @escaping (FeatureSetupOutcome) -> Void) {
         guard transactions.acceptsActions else { completion(.failed("Shutdown in progress.")); return }
         if let failure = moduleFailures[module] { completion(.failed(failure)); return }
+        if let outcome = featureOwners.setupOutcome(for: module) { completion(outcome); return }
         let missing: Bool
         switch module {
         case .audio: missing = audio == nil
@@ -1150,16 +1141,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 clipboard!.setAutomaticRecording(automatic)
             }
             note = clipboard!.automaticRecording ? "Automatic recording enabled. Disk storage is a separate choice." : "Automatic recording is off."
-        case .battery:
-            if battery?.snapshot.availability == .available { note = "Battery monitoring active. Charging stays under macOS control." }
-            else { completion(.pendingHardware(battery?.snapshot.status ?? "Battery information unavailable")); return }
         case .mouse:
             model.mouseAcceleration = value.mouseAcceleration; model.mouseTracking = value.mouseTracking
             preferences.set(value.mouseAcceleration, forKey: "mouse.proposedAcceleration")
             preferences.set(value.mouseTracking, forKey: "mouse.proposedTracking")
             note = "No pointer settings applied. Use explicit Apply in Input settings."
-        case .links:
-            note = links.isDefaultBrowser ? "Rules apply to new links." : "Make Better macOS your default browser in Links settings to route links."
         case .windows:
             if let windowPositions {
                 if value.windowsPaused != old.windowsPaused { windowPositions.paused = value.windowsPaused }
@@ -1195,6 +1181,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if value.animations != old.animations { setAnimations(value.animations, resultCompletion: finishAnimation) }
             else { finishAnimation(true) }
             return
+        default:
+            completion(.failed("Feature owner is unavailable. Retry from Settings.")); return
         }
         completion(.applied(note))
     }
@@ -1687,12 +1675,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        battery?.stop()
+        featureOwners.stop()
         windowPositions?.stop()
         awakeFeature.shutdown()
         audio?.stop()
         clipboard?.stop()
-        links.setActive(false)
         quitGuard?.stop()
         menuBar?.stop()
         sourceUpdater.stop()

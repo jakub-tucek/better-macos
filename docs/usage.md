@@ -27,7 +27,8 @@ Existing installations keep their preferences.
 
 Enabling a feature and showing its widget are separate choices. Removing a widget
 does not disable the feature, stop its session, or delete its data. Disabled
-features stop their feature work, but shared services and pending recovery can
+features disappear from the popup while keeping their saved widget positions.
+They stop their feature work, but shared services and pending recovery can
 remain loaded until their work is safe.
 
 ## Find the controls

@@ -111,13 +111,20 @@ final class LinksModule: ObservableObject {
         return destinations.first { $0.id == id }
     }
 
+    /// Presentation reads only the current snapshot; typing never discovers or opens a browser.
+    func preview(for url: URL) -> String {
+        let target = config.targetID(for: url, applyRules: active)
+        if let destination = destinations.first(where: { $0.id == target }) { return "Would open in \(destination.name)" }
+        if let fallback = destinations.first(where: { $0.id == config.fallback }) { return "Chosen browser unavailable · would use \(fallback.name)" }
+        return "Chosen browser unavailable · will try Safari"
+    }
+
     /// Incoming links are never dropped: an unavailable target falls back to the
     /// saved fallback, then to the system browser. Not gated by host admission.
     func route(_ url: URL) {
         guard LinkURL.parse(url.absoluteString) != nil else { message = "Only http and https links are supported."; return }
         let started = Diagnostics.shared.start()
         let preferred = destination(for: url)
-        if preferred == nil { message = "A chosen browser or profile is unavailable; the link opened in the fallback instead." }
         guard let destination = preferred ?? destinations.first(where: { $0.id == config.fallback }) ?? backend.systemFallback() else {
             message = "No browser is available to open links."; return
         }
@@ -127,7 +134,7 @@ final class LinksModule: ObservableObject {
                 Diagnostics.shared.emit("links", "routed", outcome: error == nil ? "success" : "failure", since: started,
                                         fields: ["profile": destination.profile == nil ? "false" : "true", "rules": rules ? "applied" : "skipped"])
                 if let error { self?.message = "Could not open in \(destination.name): \(error.localizedDescription)" }
-                else if preferred != nil { self?.message = "Opened in \(destination.name)." }
+                else { self?.message = preferred == nil ? "Chosen browser unavailable. Opened in \(destination.name) instead." : "Opened in \(destination.name)." }
             }
         }
     }

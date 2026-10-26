@@ -137,10 +137,10 @@ enum BatteryReader {
     }
 }
 
-final class BatteryModule {
+final class BatteryModule: ObservableObject {
     private let read: () -> BatterySnapshot
     private var timer: Timer?
-    private(set) var snapshot = BatterySnapshot()
+    @Published private(set) var snapshot = BatterySnapshot()
     var onChange: (BatterySnapshot) -> Void = { _ in }
     init(read: @escaping () -> BatterySnapshot = BatteryReader.read) { self.read = read }
     func start() {

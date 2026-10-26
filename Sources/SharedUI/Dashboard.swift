@@ -2,20 +2,17 @@ import SwiftUI
 import AppKit
 import ClipboardPolicy
 
-enum DashboardTab: String, CaseIterable {
-    case modules = "Modules"
-    case monitors = "Monitors"
-    case bluetooth = "Bluetooth"
-    case audio = "Audio"
-    case spaces = "Animations"
-    case menuBar = "Menu bar"
-    case keyboard = "Keyboard"
-    case keepAwake = "Keep awake"
-    case windows = "Windows"
-    case clipboard = "Clipboard"
-    case mouse = "Mouse"
-    case links = "Links"
-    case battery = "Battery"
+struct DashboardTab: RawRepresentable, Hashable, CaseIterable {
+    let rawValue: String
+    init(_ rawValue: String) { self.rawValue = rawValue }
+    init?(rawValue: String) { guard Self.allCases.contains(where: { $0.rawValue == rawValue }) else { return nil }; self.rawValue = rawValue }
+    static let modules = DashboardTab("Modules"), monitors = DashboardTab("Monitors"), bluetooth = DashboardTab("Bluetooth"), audio = DashboardTab("Audio")
+    static let spaces = DashboardTab("Animations"), menuBar = DashboardTab("Menu bar"), keyboard = DashboardTab("Keyboard"), keepAwake = DashboardTab("Keep awake")
+    static let windows = DashboardTab("Windows"), clipboard = DashboardTab("Clipboard"), mouse = DashboardTab("Mouse")
+    static var allCases: [DashboardTab] {
+        var seen = Set<DashboardTab>()
+        return ([.modules] + BuiltinFeatures.definitions.map(\.feature)).filter { seen.insert($0).inserted }
+    }
 
     static var features: [DashboardTab] { allCases.filter { $0 != .modules } }
     static let quickFeatures: [DashboardTab] = [.monitors, .keepAwake, .audio, .clipboard, .windows]
@@ -32,8 +29,7 @@ enum DashboardTab: String, CaseIterable {
         case .windows: return "macwindow.on.rectangle"
         case .clipboard: return "clipboard"
         case .mouse: return "computermouse"
-        case .links: return "arrow.triangle.branch"
-        case .battery: return "battery.100percent"
+        default: return BuiltinFeatures.definitions.first { $0.feature == self }?.symbol ?? "questionmark.circle"
         }
     }
 }
@@ -78,10 +74,14 @@ struct DashboardNavigation: Equatable {
             ("--show-modules", .modules), ("--show-spaces", .spaces),
             ("--show-menu-bar", .menuBar), ("--show-keyboard", .keyboard),
             ("--show-keep-awake", .keepAwake), ("--show-mouse", .mouse),
-            ("--show-audio", .audio), ("--show-clipboard", .clipboard), ("--show-windows", .windows),
-            ("--show-links", .links), ("--show-battery", .battery)
+            ("--show-audio", .audio), ("--show-clipboard", .clipboard), ("--show-windows", .windows)
         ]
         for (flag, feature) in flags where arguments.contains(flag) { result.show(feature) }
+        for registration in BuiltinFeatures.registrations {
+            for flag in registration.launchArguments.keys.sorted() where arguments.contains(flag) {
+                if let feature = registration.launchArguments[flag] { result.show(feature) }
+            }
+        }
         return result
     }
 }
@@ -90,7 +90,7 @@ struct DashboardNavigation: Equatable {
 /// update values without destroying the UI or closing its containing popover.
 final class DashboardModel: ObservableObject {
     @Published var windowPositions: WindowPositions?
-    @Published var links: LinksModule?
+    var featureOwners: FeatureOwners?
     @Published var audioDevices: [AudioDevice] = []
     @Published var audioRoutes: [AudioDirection: String] = [:]
     @Published var audioPreferences: [AudioDirection: [String]] = [:]
@@ -200,7 +200,6 @@ final class DashboardModel: ObservableObject {
     var onKeepAwakeRemoveApp: (String) -> Void = { _ in }
     var onKeepAwakeResume: () -> Void = {}
     @Published var keepDisplayAwake = false
-    @Published var batterySnapshot = BatterySnapshot()
     @Published var clipboardRecording = false
     @Published var clipboardAutomaticRecording = false
     var onClipboardAutomaticRecording: (Bool) -> Void = { _ in }
@@ -470,14 +469,9 @@ struct DashboardView: View {
                     case .mouse:
                         if model.enabledModules.contains(.mouse) { mouse }
                         else { disabledModule("Mouse") }
-                    case .links:
-                        if draftMode { Text("Add rules and make Better macOS your default browser in Links settings after setup. Setup never changes your default browser.") }
-                        else if model.enabledModules.contains(.links), let links = model.links { LinksSettingsView(module: links) }
-                        else { disabledModule("Links") }
-                    case .battery:
-                        if draftMode { Text("After Finish, see live power flow, charge, condition, cycle count and temperature in Battery settings or the Battery widget. No extra permissions or charging changes.") }
-                        else if model.enabledModules.contains(.battery) { BatteryDetailsView(snapshot: model.batterySnapshot) }
-                        else { disabledModule("Battery") }
+                    default:
+                        if let view = BuiltinFeatures.registrations.lazy.compactMap({ $0.settingsView(model: model, feature: feature, draft: draftMode) }).first { view }
+                        else { disabledModule(feature.rawValue) }
                     }
         }
         .alert(disconnectDisablesRule ? "Disconnect and turn off auto-reconnect?" : "Disconnect this device?", isPresented: $showDisconnectWarning) {

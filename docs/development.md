@@ -42,8 +42,11 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer bash scripts/dev build
 
 App sources are organized under `Sources/App`, `Sources/Core`,
 `Sources/Features/<owner>` and `Sources/SharedUI`; the [module guide](modules.md)
-maps ownership. `build.sh` and `test.sh` retain explicit Swift inputs (different
-entry points), and `Tests/swiftui-compatibility.sh` compiles the production
+maps ownership. `build.sh` and `test.sh` discover Swift inputs through
+`scripts/source-inputs.sh`, retaining separate entry points. Feature registrations
+and test suites receive generated static indexes under ignored `build/generated`.
+See the [feature contribution workflow](architecture/builtin-registration.md#adding-an-independent-feature).
+`Tests/swiftui-compatibility.sh` compiles the production
 `Sources/SharedUI/StoredState.swift`. Folder moves do not add SwiftPM targets:
 only Clipboard policy and its named tests belong to the existing package.
 The [integrated move evidence](validation/source-organization.md#main-integration--2026-10-15)

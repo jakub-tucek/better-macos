@@ -4,8 +4,10 @@ cd "$(dirname "$0")/.."
 ROOT="$(mktemp -d "${TMPDIR:-/tmp}/better-macos-build-test.XXXXXX")"
 trap 'rm -rf "$ROOT"' EXIT
 mkdir -p "$ROOT/source/Vendor/strafe/Swift" "$ROOT/source/Scripts" "$ROOT/source/Tests" "$ROOT/bin"
+mkdir -p "$ROOT/source/scripts"
 cp build.sh test.sh Package.swift Info.plist LICENSE "$ROOT/source/"
 cp Scripts/clipboard-package.sh "$ROOT/source/Scripts/"
+cp scripts/source-inputs.sh scripts/generate-feature-index.py "$ROOT/source/scripts/"
 cp -R Sources Tests "$ROOT/source/"
 cp Vendor/strafe/LICENSE Vendor/strafe/UPSTREAM.txt "$ROOT/source/Vendor/strafe/"
 touch "$ROOT/source/Vendor/strafe/Swift/fixture.swift"
@@ -41,10 +43,12 @@ case "${0##*/}" in
                 *fixture-stale.o|*ClipboardHistory.swift|Sources/Features/Clipboard/Policy/*) exit 21 ;;
                 *.swift)
                     [[ -f "$arg" ]] || exit 28
-                    case "$arg" in Sources/*|Tests/*|Vendor/*|*/.bundle.*/DiagnosticBuild.swift) ;; *) exit 29 ;; esac ;;
+                    case "$arg" in Sources/*|Tests/*|Vendor/*|build/generated/BuiltinFeatureIndex.swift|build/generated/RegisteredFeatureTests.swift|*/.bundle.*/DiagnosticBuild.swift) ;; *) exit 29 ;; esac ;;
             esac
         done
         if [[ "$1" == swiftc ]]; then
+            # Model the compiler's unresolved StoredState dependency after discovery.
+            [[ "$*" == *'Sources/SharedUI/StoredState.swift'* ]] || exit 28
             cycle_inputs=0
             for arg in "$@"; do
                 if [[ "$arg" == Sources/Features/Bluetooth/BluetoothCycleDelivery.swift ]]; then cycle_inputs=$((cycle_inputs + 1)); fi

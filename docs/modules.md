@@ -1,16 +1,16 @@
 # Built-in modules and source map
 
-Current source map, checked against `d6b216f` on 2026-10-23. For controls, defaults,
+Current source map includes feature-local Links/Battery integration. For controls, defaults,
 installation and privacy, use the [usage guide](usage.md). For test results and open
 release gates, use [validation](validation/README.md). Directory organization is
 not a completed lifecycle refactor; see [move evidence](validation/source-organization.md).
 
 ## Modules, not a plugin system
 
-The thirteen [AppModule](../Sources/App/AppModules.swift) cases retain persisted enable-choice IDs
+The thirteen [AppModule](../Sources/App/AppModules.swift) identities retain persisted enable-choice IDs
 (`ModuleSettings`). [BuiltinFeatures.swift](../Sources/App/BuiltinFeatures.swift) registers inert
 titles, descriptions, dashboard destinations, Settings order and seven widget definitions (six suggested);
-existing enum properties delegate to that catalog without constructing owners.
+identity properties delegate to that catalog without constructing owners.
 Developers compile feature owners into the app through [build.sh](../build.sh).
 
 The host in [AppDelegate.swift](../Sources/App/AppDelegate.swift) wires actions, constructs owners,
@@ -18,9 +18,10 @@ and retains activation, reconciliation, readiness and shutdown authority.
 [BuiltinChoicePreparations.swift](../Sources/App/BuiltinChoicePreparations.swift) registers typed
 Keep awake disable, Clipboard unload and shared Displays preparation before choice
 commit. It preserves refusal/retry and does not replace admission or quit coordination.
-There is no universal lifecycle/factory framework, runtime discovery or dynamic
-loader. Developers adding a feature must update the catalog, host wiring, preparation,
-build inputs, and tests as needed; adding an enum case alone is insufficient.
+Links and Battery use feature-local `FeatureRegistration` files and `FeatureOwners`.
+New independent features use the [contribution workflow](architecture/builtin-registration.md#adding-an-independent-feature)
+without editing central identity, compiler-input or test-suite lists. Recovery/drain
+features still require explicit typed host coordination. There is no runtime loader.
 
 First-party app Swift lives under `Sources/`: `App/` owns entry points, composition,
 setup and native host integration; `Core/` owns host transactions, readiness and
@@ -29,11 +30,11 @@ feature configuration views and `StoredState`. `Features/<owner>/` co-locates
 feature implementations: Displays, Windows, Audio, Bluetooth, Clipboard, Mouse,
 Animations, MenuBar, QuitGuard, KeepAwake, Links and Battery. Shared display geometry, refresh and
 cursor recovery remain together under Displays; Windows retains its own owner/UI.
-These folders are not module/package boundaries: no lifecycle extraction occurred.
+These folders are not module/package boundaries.
 `Sources/App/main.swift` remains the app/helper/CLI entry point; tests retain
 `Tests/main.swift`. `Package.swift` stays at the root and explicitly owns only
 `Sources/Features/Clipboard/Policy` plus its named test target. App/legacy compiler
-inputs remain explicit, with policy imported and statically linked, not recompiled.
+inputs are discovered at build time, with policy imported and statically linked, not recompiled.
 `Vendor/` contains pinned third-party engine code; `MouseHID/` contains our unchanged
 C API boundary. Neither defines a user-installable plugin. See the
 [partial registration contract](architecture/builtin-registration.md) and [roadmap](roadmap.md)
@@ -44,7 +45,7 @@ for the broader lifecycle work that remains proposed.
 - [AppStyle.swift](../Sources/SharedUI/AppStyle.swift): shared headings, neutral
   surfaces, contrast-aware borders, icon badges and compact launch rows. Used by
   Quick actions, Settings, setup, the right-click menu and action palettes.
-- [UISurfaces.swift](../Sources/SharedUI/UISurfaces.swift): `SettingsGroup`, seven `WidgetKind` cases,
+- [UISurfaces.swift](../Sources/SharedUI/UISurfaces.swift): `SettingsGroup`, seven `WidgetKind` identities,
   widget editor/popup, Settings shell, and quick-action views.
 - [StatusQuickMenu.swift](../Sources/SharedUI/StatusQuickMenu.swift): fixed-size,
   nonactivating right-click panel, retained view tree, keyboard selection and
@@ -77,8 +78,8 @@ Cleanup describes the relevant owner and path, not proof of live acceptance.
   measured power. System draw can be derived from adapter input minus battery power.
 - **Lifecycle:** immediate snapshot then a five-second timer; disable/quit invalidates
   the timer and clears the reading. No writes, helper, history, or sleep assertions.
-- **Checks:** injected readings and pure decoding tests in `Tests/BatteryTests.swift`;
-  light/dark presentation fixtures in `Tests/UITests.swift`.
+- **Checks:** injected readings, decoding and light/dark presentation fixtures in
+  `Tests/Features/Battery/BatteryFeatureTests.swift`.
 
 ### Monitor switching · `monitors`
 
@@ -291,7 +292,8 @@ instead of importing its app/hotkey/menu implementation. The import is pinned at
 [Vendor/strafe/UPSTREAM.txt](../Vendor/strafe/UPSTREAM.txt). This is a source dependency,
 not a feature-module directory, dynamic loader, or claim of full upstream app parity.
 
-The app and vendor build uses `clang`/`swiftc` with explicit source inputs; the
+The app and vendor build uses `clang`/`swiftc` with discovered app Swift sources
+and explicit entry-point, vendor and C inputs; the
 Foundation-only clipboard policy is a local [Swift package](../Package.swift), linked
 statically by the same bundling script. See [package commands](swiftpm.md).
 Vendoring keeps that input pinned for reproducible source selection and

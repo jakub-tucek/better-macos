@@ -10,7 +10,7 @@
 - For developer commands and pinned lint/format tools, read [docs/development.md](docs/development.md),
   including [tested CLT state compatibility](docs/validation/clt-compatibility.md). For Clipboard policy
   ownership and named suites, read [docs/swiftpm.md](docs/swiftpm.md). For metadata and
-  typed choice preparation, read [built-in registration](docs/architecture/builtin-registration.md).
+  typed choice preparation or adding a feature, read [built-in registration](docs/architecture/builtin-registration.md).
   For the extracted Keep awake owner/presentation seam, read [owned feature](docs/architecture/keep-awake-feature.md).
   For configured CI and unverified hosted execution, read [CI guidance](docs/ci.md).
   Broader lifecycle extraction remains proposed in [the roadmap](docs/roadmap.md).
@@ -38,8 +38,9 @@ lives under `Sources/`: `App/`, `Core/`, `Features/<owner>/` and `SharedUI/`; se
 guide for ownership. `Sources/App/main.swift` is the app/helper entry point;
 `Tests/main.swift` is the isolated runner. `MouseHID/` is the C boundary.
 SwiftPM alone compiles `Sources/Features/Clipboard/Policy`; app/legacy tests import
-and statically link `ClipboardPolicy`, never compile its sources manually. Update
-explicit inputs in build/test scripts only for sources outside that package.
+and statically link `ClipboardPolicy`, never compile its sources manually. App Swift
+and feature test inputs are discovered by `scripts/source-inputs.sh`; feature-local
+registration and suite files generate static indexes under ignored `build/generated`.
 Use `StoredState` for existing SwiftUI local state; preserve its public-wrapper semantics.
 `build.sh` produces `build/Better macOS.app`; signing uses `BETTER_MACOS_SIGNING_IDENTITY`
 or local Git `bettermacos.signingIdentity`, otherwise ad-hoc. Preserve bundle notices,

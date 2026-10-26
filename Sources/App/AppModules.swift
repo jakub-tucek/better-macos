@@ -16,8 +16,14 @@ enum FeatureSetupOutcome: Equatable {
     }
 }
 
-enum AppModule: String, CaseIterable, Identifiable {
-    case monitors, arrangement, bluetooth, audio, spaces, menuBar, quitGuard, keepAwake, windows, clipboard, mouse, links, battery
+struct AppModule: RawRepresentable, Hashable, CaseIterable, Identifiable {
+    let rawValue: String
+    init(_ rawValue: String) { self.rawValue = rawValue }
+    init?(rawValue: String) { guard Self.allCases.contains(where: { $0.rawValue == rawValue }) else { return nil }; self.rawValue = rawValue }
+    static var allCases: [AppModule] { BuiltinFeatures.definitions.map(\.module) }
+    static let monitors = AppModule("monitors"), arrangement = AppModule("arrangement"), bluetooth = AppModule("bluetooth"), audio = AppModule("audio")
+    static let spaces = AppModule("spaces"), menuBar = AppModule("menuBar"), quitGuard = AppModule("quitGuard"), keepAwake = AppModule("keepAwake")
+    static let windows = AppModule("windows"), clipboard = AppModule("clipboard"), mouse = AppModule("mouse")
     var id: String { rawValue }
     var title: String { BuiltinFeatures.definition(for: self).title }
     var detail: String { BuiltinFeatures.definition(for: self).detail }

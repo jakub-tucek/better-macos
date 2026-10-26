@@ -8,6 +8,7 @@ struct BuiltinFeatureDefinition {
     let feature: DashboardTab
     let settings: SettingsGroup
     let settingsOrder: Int
+    var symbol = ""
 }
 
 struct BuiltinWidgetDefinition {
@@ -19,6 +20,7 @@ struct BuiltinWidgetDefinition {
 }
 
 enum BuiltinFeatures {
+    static var registrations: [FeatureRegistration.Type] { BuiltinFeatureIndex.registrations.sorted { $0.order < $1.order } }
     static let definitions: [BuiltinFeatureDefinition] = [
         .init(module: .monitors, title: "Monitor switching", detail: "Turn monitors on/off, with recovery and confirmation.", feature: .monitors, settings: .displays, settingsOrder: 0),
         .init(module: .arrangement, title: "Display arrangement", detail: "Drag-to-arrange editor and automatic gap closing.", feature: .monitors, settings: .displays, settingsOrder: 1),
@@ -30,10 +32,8 @@ enum BuiltinFeatures {
         .init(module: .keepAwake, title: "Keep awake", detail: "Timed and app-based awake sessions, with optional display wake.", feature: .keepAwake, settings: .system, settingsOrder: 2),
         .init(module: .windows, title: "Window positions", detail: "Keyboard tiling and named layouts with optional reconnect and wake restoration.", feature: .windows, settings: .displays, settingsOrder: 2),
         .init(module: .clipboard, title: "Clipboard", detail: "Local history, search, pins, automatic recording and optional disk retention.", feature: .clipboard, settings: .clipboard, settingsOrder: 0),
-        .init(module: .mouse, title: "Mouse", detail: "Opt-in mouse acceleration and tracking, with runtime restoration.", feature: .mouse, settings: .input, settingsOrder: 1),
-        .init(module: .links, title: "Links", detail: "Open each web link in the browser or browser profile you choose.", feature: .links, settings: .links, settingsOrder: 0),
-        .init(module: .battery, title: "Battery", detail: "Read-only power flow, charge, battery condition, cycles and temperature.", feature: .battery, settings: .battery, settingsOrder: 0)
-    ]
+        .init(module: .mouse, title: "Mouse", detail: "Opt-in mouse acceleration and tracking, with runtime restoration.", feature: .mouse, settings: .input, settingsOrder: 1)
+    ] + registrations.flatMap { $0.definitions }
 
     // Persisted-layout migration / Restore suggested order, independent of enum order.
     static let widgets: [BuiltinWidgetDefinition] = [
@@ -42,9 +42,8 @@ enum BuiltinFeatures {
         .init(kind: .clipboard, module: .clipboard, title: "Clipboard", detail: "Open private history; copied content is never previewed here."),
         .init(kind: .audio, module: .audio, title: "Audio", detail: "Switch output and microphone without opening Settings."),
         .init(kind: .windows, module: .windows, title: "Window layouts", detail: "Restore named layouts on compatible displays."),
-        .init(kind: .bluetooth, module: .bluetooth, title: "Bluetooth", detail: "Connect chosen devices and see reconnect status."),
-        .init(kind: .battery, module: .battery, title: "Battery", detail: "See charge and power source; expand for battery details.", suggested: false)
-    ]
+        .init(kind: .bluetooth, module: .bluetooth, title: "Bluetooth", detail: "Connect chosen devices and see reconnect status.")
+    ] + registrations.flatMap { $0.widgets }
 
     static func definition(for module: AppModule) -> BuiltinFeatureDefinition {
         guard let value = definitions.first(where: { $0.module == module }) else {
