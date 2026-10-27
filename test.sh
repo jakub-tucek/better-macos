@@ -10,6 +10,7 @@ bash Tests/bluetooth-permission-regressions.sh
 bash Tests/bluetooth-observation-regressions.sh
 python3 Tests/feature-index-test.py
 python3 Tests/deployment-test.py
+python3 Tests/signing-test.py
 bash build.sh
 bash Tests/packaging.sh
 bash Tests/build.sh

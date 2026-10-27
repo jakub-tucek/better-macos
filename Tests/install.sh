@@ -8,7 +8,9 @@ export BETTER_MACOS_HOME="$ROOT/state with spaces"
 export BETTER_MACOS_APP_DIR="$ROOT/Applications"
 export MOCK_REVISION=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 cp scripts/deploy.py "$ROOT/deploy.py"
+cp scripts/signing.py "$ROOT/signing.py"
 unset BETTER_MACOS_SIGNING_IDENTITY
+printf '%s' - > "$ROOT/signing-identity"
 mkdir -p "$ROOT/bin"
 cat > "$ROOT/bin/mock" <<'MOCK'
 #!/bin/bash
@@ -24,6 +26,7 @@ case "${0##*/}" in
             mkdir -p "$target/.git"
             mkdir -p "$target/scripts"
             cp "$MOCK_ROOT/deploy.py" "$target/scripts/deploy.py"
+            cp "$MOCK_ROOT/signing.py" "$target/scripts/signing.py"
             cp "$MOCK_ROOT/build-fixture.sh" "$target/build.sh"
         else
             shift 2
@@ -34,7 +37,7 @@ case "${0##*/}" in
                 merge-base) [[ "${MOCK_DIVERGED:-0}" == 0 ]] ;;
                 rev-parse) echo "$MOCK_REVISION" ;;
                 config)
-                    if [[ "$*" == 'config --local --get bettermacos.signingIdentity' ]]; then
+                    if [[ "$*" == *'--get bettermacos.signingIdentity' ]]; then
                         [[ ! -f "$MOCK_ROOT/signing-identity" ]] || cat "$MOCK_ROOT/signing-identity"
                     else
                         printf '%s' "${@: -1}" > "$MOCK_ROOT/signing-identity"
@@ -97,7 +100,7 @@ chmod +x 'build/Better macOS.app/Contents/MacOS/better-macos'
 case "${BETTER_MACOS_SIGNING_IDENTITY:--}" in
     'Fixture A'|1111111111111111111111111111111111111111) signature=1111111111111111111111111111111111111111 ;;
     'Fixture B'|2222222222222222222222222222222222222222) signature=2222222222222222222222222222222222222222 ;;
-    abcdef0123456789abcdef0123456789abcdef01) signature=ABCDEF0123456789ABCDEF0123456789ABCDEF01 ;;
+    abcdef0123456789abcdef0123456789abcdef01|ABCDEF0123456789ABCDEF0123456789ABCDEF01) signature=ABCDEF0123456789ABCDEF0123456789ABCDEF01 ;;
     -) signature=- ;;
     *) exit 18 ;;
 esac
@@ -189,8 +192,9 @@ before="$(builds)"
 quit_before="$(quits)"
 export BETTER_MACOS_SIGNING_IDENTITY='Fixture B' MOCK_CERT_UNAVAILABLE=1
 expect_failure unavailable-certificate
-grep -q 'Selected signing certificate is unavailable' "$ROOT/output"
-[[ "$(cat "$ROOT/signing-identity")" == 'Fixture B' ]]
+grep -q 'missing, expired or ambiguous' "$ROOT/output"
+[[ "$(cat "$ROOT/signing-identity")" == 'Fixture A' ]]
+printf '%s' 'Fixture B' > "$ROOT/signing-identity"
 [[ "$(builds)" == "$before" && "$(quits)" == "$quit_before" ]]
 unset BETTER_MACOS_SIGNING_IDENTITY
 expect_failure unavailable-saved-certificate
@@ -204,7 +208,7 @@ echo 'PASS: unavailable and wrong signing certificates fail closed before quit, 
 
 export BETTER_MACOS_SIGNING_IDENTITY='Fixture A' MOCK_CERT_AMBIGUOUS=1
 expect_failure ambiguous-certificate
-grep -q 'Signing identity is ambiguous' "$ROOT/output"
+grep -q 'missing, expired or ambiguous' "$ROOT/output"
 unset MOCK_CERT_AMBIGUOUS
 export BETTER_MACOS_SIGNING_IDENTITY=2222222222222222222222222222222222222222
 bash install.sh --no-open > "$ROOT/output" 2>&1

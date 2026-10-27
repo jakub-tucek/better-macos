@@ -54,6 +54,9 @@ documented in [the offline characterization](gesture-terminal-failures.md).
 
 ## Evidence index
 
+- [Per-Mac signing setup](signing.md): shared resolver, isolated signing/installer
+  fixtures and live reuse of the existing certificate; new-Mac creation remains open.
+
 - [Guarded deployment and restart checks](deployment.md): 5,424 isolated checks,
   12 deployment transaction tests and 45 native UI checks; explicit update-session
   policy, health checks, retained rollback and isolated preview workflow.

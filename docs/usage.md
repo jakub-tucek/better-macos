@@ -316,20 +316,23 @@ signature also match. Changing the selected signing identity triggers a rebuild.
 **Settings → General → Updates** checks GitHub source history on `main`, with a daily
 automatic check and a manual check. Installer-managed copies offer **Install update…**
 in Terminal. Updates follow source commits, not release versions. The app downloads
-`install.sh` at the offered SHA, but that installer fetches/builds latest `main`;
-it does not guarantee the exact offered SHA.
+`install.sh` at the offered SHA and builds that exact revision. Managed local
+checkouts use the guarded deployment command at the offered revision.
 
-Without a certificate, builds use ad-hoc signing; macOS may require renewed permission
-grants after updates. Set `BETTER_MACOS_SIGNING_IDENTITY` in the installer's environment
-to save a local signing identity, or use `-` to persist ad-hoc signing. Unavailable or
-ambiguous certificates fail closed, even at an unchanged revision. No certificate
-or notarization service is included. This is source installation, not a notarized
-binary release.
+Run `bash scripts/dev signing setup` once per Mac from a checkout. It reuses a
+configured certificate or a single available identity; otherwise it creates a
+local code-signing certificate when none is available. With several identities,
+select one by fingerprint. See [local signing](signing.md) for setup and recovery.
+Builds fail if signing is unconfigured, unavailable, expired or ambiguous.
+Explicit `BETTER_MACOS_SIGNING_IDENTITY=-` remains available for isolated tests;
+ad-hoc builds may need renewed permission grants. Local deployment requires a
+persistent certificate. This is not a notarized binary release.
 
 For a manual build from a checkout:
 
 ```sh
 brew install blueutil switchaudio-osx
+bash scripts/dev signing setup
 bash build.sh
 ```
 

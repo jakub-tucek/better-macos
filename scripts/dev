@@ -77,6 +77,10 @@ case "${1:-help}" in
         shift
         exec bash "$ROOT/Tests/ui-harness.sh" "$@"
         ;;
+    signing)
+        shift
+        exec python3 "$ROOT/scripts/signing.py" "$@"
+        ;;
     preview)
         shift
         exec bash "$ROOT/Tests/ui-harness.sh" --interactive "${1:---links}"
@@ -90,7 +94,7 @@ case "${1:-help}" in
         exec python3 "$ROOT/scripts/deploy.py" --status "$@"
         ;;
     help|--help|-h)
-        echo "Usage: bash scripts/dev {bootstrap|build|lint|format-check|logs|ui-test|preview|deploy|health}"
+        echo "Usage: bash scripts/dev {bootstrap|build|lint|format-check|logs|ui-test|preview|deploy|health|signing}"
         echo "Checks never rewrite sources. Build does not require bootstrap."
         ;;
     *) fail "Unknown command '$1'; use bash scripts/dev help." ;;

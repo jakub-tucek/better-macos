@@ -7,7 +7,7 @@ mkdir -p "$ROOT/source/Vendor/strafe/Swift" "$ROOT/source/Scripts" "$ROOT/source
 mkdir -p "$ROOT/source/scripts"
 cp build.sh test.sh Package.swift Info.plist LICENSE "$ROOT/source/"
 cp Scripts/clipboard-package.sh "$ROOT/source/Scripts/"
-cp scripts/source-inputs.sh scripts/generate-feature-index.py scripts/deploy.py "$ROOT/source/scripts/"
+cp scripts/source-inputs.sh scripts/generate-feature-index.py scripts/deploy.py scripts/signing.py "$ROOT/source/scripts/"
 cp -R Sources Tests "$ROOT/source/"
 cp Vendor/strafe/LICENSE Vendor/strafe/UPSTREAM.txt "$ROOT/source/Vendor/strafe/"
 touch "$ROOT/source/Vendor/strafe/Swift/fixture.swift"
@@ -150,5 +150,6 @@ echo 'PASS: fresh publication removes stale resources and preserves complete not
 echo 'PASS: linking uses only the three freshly compiled owned objects'
 # Exercise the real legacy compiler input list too, without running native UI.
 for fixture in swiftui-compatibility diagnostics-regressions diagnostics-reader gesture-terminal-proof bluetooth-permission-regressions bluetooth-observation-regressions packaging build ui-harness install; do printf '#!/bin/bash\nexit 0\n' > "$ROOT/source/Tests/$fixture.sh"; done
+printf '# Signing policy runs separately with isolated real Git.\n' > "$ROOT/source/Tests/signing-test.py"
 bash "$ROOT/source/test.sh" > "$ROOT/output" 2>&1
 echo 'PASS: app and legacy tests link the package archive once, exclude its Swift sources and ignore stale C objects'

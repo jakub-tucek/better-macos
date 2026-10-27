@@ -20,7 +20,8 @@ bash scripts/dev deploy --rollback
 ```
 
 Local deployment requires a clean checkout and the configured persistent signing
-certificate. An absent/ambiguous certificate fails before quitting; local deploy
+certificate. Run `bash scripts/dev signing setup` once per Mac; see [signing](signing.md).
+An absent/ambiguous certificate fails before quitting; local deploy
 does not fall back to ad-hoc signing. `--destination /absolute/path/Better\ macOS.app`
 selects another installation. Build output stays in `build/Better macOS.app`.
 

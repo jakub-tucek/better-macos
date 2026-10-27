@@ -45,8 +45,9 @@ and statically link `ClipboardPolicy`, never compile its sources manually. App S
 and feature test inputs are discovered by `scripts/source-inputs.sh`; feature-local
 registration and suite files generate static indexes under ignored `build/generated`.
 Use `StoredState` for existing SwiftUI local state; preserve its public-wrapper semantics.
-`build.sh` produces `build/Better macOS.app`; signing uses `BETTER_MACOS_SIGNING_IDENTITY`
-or local Git `bettermacos.signingIdentity`, otherwise ad-hoc. Preserve bundle notices,
+`build.sh` produces `build/Better macOS.app`; [signing setup](docs/signing.md) covers
+per-Mac identity creation, selection and recovery. Signing uses the environment override
+or Git configuration (local before global); ad-hoc requires explicit `-`. Preserve bundle notices,
 strict signature verification and staged replacement/rollback.
 
 ## Safety contracts

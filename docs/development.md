@@ -56,6 +56,8 @@ From the repository root (the wrapper also works from another directory):
 
 ```sh
 bash scripts/dev bootstrap       # download verified, pinned development tools
+bash scripts/dev signing setup   # once per Mac; reuse or create a stable local identity
+bash scripts/dev signing status  # validate the selected identity without changing it
 bash scripts/dev lint            # SwiftLint, warnings fail; no fixes or cache
 bash scripts/dev format-check    # SwiftFormat --lint; no rewrites or cache
 bash scripts/dev build           # existing build.sh; bootstrap is NOT required

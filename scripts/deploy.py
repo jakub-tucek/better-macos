@@ -213,17 +213,7 @@ def deploy(bundle, destination, operations, *, no_open=False, legacy_bootstrap=F
 
 
 def signing_identity(source):
-    identity = os.environ.get("BETTER_MACOS_SIGNING_IDENTITY")
-    if not identity:
-        identity = run("git", "-C", str(source), "config", "--local", "--get", "bettermacos.signingIdentity")
-    if not identity or identity == "-":
-        raise RuntimeError("Local deploy requires a persistent signing identity; configure bettermacos.signingIdentity")
-    import re
-    matches = [fingerprint for fingerprint, name in re.findall(r'([A-Fa-f0-9]{40}) "([^"]+)"', run("security", "find-identity", "-v", "-p", "codesigning"))
-               if identity.upper() == fingerprint.upper() or identity == name]
-    if len(matches) != 1:
-        raise RuntimeError("Signing identity is missing or ambiguous; use its full fingerprint")
-    return matches[0]
+    return run(sys.executable, str(source / "scripts/signing.py"), "resolve", "--persistent", "--source", str(source))
 
 
 def main():

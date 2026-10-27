@@ -64,28 +64,16 @@ fi
 REVISION="$(git -C "$SOURCE" rev-parse HEAD)"
 # Save an explicit selection even when the revision is unchanged. A changed
 # selection always rebuilds; an unchanged selection must also match the bundle.
-CONFIGURED_IDENTITY="$(git -C "$SOURCE" config --local --get bettermacos.signingIdentity || true)"
+CONFIGURED_IDENTITY="$(git -C "$SOURCE" config --get bettermacos.signingIdentity || true)"
+SIGNING_IDENTITY="$(python3 "$SOURCE/scripts/signing.py" resolve --source "$SOURCE")"
 IDENTITY_CHANGED=0
 if [[ -n "${BETTER_MACOS_SIGNING_IDENTITY:-}" ]]; then
     if [[ "$BETTER_MACOS_SIGNING_IDENTITY" != "$CONFIGURED_IDENTITY" ]]; then IDENTITY_CHANGED=1; fi
     git -C "$SOURCE" config --local bettermacos.signingIdentity "$BETTER_MACOS_SIGNING_IDENTITY"
 fi
-SIGNING_IDENTITY="${BETTER_MACOS_SIGNING_IDENTITY:-${CONFIGURED_IDENTITY:--}}"
 CERTIFICATE_HASH=""
 if [[ "$SIGNING_IDENTITY" != - ]]; then
-    IDENTITIES="$(security find-identity -v -p codesigning)" || fail "Cannot inspect signing certificates."
-    IDENTITY_PATTERN='^[[:space:]]*[0-9]+\)[[:space:]]+([[:xdigit:]]{40})[[:space:]]+"(.*)"$'
-    while IFS= read -r line; do
-        if [[ "$line" =~ $IDENTITY_PATTERN ]]; then
-            hash="${BASH_REMATCH[1]}"
-            name="${BASH_REMATCH[2]}"
-            if [[ "$SIGNING_IDENTITY" == "$name" || "$(printf '%s' "$SIGNING_IDENTITY" | tr '[:lower:]' '[:upper:]')" == "$hash" ]]; then
-                [[ -z "$CERTIFICATE_HASH" || "$CERTIFICATE_HASH" == "$hash" ]] || fail "Signing identity is ambiguous; select its full SHA-1 fingerprint."
-                CERTIFICATE_HASH="$hash"
-            fi
-        fi
-    done <<< "$IDENTITIES"
-    [[ -n "$CERTIFICATE_HASH" ]] || fail "Selected signing certificate is unavailable: $SIGNING_IDENTITY (no ad-hoc fallback)."
+    CERTIFICATE_HASH="$SIGNING_IDENTITY"
 fi
 signature_matches() {
     codesign --verify --strict "$1" 2>/dev/null || return 1

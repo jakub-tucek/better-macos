@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+SIGNING_IDENTITY="$(python3 scripts/signing.py resolve)"
 case "${1:---run-tests}" in --run-tests|--interactive) ;; *) echo 'Usage: bash Tests/ui-harness.sh [--run-tests|--interactive]' >&2; exit 2 ;; esac
 case "${2:---setup}" in --setup|--links) ;; *) echo 'Preview surface must be --setup or --links' >&2; exit 2 ;; esac
 [[ $# -le 2 ]] || exit 2
@@ -38,6 +39,6 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 </dict></plist>
 PLIST
-codesign --force --sign "${BETTER_MACOS_SIGNING_IDENTITY:-$(git config --local --get bettermacos.signingIdentity || echo -)}" "$APP"
+codesign --force --sign "$SIGNING_IDENTITY" "$APP"
 codesign --verify --strict "$APP"
 "$APP/Contents/MacOS/ui-test-host" "${1:---run-tests}" "${2:---setup}"

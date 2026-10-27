@@ -2,9 +2,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 OUTPUT="$PWD/build/Better macOS.app"
-# Local repository configuration selects a repeatable signing identity across builds.
+# Shared per-Mac/repository configuration selects a repeatable signing identity.
 # An unavailable configured certificate must fail signing, never fall back silently.
-SIGNING_IDENTITY="${BETTER_MACOS_SIGNING_IDENTITY:-$(git config --local --get bettermacos.signingIdentity || true)}"
+SIGNING_IDENTITY="$(python3 scripts/signing.py resolve)"
 mkdir -p build
 STAGE="$(mktemp -d "$PWD/build/.bundle.XXXXXX")"
 cleanup() {
@@ -63,11 +63,11 @@ xcrun swiftc -swift-version 5 -warnings-as-errors -O -target arm64-apple-macos15
     -framework Carbon -framework CoreAudio -framework AppKit -framework ServiceManagement \
     -framework SwiftUI -framework CoreBluetooth -framework ApplicationServices -framework CoreGraphics -framework CoreFoundation -framework IOKit \
     -o "$APP/Contents/MacOS/better-macos"
-codesign --force --sign "${SIGNING_IDENTITY:--}" "$APP"
+codesign --force --sign "$SIGNING_IDENTITY" "$APP"
 codesign --verify --strict "$APP"
 if [[ -e "$OUTPUT" ]]; then mv "$OUTPUT" "$STAGE/previous.app"; fi
 mv "$APP" "$OUTPUT"
-if [[ -z "$SIGNING_IDENTITY" || "$SIGNING_IDENTITY" == "-" ]]; then
+if [[ "$SIGNING_IDENTITY" == "-" ]]; then
     echo "Ad-hoc signing: Accessibility and Bluetooth access may need granting again after rebuilds."
 fi
 echo "Built: $OUTPUT"
