@@ -40,10 +40,26 @@ The preceding state/diagnostics/reader fixtures passed; this is not a full-suite
 ## Live acceptance
 
 The user authorized one legacy-bootstrap restart after saving transient work.
-At this commit, installation/readiness evidence is pending. The old `590b3e5`
-process cannot answer the new endpoint, so the first upgrade cannot supply a
-verified pre-update configuration/permission baseline. Its normal quit remains
-responsible for recovery. A later evidence entry records the actual result.
+The signed `61db423` build was installed through `bash scripts/dev deploy
+--legacy-bootstrap`; `build/deployment-live-install.log` records success and the
+retained `590b3e5` rollback bundle. The old process cannot answer the new endpoint,
+so this first upgrade has no verified pre-update configuration/permission baseline.
+It used normal quit, not force termination.
+
+`build/deployment-live-health.json` records a fresh live GUI reply after migration:
+all eleven checks ready (watchdog, Accessibility, Bluetooth authorization and
+observation, window shortcuts, matched edges, Hold to quit, Spaces, Clipboard
+storage, Links default ownership and host feature errors); no update blockers.
+Strict signature verification matched certificate
+`562726BFD6C5E4972EFEDEC911BB41B3A0BBBEC1`. Bundle metadata contains deployment protocol
+1, source-install mode, local-development mode, exact source checkout/destination
+and revision `61db423256f5aa5f1dcb4754d7ff659b13f69e07`.
+
+The evidence follow-up corrects Git's recorded `Scripts/deploy.py` path to
+`scripts/deploy.py` with byte-identical contents, for case-sensitive checkouts.
+That path/documentation-only correction does not require another GUI restart.
+The normal guarded quit/restart and automatic rollback paths have isolated coverage;
+this live run specifically exercises the one-time bootstrap and new-GUI health.
 
 Checks do not establish physical-device, VoiceOver or minimum-OS acceptance.
 Health is readiness reporting, not a hardware exercise. Recovery of a hung new
