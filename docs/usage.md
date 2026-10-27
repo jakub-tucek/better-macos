@@ -100,6 +100,13 @@ updates every reference when saved. Duplicate names, undefined references and al
 chains block saving. Aliases survive Visual edits and app restarts; routing uses
 resolved browser/profile IDs.
 
+Use **Profile aliases** above the editor to assign a discovered profile without
+typing its ID: enter a name, choose a browser/profile, then **Add alias**. Existing
+aliases have profile dropdowns for remapping. These controls edit the same unsaved
+text draft; use **Save rules** or **Discard changes**. Fix incomplete text before
+using the alias controls. Two aliases can share a profile and still be remapped
+independently later.
+
 Delete a line to remove it; blank text removes all rules and aliases when saved. Invalid lines
 block the entire save. Quoted fields preserve unusual match text. Editing never
 opens links, and Discard changes restores the saved rules and aliases.

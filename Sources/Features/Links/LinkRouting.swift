@@ -33,6 +33,8 @@ struct LinkRule: Codable, Identifiable, Equatable {
     var kind = LinkRuleKind.domain
     var pattern = ""
     var target = ""
+    /// Preserve distinct references even when two aliases currently share a profile.
+    var destinationAlias: String?
 
     /// Matching is case-insensitive. Domains match themselves and their
     /// subdomains, never a lookalike suffix.

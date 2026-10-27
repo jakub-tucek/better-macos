@@ -17,7 +17,9 @@ enum LinkRuleText {
         let names = aliases.keys.sorted()
         let declarations = names.map { "alias: \($0) -> \(field(aliases[$0]!))" }
         let lines = rules.map { rule in
-            let target = names.first { aliases[$0] == rule.target }.map { "@" + $0 } ?? rule.target
+            let name = rule.destinationAlias.flatMap { aliases[$0] == rule.target ? $0 : nil }
+                ?? names.first { aliases[$0] == rule.target }
+            let target = name.map { "@" + $0 } ?? rule.target
             return "\(rule.enabled ? "" : "off: ")\(rule.kind.rawValue): \(field(rule.pattern)) -> \(field(target))"
         }
         return (declarations + (declarations.isEmpty || lines.isEmpty ? [] : [""]) + lines).joined(separator: "\n")
@@ -72,10 +74,23 @@ enum LinkRuleText {
                 target = resolved
             }
             var rule = LinkRule(enabled: enabled, kind: kind, pattern: pattern, target: target)
+            if destination.hasPrefix("@") { rule.destinationAlias = String(destination.dropFirst()) }
             if let index = unused.firstIndex(where: { $0.kind == kind && $0.pattern == pattern && $0.target == target }) { rule.id = unused.remove(at: index).id }
             result.rules.append(rule)
         }
         return result
+    }
+
+    static func settingAlias(_ name: String, target: String, in text: String) -> String {
+        let declaration = "alias: \(name) -> \(field(target))"
+        var lines = text.components(separatedBy: .newlines)
+        if let index = lines.firstIndex(where: { line in
+            let source = line.trimmingCharacters(in: .whitespaces)
+            guard source.hasPrefix("alias:"), let parts = split(String(source.dropFirst(6))) else { return false }
+            return decode(parts.0) == name
+        }) { lines[index] = declaration }
+        else { lines.insert(declaration, at: 0) }
+        return lines.joined(separator: "\n")
     }
 
     private static func decode(_ raw: String) -> String? {

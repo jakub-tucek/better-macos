@@ -22,3 +22,20 @@ The browser backend is injected; no test opens a live browser or profile. The
 existing macOS 27 gesture-fixture gate still prevents a full `test.sh` pass on this
 host. Native UI checks exercise the existing setup/global-alert host, not new
 alias-specific accessibility or VoiceOver acceptance.
+
+## Profile picker follow-up · 2026-10-27
+
+Changes based on `f28f7c1` add Profile aliases controls alongside both editors.
+The dropdown includes automatically discovered profiles, manual profiles and
+browsers. Adding/remapping changes the shared draft, not live routing. Invalid
+text blocks picker edits rather than replacing unfinished input.
+
+Rules now retain an optional alias name alongside their resolved destination ID.
+This prevents `@home` and `@work` from collapsing into one reference when both
+currently point to the same browser. Older rules still decode without that field.
+
+`build/links-alias-picker-validation.log`: 5,395 isolated checks, 44 existing native
+UI checks and supporting pipeline/installer fixtures passed. New checks cover
+picker-driven add/remap, shared-target alias independence, reference persistence
+and unfinished-text preservation. Pinned lint/format and whitespace checks passed.
+Live profile launching and alias-specific VoiceOver acceptance remain unverified.

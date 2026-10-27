@@ -46,4 +46,15 @@ func runLinkRuleTextTests() {
     expect(draft.parsed(destinations: destinations).rules.allSatisfy { $0.target == "safari" }, "Editing one alias redirects all its draft references")
     draft.load(aliased.rules, aliases: aliased.aliases)
     expect(!draft.changed && draft.text == rendered, "Discard restores alias definitions alongside rules")
+    expect(draft.setAlias("work", target: "safari", destinations: destinations) && draft.parsed(destinations: destinations).rules[0].target == "safari", "Profile picker remaps existing alias references in the unsaved draft")
+    expect(draft.setAlias("home", target: "chrome:Profile 1", destinations: destinations) && draft.text.contains("alias: home -> chrome:Profile 1"), "Profile picker can assign an automatically discovered profile to any new alias")
+    let shared = LinkRuleText.parse("alias: home -> safari\nalias: work -> safari\nhome.example -> @home\nwork.example -> @work", destinations: destinations, existing: [])
+    draft.load(shared.rules, aliases: shared.aliases)
+    expect(draft.text.contains("work.example -> @work") && draft.text.contains("home.example -> @home"), "Aliases sharing one browser retain separate references after reload")
+    expect(draft.setAlias("work", target: "chrome:Profile 1", destinations: destinations) && draft.rules.map(\.target) == ["safari", "chrome:Profile 1"], "Remapping work does not redirect home when their previous browser was identical")
+    let encoded = try? JSONEncoder().encode(draft.rules)
+    let decoded = encoded.flatMap { try? JSONDecoder().decode([LinkRule].self, from: $0) }
+    expect(decoded?.map(\.destinationAlias) == ["home", "work"], "Alias references persist separately from resolved routing IDs")
+    draft.text = "unfinished rule"
+    expect(!draft.setAlias("other", target: "safari", destinations: destinations) && draft.text == "unfinished rule", "Alias controls never overwrite invalid or unfinished text")
 }

@@ -25,6 +25,16 @@ struct LinkRulesDraft {
     }
 
     @discardableResult
+    mutating func setAlias(_ name: String, target: String, destinations: [LinkDestination]) -> Bool {
+        guard parsed(destinations: destinations).errors.isEmpty else { return false }
+        let updated = LinkRuleText.settingAlias(name, target: target, in: text)
+        let result = LinkRuleText.parse(updated, destinations: destinations, existing: rules + baseline, existingAliases: baselineAliases.merging(aliases) { _, current in current })
+        guard result.errors.isEmpty else { return false }
+        text = updated; rules = result.rules; aliases = result.aliases
+        return true
+    }
+
+    @discardableResult
     mutating func select(_ next: Mode, destinations: [LinkDestination]) -> Bool {
         guard next != mode else { return true }
         if next == .visual {

@@ -5,6 +5,8 @@ struct LinkRulesEditor: View {
     @StoredState private var draft = LinkRulesDraft()
     @StoredState private var loaded = false
     @StoredState private var saveFailed = false
+    @StoredState private var newAlias = ""
+    @StoredState private var aliasDestination = ""
 
     init(module: LinksModule, initialMode: LinkRulesDraft.Mode = .text) {
         self.module = module
@@ -23,6 +25,7 @@ struct LinkRulesEditor: View {
                     ForEach(LinkRulesDraft.Mode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }.pickerStyle(.segmented).frame(width: 180)
             }
+            aliasSettings(parsed)
             if draft.mode == .visual { visualRules }
             else {
             Text("One rule per line: match -> browser or profile. Checked top to bottom; first match wins.")
@@ -63,6 +66,37 @@ struct LinkRulesEditor: View {
         .onAppear { if !loaded { reload(); loaded = true } }
         .onChange(of: module.config.rules) { _, _ in if !draft.changed { reload() } }
         .onChange(of: module.config.aliases) { _, _ in if !draft.changed { reload() } }
+    }
+
+    private func aliasSettings(_ parsed: LinkRuleText.Result) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Profile aliases").font(.subheadline.weight(.semibold))
+            Text("Choose an automatically found profile or a browser, then refer to it as @name in your rules. Changes apply with Save rules.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            ForEach(parsed.aliases.keys.sorted(), id: \.self) { name in
+                HStack {
+                    Text("@" + name).font(.body.monospaced()).frame(minWidth: 90, alignment: .leading)
+                    Picker("Profile for @\(name)", selection: Binding(get: { parsed.aliases[name] ?? "" }, set: { target in
+                        draft.setAlias(name, target: target, destinations: module.destinations)
+                    })) {
+                        if let target = parsed.aliases[name], !module.destinations.contains(where: { $0.id == target }) { Text("Unavailable: " + target).tag(target) }
+                        ForEach(module.destinations) { Text($0.name).tag($0.id) }
+                    }.labelsHidden().accessibilityLabel("Profile for @\(name)")
+                }
+            }
+            HStack {
+                TextField("Alias name, e.g. work", text: $newAlias).textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 200).accessibilityLabel("New profile alias name")
+                Picker("Browser or profile", selection: $aliasDestination) {
+                    Text("Choose browser or profile…").tag("")
+                    ForEach(module.destinations) { Text($0.name).tag($0.id) }
+                }.labelsHidden().accessibilityLabel("New alias browser or profile")
+                Button("Add alias") {
+                    if draft.setAlias(newAlias, target: aliasDestination, destinations: module.destinations) { newAlias = ""; aliasDestination = "" }
+                }.disabled(newAlias.range(of: "^[A-Za-z][A-Za-z0-9_-]*$", options: .regularExpression) == nil || parsed.aliases[newAlias] != nil || aliasDestination.isEmpty)
+            }
+            if !parsed.errors.isEmpty { Text("Fix the text errors below to edit aliases here.").font(.caption).foregroundStyle(.secondary) }
+        }.disabled(!parsed.errors.isEmpty)
     }
 
     private var visualRules: some View {
