@@ -17,7 +17,8 @@ func runLinkRuleTextTests() {
     expect(LinkRuleText.parse("site → Safari", destinations: destinations, existing: []).errors.isEmpty, "Pasted arrow characters also separate match and destination")
     var draft = LinkRulesDraft()
     draft.load(rules)
-    expect(draft.mode == .visual && !draft.changed, "Visual mode starts from saved rules without pending changes")
+    expect(draft.mode == .text && !draft.changed, "Text mode starts from saved rules without pending changes")
+    draft.select(.visual, destinations: destinations)
     draft.edit { $0[0].pattern = "edited.example"; $0[1].enabled = true }
     expect(draft.changed && draft.select(.text, destinations: destinations) && draft.text.contains("edited.example"), "Switching to Text preserves unsaved visual edits")
     draft.text = "contains: work -> Safari"
@@ -29,4 +30,20 @@ func runLinkRuleTextTests() {
            "Invalid text blocks mode switching without discarding the draft")
     draft.load(rules)
     expect(!draft.changed && draft.rules == rules && draft.text == LinkRuleText.render(rules), "Discard reloads the same saved rules in either mode")
+    let aliased = LinkRuleText.parse("work.example -> @work\nalias: work -> chrome:Profile 1\nalias: personal -> Safari\noff: contains: private -> @personal", destinations: destinations, existing: [])
+    expect(aliased.errors.isEmpty && aliased.rules.map(\.target) == ["chrome:Profile 1", "safari"] && aliased.aliases["work"] == "chrome:Profile 1", "Aliases resolve forward declarations and browser names to stable routing IDs")
+    let rendered = LinkRuleText.render(aliased.rules, aliases: aliased.aliases)
+    let roundTrip = LinkRuleText.parse(rendered, destinations: [], existing: aliased.rules, existingAliases: aliased.aliases)
+    expect(rendered.contains("-> @work") && roundTrip.rules == aliased.rules && roundTrip.aliases == aliased.aliases && roundTrip.errors.isEmpty, "Aliases render compactly and round-trip with unavailable browsers")
+    let badAliases = LinkRuleText.parse("alias: work -> Safari\nalias: work -> chrome:Profile 1\nalias: bad name -> Safari\nsite -> @missing\nalias: chained -> @work", destinations: destinations, existing: [])
+    expect(badAliases.errors.count == 4, "Duplicate, invalid, undefined and chained aliases fail with line errors")
+    expect(!LinkRuleText.parse("alias: Work -> Safari\nsite -> @work", destinations: destinations, existing: []).errors.isEmpty, "Alias lookup is case-sensitive")
+    draft.load(aliased.rules, aliases: aliased.aliases)
+    expect(!draft.changed && draft.select(.visual, destinations: destinations), "Saved aliases enter Visual without changes")
+    draft.edit { $0[0].pattern = "edited.example" }
+    expect(draft.select(.text, destinations: destinations) && draft.text.contains("alias: work -> chrome:Profile 1") && draft.text.contains("edited.example -> @work"), "Visual edits preserve alias declarations and compact references")
+    draft.text = draft.text.replacingOccurrences(of: "alias: work -> chrome:Profile 1", with: "alias: work -> Safari")
+    expect(draft.parsed(destinations: destinations).rules.allSatisfy { $0.target == "safari" }, "Editing one alias redirects all its draft references")
+    draft.load(aliased.rules, aliases: aliased.aliases)
+    expect(!draft.changed && draft.text == rendered, "Discard restores alias definitions alongside rules")
 }

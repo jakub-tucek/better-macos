@@ -163,6 +163,14 @@ private func runLinkTextOwnerTests() {
     owner.acceptsActions = { false }
     expect(!owner.saveRuleText("", expected: saved.rules) && owner.config == saved, "Text save rechecks host admission")
     expect(backend.opened.isEmpty && backend.defaultRequests == 0 && backend.accessRequests.isEmpty, "Text editing never opens links or requests browser permissions")
+    owner.acceptsActions = { true }
+    expect(owner.saveRuleText("alias: work -> browser\nexample.com -> @work", expected: saved.rules), "Aliases and rules save together")
+    let aliasesSaved = owner.config
+    let withAliases = LinksModule(defaults: defaults, backend: backend)
+    expect(withAliases.config == aliasesSaved && withAliases.config.aliases == ["work": "browser"], "Aliases survive reload in the existing preference domain")
+    expect(!owner.saveRuleText("", expected: aliasesSaved.rules) && owner.config == aliasesSaved, "Alias conflicts reject stale saves even when rules match")
+    expect(!owner.saveRuleText("site -> @missing", expected: aliasesSaved.rules, expectedAliases: aliasesSaved.aliases) && owner.config == aliasesSaved, "Invalid alias references never partially save rules or aliases")
+    expect(owner.saveRuleText("", expected: aliasesSaved.rules, expectedAliases: aliasesSaved.aliases) && owner.config.aliases.isEmpty && owner.config.rules.isEmpty, "Explicit blank save removes both rules and aliases")
 }
 
 private func runRegisteredLinkTests() {

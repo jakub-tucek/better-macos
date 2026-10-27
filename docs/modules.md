@@ -191,7 +191,8 @@ Cleanup describes the relevant owner and path, not proof of live acceptance.
 ### Links · `links`
 
 - **Owner:** [LinksModule.swift](../Sources/Features/Links/LinksModule.swift) owns persisted rules
-  (`links.config`), destination discovery and hand-off through an injected `LinkBrowserBackend`.
+   (`links.config`), text-editor aliases, destination discovery and hand-off through an injected `LinkBrowserBackend`.
+   Aliases resolve to stable destination IDs on Save; rules and aliases share draft/conflict handling.
   Matching policy (domain with optional path, contains, `*` pattern) is pure Foundation in
   [LinkRouting.swift](../Sources/Features/Links/LinkRouting.swift).
 - **UI:** Links settings via [LinksSettingsView.swift](../Sources/Features/Links/LinksSettingsView.swift);

@@ -100,7 +100,7 @@ final class LinksModule: ObservableObject {
             found.removeAll { $0.id == profile.destinationID }
             found.append(LinkDestination(id: profile.destinationID, name: "\(app.name) · \(profile.name)", appPath: app.appPath, profile: profile.directory))
         }
-        for id in Set(config.rules.map(\.target) + [config.fallback]) where !found.contains(where: { $0.id == id }) {
+        for id in Set(config.rules.map(\.target) + [config.fallback] + Array(config.aliases.values)) where !found.contains(where: { $0.id == id }) {
             guard let (bundleID, directory) = LinkDestination.splitProfileID(id), let app = browser(bundleID) else { continue }
             found.append(LinkDestination(id: id, name: "\(app.name) · \(directory)", appPath: app.appPath, profile: directory))
         }
@@ -115,12 +115,12 @@ final class LinksModule: ObservableObject {
     }
 
     @discardableResult
-    func saveRuleText(_ text: String, expected: [LinkRule]) -> Bool {
-        guard acceptsActions(), config.rules == expected else { return false }
-        let parsed = LinkRuleText.parse(text, destinations: destinations, existing: config.rules)
+    func saveRuleText(_ text: String, expected: [LinkRule], expectedAliases: [String: String] = [:]) -> Bool {
+        guard acceptsActions(), config.rules == expected, config.aliases == expectedAliases else { return false }
+        let parsed = LinkRuleText.parse(text, destinations: destinations, existing: config.rules, existingAliases: config.aliases)
         guard parsed.errors.isEmpty else { return false }
-        update { $0.rules = parsed.rules }
-        return config.rules == parsed.rules
+        update { $0.rules = parsed.rules; $0.aliases = parsed.aliases }
+        return config.rules == parsed.rules && config.aliases == parsed.aliases
     }
 
     /// Presentation reads only the current snapshot; typing never discovers or opens a browser.

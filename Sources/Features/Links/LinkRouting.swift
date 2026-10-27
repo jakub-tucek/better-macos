@@ -89,17 +89,19 @@ struct LinkRoutingConfig: Codable, Equatable {
     var rules: [LinkRule] = []
     var fallback = LinkRoutingConfig.defaultFallback
     var profiles: [LinkProfile] = []
+    var aliases: [String: String] = [:]
 
     init(rules: [LinkRule] = [], fallback: String = LinkRoutingConfig.defaultFallback, profiles: [LinkProfile] = []) {
         self.rules = rules; self.fallback = fallback; self.profiles = profiles
     }
-    private enum CodingKeys: String, CodingKey { case rules, fallback, profiles }
+    private enum CodingKeys: String, CodingKey { case rules, fallback, profiles, aliases }
     // Fields added later decode as defaults so earlier saved rules still load.
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         rules = try values.decodeIfPresent([LinkRule].self, forKey: .rules) ?? []
         fallback = try values.decodeIfPresent(String.self, forKey: .fallback) ?? Self.defaultFallback
         profiles = try values.decodeIfPresent([LinkProfile].self, forKey: .profiles) ?? []
+        aliases = try values.decodeIfPresent([String: String].self, forKey: .aliases) ?? [:]
     }
 
     /// First enabled matching rule wins. Rules are skipped while the feature is off.

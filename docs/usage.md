@@ -76,23 +76,33 @@ can refuse an action rather than redirect it.
 | Clipboard | Capture, exclusions, retention, privacy, storage recovery |
 | Links | Default browser, fallback browser, ordered routing rules, test link |
 
-Links offers **Visual / Text** modes sharing one unsaved draft. Visual mode provides
+Links opens in **Text** mode, with **Visual / Text** modes sharing one unsaved draft. Visual mode provides
 rule toggles, match and destination fields, reordering and deletion. Text mode uses
 **one rule per line**. Both apply edits with **Save rules**; switching modes preserves
 unsaved edits. Invalid text must be fixed before switching to Visual. Existing rules
 populate both editors. Use browser/profile names or IDs from the list:
 
 ```text
-github.com/your-team -> Safari
-pattern: *.example.com/* -> com.google.Chrome
-off: contains: project=work -> com.google.Chrome:Profile 1
+alias: work -> com.google.Chrome:Profile 1
+alias: personal -> com.google.Chrome:Default
+
+github.com/your-team -> @work
+pattern: *.example.com/* -> @personal
+off: contains: project=work -> @work
 ```
 
 Domain is the default match type. `contains:` matches text anywhere; `pattern:`
 supports wildcards; `off:` disables a rule. First matching enabled line wins.
-Delete a line to remove it; blank text removes all rules when saved. Invalid lines
+Aliases point directly to a browser/profile name or ID from the list. Names start
+with a letter, contain letters, digits, `_` or `-`, and are case-sensitive. Define
+them anywhere in the text, then use `@name` as a destination. Changing a definition
+updates every reference when saved. Duplicate names, undefined references and alias
+chains block saving. Aliases survive Visual edits and app restarts; routing uses
+resolved browser/profile IDs.
+
+Delete a line to remove it; blank text removes all rules and aliases when saved. Invalid lines
 block the entire save. Quoted fields preserve unusual match text. Editing never
-opens links, and Discard changes restores the saved rules.
+opens links, and Discard changes restores the saved rules and aliases.
 
 If Match screen edges lacks Accessibility access, enabling it opens Accessibility
 settings. The popup and Settings show **Open Accessibility settings… / Check again**,

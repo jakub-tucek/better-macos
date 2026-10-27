@@ -5,6 +5,7 @@ enum LinkRuleText {
     struct Result {
         var rules: [LinkRule] = []
         var errors: [String] = []
+        var aliases: [String: String] = [:]
     }
 
     static func field(_ value: String) -> String {
@@ -12,16 +13,43 @@ enum LinkRuleText {
         return String(data: (try? JSONEncoder().encode(value)) ?? Data(), encoding: .utf8) ?? "\"\""
     }
 
-    static func render(_ rules: [LinkRule]) -> String {
-        rules.map { "\($0.enabled ? "" : "off: ")\($0.kind.rawValue): \(field($0.pattern)) -> \(field($0.target))" }.joined(separator: "\n")
+    static func render(_ rules: [LinkRule], aliases: [String: String] = [:]) -> String {
+        let names = aliases.keys.sorted()
+        let declarations = names.map { "alias: \($0) -> \(field(aliases[$0]!))" }
+        let lines = rules.map { rule in
+            let target = names.first { aliases[$0] == rule.target }.map { "@" + $0 } ?? rule.target
+            return "\(rule.enabled ? "" : "off: ")\(rule.kind.rawValue): \(field(rule.pattern)) -> \(field(target))"
+        }
+        return (declarations + (declarations.isEmpty || lines.isEmpty ? [] : [""]) + lines).joined(separator: "\n")
     }
 
-    static func parse(_ text: String, destinations: [LinkDestination], existing: [LinkRule]) -> Result {
+    static func parse(_ text: String, destinations: [LinkDestination], existing: [LinkRule], existingAliases: [String: String] = [:]) -> Result {
         var result = Result()
         var unused = existing
-        for (offset, line) in text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: .newlines).enumerated() {
+        let lines = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: .newlines)
+        func resolve(_ destination: String) -> String? {
+            if destinations.contains(where: { $0.id == destination }) || existing.contains(where: { $0.target == destination }) || existingAliases.values.contains(destination) { return destination }
+            let matches = destinations.filter { $0.name.caseInsensitiveCompare(destination) == .orderedSame }
+            return matches.count == 1 ? matches[0].id : nil
+        }
+        var declared = Set<String>()
+        for (offset, line) in lines.enumerated() {
+            let source = line.trimmingCharacters(in: .whitespaces)
+            guard source.hasPrefix("alias:") else { continue }
+            guard let parts = split(String(source.dropFirst(6))), let name = decode(parts.0),
+                  name.range(of: "^[A-Za-z][A-Za-z0-9_-]*$", options: .regularExpression) != nil,
+                  let destination = decode(parts.1) else {
+                result.errors.append("Line \(offset + 1): use alias: name -> browser or profile ID. Names start with a letter and use letters, digits, _ or -."); continue
+            }
+            guard declared.insert(name).inserted else { result.errors.append("Line \(offset + 1): duplicate alias ‘\(name)’."); continue }
+            guard let target = resolve(destination) else {
+                result.errors.append("Line \(offset + 1): unknown or ambiguous alias destination ‘\(destination)’. Aliases must point directly to a browser or profile."); continue
+            }
+            result.aliases[name] = target
+        }
+        for (offset, line) in lines.enumerated() {
             var source = line.trimmingCharacters(in: .whitespaces)
-            guard !source.isEmpty else { continue }
+            guard !source.isEmpty, !source.hasPrefix("alias:") else { continue }
             var enabled = true
             if source.hasPrefix("off:") { enabled = false; source = String(source.dropFirst(4)).trimmingCharacters(in: .whitespaces) }
             var kind = LinkRuleKind.domain
@@ -32,14 +60,16 @@ enum LinkRuleText {
                 result.errors.append("Line \(offset + 1): use match -> browser or profile."); continue
             }
             let target: String
-            if destinations.contains(where: { $0.id == destination }) || existing.contains(where: { $0.target == destination }) {
-                target = destination
+            if destination.hasPrefix("@") {
+                guard let resolved = result.aliases[String(destination.dropFirst())] else {
+                    result.errors.append("Line \(offset + 1): undefined alias ‘\(destination)’. Add alias: \(destination.dropFirst()) -> browser or profile ID."); continue
+                }
+                target = resolved
             } else {
-                let matches = destinations.filter { $0.name.caseInsensitiveCompare(destination) == .orderedSame }
-                guard matches.count == 1 else {
+                guard let resolved = resolve(destination) else {
                     result.errors.append("Line \(offset + 1): unknown or ambiguous destination ‘\(destination)’. Use an ID from the list below."); continue
                 }
-                target = matches[0].id
+                target = resolved
             }
             var rule = LinkRule(enabled: enabled, kind: kind, pattern: pattern, target: target)
             if let index = unused.firstIndex(where: { $0.kind == kind && $0.pattern == pattern && $0.target == target }) { rule.id = unused.remove(at: index).id }

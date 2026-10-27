@@ -54,6 +54,9 @@ documented in [the offline characterization](gesture-terminal-failures.md).
 
 ## Evidence index
 
+- [Link destination aliases](links-aliases.md): 5,389 isolated checks and supporting
+  fixtures; Text/Visual alias round-trips and atomic persistence covered.
+
 - [Links disable/default-browser handoff](links-disable.md): 5,376 isolated checks
   and supporting fixtures; live browser-association changes remain unverified.
 

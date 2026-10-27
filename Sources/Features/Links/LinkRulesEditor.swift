@@ -6,12 +6,12 @@ struct LinkRulesEditor: View {
     @StoredState private var loaded = false
     @StoredState private var saveFailed = false
 
-    init(module: LinksModule, initialMode: LinkRulesDraft.Mode = .visual) {
+    init(module: LinksModule, initialMode: LinkRulesDraft.Mode = .text) {
         self.module = module
         _draft = StoredState(initialValue: LinkRulesDraft(mode: initialMode))
     }
 
-    private var conflict: Bool { module.config.rules != draft.baseline }
+    private var conflict: Bool { module.config.rules != draft.baseline || module.config.aliases != draft.baselineAliases }
 
     var body: some View {
         let parsed = draft.parsed(destinations: module.destinations)
@@ -31,9 +31,9 @@ struct LinkRulesEditor: View {
                 .autocorrectionDisabled(true)
                 .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.secondary.opacity(0.3)))
                 .accessibilityLabel("Routing rules, one per line")
-            Text("github.com/your-team -> Safari\npattern: *.example.com/* -> com.google.Chrome\noff: contains: project=work -> Safari")
+            Text("alias: work -> com.google.Chrome:Profile 1\n\ngithub.com/your-team -> @work\npattern: *.example.com/* -> @work\noff: contains: project=personal -> Safari")
                 .font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
-            Text("Domain matching is the default. Use pattern: for wildcards, contains: for text anywhere, and off: to disable a rule. Delete its line to remove it; blank text removes all rules. Changes apply only when saved.")
+            Text("Define reusable destinations with alias: name -> profile ID, then use @name in rules. Alias names are case-sensitive; definitions can appear anywhere. Domain matching is the default. Use pattern: for wildcards, contains: for text anywhere, and off: to disable a rule. Blank text removes all rules and aliases. Changes apply only when saved.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             if conflict {
@@ -45,7 +45,7 @@ struct LinkRulesEditor: View {
             if saveFailed { Text("Could not save. Check app status, then retry.").font(.caption).foregroundStyle(.orange) }
             HStack {
                 Button("Save rules") {
-                    if module.saveRuleText(draft.text, expected: draft.baseline) { reload() }
+                    if module.saveRuleText(draft.text, expected: draft.baseline, expectedAliases: draft.baselineAliases) { reload() }
                     else { saveFailed = true }
                 }.buttonStyle(.borderedProminent).disabled(!draft.changed || conflict || !parsed.errors.isEmpty)
                 Button(conflict ? "Reload rules" : "Discard changes", action: reload).disabled(!draft.changed && !conflict)
@@ -62,6 +62,7 @@ struct LinkRulesEditor: View {
         }
         .onAppear { if !loaded { reload(); loaded = true } }
         .onChange(of: module.config.rules) { _, _ in if !draft.changed { reload() } }
+        .onChange(of: module.config.aliases) { _, _ in if !draft.changed { reload() } }
     }
 
     private var visualRules: some View {
@@ -113,5 +114,5 @@ struct LinkRulesEditor: View {
         }
     }
 
-    private func reload() { draft.load(module.config.rules); saveFailed = false }
+    private func reload() { draft.load(module.config.rules, aliases: module.config.aliases); saveFailed = false }
 }
