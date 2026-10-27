@@ -13,6 +13,7 @@
 
 - [Design: visual style, surfaces, setup, and interaction checks](../DESIGN.md)
 - [Build, test, lint, and format commands; tested toolchains](development.md)
+- [Isolated UI previews, guarded deployment, session policy and rollback](deployment.md)
 - [Feature owners, UI entry points, shared services, and source credits](modules.md)
 - [Host coordination glossary](glossary.md)
 - [Clipboard SwiftPM ownership and named policy suites](swiftpm.md)

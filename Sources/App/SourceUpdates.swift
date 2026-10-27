@@ -28,12 +28,14 @@ struct SourceInstallation {
     let revision: String
     let sourceDirectory: String?
     let destination: String?
+    let localDevelopment: Bool
     var managed: Bool { sourceDirectory != nil && destination != nil }
 
-    init(revision: String, sourceDirectory: String? = nil, destination: String? = nil) {
+    init(revision: String, sourceDirectory: String? = nil, destination: String? = nil, localDevelopment: Bool = false) {
         self.revision = revision
         self.sourceDirectory = sourceDirectory
         self.destination = destination
+        self.localDevelopment = localDevelopment
     }
 
     init(bundle: Bundle = .main) {
@@ -41,6 +43,7 @@ struct SourceInstallation {
         let managed = bundle.object(forInfoDictionaryKey: "BetterMacOSSourceInstall") as? Bool == true
         sourceDirectory = managed ? bundle.object(forInfoDictionaryKey: "BetterMacOSSourceDirectory") as? String : nil
         destination = managed ? bundle.object(forInfoDictionaryKey: "BetterMacOSInstallDestination") as? String : nil
+        localDevelopment = managed && bundle.object(forInfoDictionaryKey: "BetterMacOSLocalDevelopment") as? Bool == true
     }
 
     static func shellQuote(_ value: String) -> String { "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'" }
@@ -52,11 +55,19 @@ struct SourceInstallation {
         }
         let state = URL(fileURLWithPath: sourceDirectory).deletingLastPathComponent().path
         let appDirectory = URL(fileURLWithPath: destination).deletingLastPathComponent().path
+        if localDevelopment {
+            return """
+            #!/bin/bash
+            set -euo pipefail
+            exec /usr/bin/env python3 \(Self.shellQuote(sourceDirectory + "/scripts/deploy.py")) --source \(Self.shellQuote(sourceDirectory)) --destination \(Self.shellQuote(destination)) --update --revision \(Self.shellQuote(revision))
+            """ + "\n"
+        }
         return """
         #!/bin/bash
         set -euo pipefail
         export BETTER_MACOS_HOME=\(Self.shellQuote(state))
         export BETTER_MACOS_APP_DIR=\(Self.shellQuote(appDirectory))
+        export BETTER_MACOS_REVISION=\(Self.shellQuote(revision))
         /usr/bin/curl --fail --silent --show-error --location --proto '=https' \\
           'https://raw.githubusercontent.com/jakub-tucek/better-macos/\(revision)/install.sh' | /bin/bash
         """ + "\n"

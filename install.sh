@@ -8,11 +8,13 @@ APP_DIR="${BETTER_MACOS_APP_DIR:-$HOME/Applications}"
 APP="$APP_DIR/Better macOS.app"
 FORCE=0
 OPEN=1
+LEGACY_BOOTSTRAP=0
 for arg in "$@"; do
     case "$arg" in
         --force) FORCE=1 ;;
         --no-open) OPEN=0 ;;
-        *) echo "Usage: bash install.sh [--force] [--no-open]" >&2; exit 2 ;;
+        --legacy-bootstrap) LEGACY_BOOTSTRAP=1 ;;
+        *) echo "Usage: bash install.sh [--force] [--no-open] [--legacy-bootstrap]" >&2; exit 2 ;;
     esac
 done
 fail() { echo "Better macOS: $*" >&2; exit 1; }
@@ -27,16 +29,8 @@ command -v brew >/dev/null || fail "Install Homebrew from https://brew.sh, then 
 mkdir -p "$STATE" "$APP_DIR"
 LOCK="$STATE/install.lock"
 mkdir "$LOCK" 2>/dev/null || fail "Another install is running. If it was interrupted, remove $LOCK and retry."
-STAGE=""
 cleanup() {
     local result=$?
-    if [[ -n "$STAGE" && -d "$STAGE" ]]; then
-        if [[ -d "$STAGE/previous.app" && ! -e "$APP" ]]; then
-            mv "$STAGE/previous.app" "$APP" || echo "Previous app remains at $STAGE/previous.app" >&2
-        fi
-        # Keep a previous app if rollback failed, rather than deleting it.
-        if [[ ! -d "$STAGE/previous.app" || -d "$APP" ]]; then rm -rf "$STAGE"; fi
-    fi
     rmdir "$LOCK" 2>/dev/null || true
     exit "$result"
 }
@@ -51,9 +45,20 @@ if [[ -e "$SOURCE" ]]; then
     [[ -z "$(git -C "$SOURCE" status --porcelain)" ]] || fail "Source checkout has local changes; commit or move them before updating."
     git -C "$SOURCE" fetch origin main
     git -C "$SOURCE" merge-base --is-ancestor HEAD origin/main || fail "Source checkout has local commits; refusing to overwrite them."
-    git -C "$SOURCE" merge --ff-only origin/main
+    TARGET="${BETTER_MACOS_REVISION:-origin/main}"
+    if [[ "$TARGET" != origin/main ]]; then
+        [[ "$TARGET" =~ ^[a-f0-9]{40}$ ]] || fail "Invalid requested update revision."
+        git -C "$SOURCE" merge-base --is-ancestor "$TARGET" origin/main || fail "Requested revision is not on origin/main."
+        git -C "$SOURCE" merge-base --is-ancestor HEAD "$TARGET" || fail "Checkout is ahead of the offered revision; check for updates again."
+    fi
+    git -C "$SOURCE" merge --ff-only "$TARGET"
 else
     git clone --branch main --single-branch "$REPOSITORY" "$SOURCE"
+    if [[ -n "${BETTER_MACOS_REVISION:-}" ]]; then
+        [[ "$BETTER_MACOS_REVISION" =~ ^[a-f0-9]{40}$ ]] || fail "Invalid requested update revision."
+        git -C "$SOURCE" merge-base --is-ancestor "$BETTER_MACOS_REVISION" origin/main || fail "Requested revision is not on origin/main."
+        git -C "$SOURCE" checkout -B main "$BETTER_MACOS_REVISION"
+    fi
 fi
 
 REVISION="$(git -C "$SOURCE" rev-parse HEAD)"
@@ -106,25 +111,8 @@ fi
 brew install blueutil switchaudio-osx
 echo "Building Better macOS from ${REVISION:0:7}…"
 BETTER_MACOS_SIGNING_IDENTITY="$SIGNING_IDENTITY" BETTER_MACOS_SOURCE_INSTALL=1 BETTER_MACOS_INSTALL_DESTINATION="$APP" bash "$SOURCE/build.sh"
-STAGE="$(mktemp -d "$APP_DIR/.better-macos-install.XXXXXX")"
-ditto "$SOURCE/build/Better macOS.app" "$STAGE/new.app"
-signature_matches "$STAGE/new.app" || fail "Built app does not match the selected signing identity."
-
-# Quit via the app's normal recovery/drain path. Never kill a busy GUI.
-osascript <<'APPLESCRIPT'
-with timeout of 30 seconds
-    if application id "io.github.jakub-tucek.better-macos" is running then
-        tell application id "io.github.jakub-tucek.better-macos" to quit
-    end if
-end timeout
-APPLESCRIPT
-for ((attempt = 0; attempt < 60; attempt++)); do
-    if ! pgrep -x better-macos >/dev/null; then break; fi
-    sleep 0.5
-done
-if pgrep -x better-macos >/dev/null; then fail "The app is still busy. Finish its current operation and rerun the installer."; fi
-
-if [[ -e "$APP" ]]; then mv "$APP" "$STAGE/previous.app"; fi
-mv "$STAGE/new.app" "$APP"
-echo "Installed $APP (${REVISION:0:7})."
-if [[ "$OPEN" == 1 ]]; then open "$APP"; fi
+signature_matches "$SOURCE/build/Better macOS.app" || fail "Built app does not match the selected signing identity."
+DEPLOY_ARGS=(--bundle "$SOURCE/build/Better macOS.app" --destination "$APP" --identity "${CERTIFICATE_HASH:--}")
+if [[ "$OPEN" == 0 ]]; then DEPLOY_ARGS+=(--no-open); fi
+if [[ "$LEGACY_BOOTSTRAP" == 1 ]]; then DEPLOY_ARGS+=(--legacy-bootstrap); fi
+python3 "$SOURCE/scripts/deploy.py" "${DEPLOY_ARGS[@]}"

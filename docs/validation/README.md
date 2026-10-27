@@ -54,6 +54,10 @@ documented in [the offline characterization](gesture-terminal-failures.md).
 
 ## Evidence index
 
+- [Guarded deployment and restart checks](deployment.md): 5,424 isolated checks,
+  12 deployment transaction tests and 45 native UI checks; explicit update-session
+  policy, health checks, retained rollback and isolated preview workflow.
+
 - [Link destination aliases](links-aliases.md): 5,389 isolated checks and supporting
   fixtures; Text/Visual alias round-trips and atomic persistence covered.
 

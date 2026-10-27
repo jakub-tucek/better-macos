@@ -2,11 +2,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(mktemp -d "${TMPDIR:-/tmp}/better-macos-install-test.XXXXXX")"
-trap 'rm -rf "$ROOT"' EXIT
+trap 'result=$?; if [[ "$result" != 0 && -f "$ROOT/output" ]]; then cat "$ROOT/output" >&2; fi; rm -rf "$ROOT"' EXIT
 export MOCK_ROOT="$ROOT"
 export BETTER_MACOS_HOME="$ROOT/state with spaces"
 export BETTER_MACOS_APP_DIR="$ROOT/Applications"
 export MOCK_REVISION=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+cp scripts/deploy.py "$ROOT/deploy.py"
 unset BETTER_MACOS_SIGNING_IDENTITY
 mkdir -p "$ROOT/bin"
 cat > "$ROOT/bin/mock" <<'MOCK'
@@ -21,6 +22,8 @@ case "${0##*/}" in
         if [[ "$1" == clone ]]; then
             target="${@: -1}"
             mkdir -p "$target/.git"
+            mkdir -p "$target/scripts"
+            cp "$MOCK_ROOT/deploy.py" "$target/scripts/deploy.py"
             cp "$MOCK_ROOT/build-fixture.sh" "$target/build.sh"
         else
             shift 2
@@ -36,7 +39,7 @@ case "${0##*/}" in
                     else
                         printf '%s' "${@: -1}" > "$MOCK_ROOT/signing-identity"
                     fi ;;
-                fetch|merge) : ;;
+                 fetch|merge|checkout) : ;;
                 *) exit 99 ;;
             esac
         fi ;;
@@ -75,7 +78,22 @@ set -euo pipefail
 cd "$(dirname "$0")"
 echo build >> "$MOCK_ROOT/actions"
 if [[ "${MOCK_BUILD_FAIL:-0}" == 1 ]]; then exit 17; fi
-mkdir -p 'build/Better macOS.app/Contents'
+mkdir -p 'build/Better macOS.app/Contents/MacOS'
+cat > 'build/Better macOS.app/Contents/MacOS/better-macos' <<'CLIENT'
+#!/bin/bash
+set -euo pipefail
+if [[ "$1" == --deployment-quit && -e "$2" ]]; then osascript </dev/null; fi
+/usr/bin/python3 - "$2" <<'PYCLIENT'
+import json,sys,os,time,plistlib
+path=os.path.join(sys.argv[1], 'Contents/Info.plist')
+if not os.path.exists(path):
+    print('null')
+else:
+    with open(path,'rb') as f: info=plistlib.load(f)
+    print(json.dumps(dict(schema=1,pid=123,session='fixture',revision=info['BetterMacOSRevision'],timestamp=time.time(),blockers=[],checks={'watchdog':'ready'},configurationHash='fixture')))
+PYCLIENT
+CLIENT
+chmod +x 'build/Better macOS.app/Contents/MacOS/better-macos'
 case "${BETTER_MACOS_SIGNING_IDENTITY:--}" in
     'Fixture A'|1111111111111111111111111111111111111111) signature=1111111111111111111111111111111111111111 ;;
     'Fixture B'|2222222222222222222222222222222222222222) signature=2222222222222222222222222222222222222222 ;;
@@ -120,17 +138,13 @@ export MOCK_SIGNATURE_FAIL=1
 expect_failure signature
 unset MOCK_SIGNATURE_FAIL
 [[ "$(revision)" == aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ]]
-[[ "$(grep -c '^quit$' "$ROOT/actions")" == 1 ]]
+[[ "$(grep -c '^quit$' "$ROOT/actions" || true)" == 0 ]]
 echo 'PASS: failed builds/signatures leave the old app running and installed'
 export MOCK_QUIT_FAIL=1
 expect_failure quit
 unset MOCK_QUIT_FAIL
 [[ "$(revision)" == aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ]]
-export MOCK_SWAP_FAIL=1
-expect_failure replace
-unset MOCK_SWAP_FAIL
-[[ "$(revision)" == aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ]]
-echo 'PASS: refused quit preserves the app; failed replacement rolls back'
+echo 'PASS: refused quit preserves the app (replacement rollback covered by deployment-test.py)'
 bash install.sh --no-open > "$ROOT/output" 2>&1
 [[ "$(revision)" == "$MOCK_REVISION" ]]
 echo 'PASS: source update replaces the app after successful build and quit'

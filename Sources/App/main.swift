@@ -28,7 +28,10 @@ func runGUI(_ mode: ApplicationLaunchMode) {
 
 // Read-only GUI routing takes precedence even over other command flags. No
 // normal host initializer or mutating command dispatcher runs in this mode.
-if launchMode == .bluetoothReadOnlyProbe {
+if let index = CommandLine.arguments.firstIndex(where: { $0 == "--deployment-status" || $0 == "--deployment-quit" }), index + 1 < CommandLine.arguments.count {
+    do { try DeploymentClient.run(path: CommandLine.arguments[index + 1], quit: CommandLine.arguments[index] == "--deployment-quit") }
+    catch { fputs("\(error.localizedDescription)\n", stderr); exit(1) }
+} else if launchMode == .bluetoothReadOnlyProbe {
     runGUI(launchMode)
 } else if let index = CommandLine.arguments.firstIndex(of: "--watchdog") {
     guard index + 1 < CommandLine.arguments.count else { exit(2) }

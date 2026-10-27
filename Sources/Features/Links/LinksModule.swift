@@ -52,6 +52,12 @@ final class LinksModule: ObservableObject {
     @Published private(set) var foundProfiles: [LinkDestination] = []
     @Published private(set) var profileAccessResult: LinkProfileAccessResult?
     var acceptsActions: () -> Bool = { true }
+    private var dirtyEditors = Set<UUID>()
+    var hasUnsavedRuleEdits: Bool { !dirtyEditors.isEmpty }
+    var receivesWebLinks: Bool { backend.isDefaultBrowser() }
+    func setEditorDirty(_ id: UUID, dirty: Bool) {
+        if dirty { dirtyEditors.insert(id) } else { dirtyEditors.remove(id) }
+    }
     private let defaults: UserDefaults
     private let backend: LinkBrowserBackend
     private var discovered = false

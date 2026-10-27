@@ -10,6 +10,27 @@ final class HarnessEnvironment: ObservableObject {
     @Published var lastAction = ""
 }
 
+final class PreviewBrowserBackend: LinkBrowserBackend {
+    var requests = 0
+    func discover() -> LinkDiscovery {
+        LinkDiscovery(destinations: [
+            LinkDestination(id: "com.apple.Safari", name: "Safari", appPath: "/simulated/Safari.app"),
+            LinkDestination(id: "com.google.Chrome", name: "Chrome", appPath: "/simulated/Chrome.app"),
+            LinkDestination(id: "com.google.Chrome:Default", name: "Chrome · Personal", appPath: "/simulated/Chrome.app", profile: "Default"),
+            LinkDestination(id: "com.google.Chrome:Profile 1", name: "Chrome · Work", appPath: "/simulated/Chrome.app", profile: "Profile 1")], profileBrowsers: ["com.google.Chrome"])
+    }
+    func systemFallback() -> LinkDestination? { discover().destinations.first }
+    func open(_ url: URL, in destination: LinkDestination, completion: @escaping (Error?) -> Void) {
+        requests += 1; completion(ToggleError(message: "Preview only: no browser opened."))
+    }
+    func requestProfileAccess(browser: String) -> Bool { requests += 1; return false }
+    func isDefaultBrowser() -> Bool { false }
+    func makeDefaultBrowser(completion: @escaping (Error?) -> Void) {
+        requests += 1; completion(ToggleError(message: "Preview only: default browser unchanged."))
+    }
+    func relinquishDefaultBrowser(to destination: LinkDestination, completion: @escaping (Error?) -> Void) { requests += 1; completion(nil) }
+}
+
 struct HarnessView: View {
     @ObservedObject var environment: HarnessEnvironment
     let model: DashboardModel
@@ -40,6 +61,8 @@ final class UIHarness {
     var checks = 0
     var finishPending: (() -> Void)?
     var openedSettings: SettingsGroup?
+    let previewBrowser = PreviewBrowserBackend()
+    var previewLinks: LinksModule?
 
     init() {
         defaults = UserDefaults(suiteName: suite)!
@@ -94,6 +117,16 @@ final class UIHarness {
             window.contentView?.layoutSubtreeIfNeeded()
             RunLoop.main.run(until: Date().addingTimeInterval(0.03))
         }
+    }
+
+    func openLinks() {
+        let owner = LinksModule(defaults: defaults, backend: previewBrowser)
+        owner.setActive(true); owner.refresh()
+        _ = owner.saveRuleText("alias: home -> com.google.Chrome:Default\nalias: work -> com.google.Chrome:Profile 1\n\ngithub.com/my-team -> @work\nyoutube.com -> @home", expected: owner.config.rules, expectedAliases: owner.config.aliases)
+        previewLinks = owner
+        window.title = "Links preview · isolated settings and simulated browsers"
+        window.contentView = NSHostingView(rootView: ScrollView { LinksSettingsView(module: owner).padding(20) })
+        settle()
     }
 
     func elements() -> [AnyObject] {
@@ -182,6 +215,9 @@ final class UIHarness {
         press("issues.retryWindowShortcuts")
         check(retries == 1 && model.windowShortcutIssue == nil && model.errorMessage != nil, "Visible retry clears only its own issue")
         check(suite.hasPrefix("io.github.jakub-tucek.better-macos.ui-harness."), "Test host uses a unique isolated preference suite")
+        openLinks()
+        _ = control("links.rulesText")
+        check(previewLinks?.config.aliases.count == 2 && previewBrowser.requests == 0, "Links preview renders actual alias editor with simulated browsers and no OS requests")
         print("\(checks) native UI checks passed; simulated OS boundaries, no live permission grants or window movement.")
     }
 
@@ -201,6 +237,7 @@ app.setActivationPolicy(CommandLine.arguments.contains("--interactive") ? .regul
 let harness = UIHarness()
 atexit { harness.defaults.removePersistentDomain(forName: harness.suite) }
 if CommandLine.arguments.contains("--interactive") {
+    if CommandLine.arguments.contains("--links") { harness.openLinks() }
     harness.window.center(); harness.window.makeKeyAndOrderFront(nil); app.activate(ignoringOtherApps: true)
     app.run()
 } else { harness.run() }

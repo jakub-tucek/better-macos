@@ -61,6 +61,9 @@ bash scripts/dev format-check    # SwiftFormat --lint; no rewrites or cache
 bash scripts/dev build           # existing build.sh; bootstrap is NOT required
 bash scripts/dev ui-test         # real SwiftUI controls, simulated OS boundaries
 bash scripts/dev ui-test --interactive # visible test host with permission toggles
+bash scripts/dev preview         # isolated Links UI; use --setup for onboarding
+bash scripts/dev deploy          # explicit committed-build install, restart and health check
+bash scripts/dev health          # live GUI health, no restart
 bash Tests/swiftui-compatibility.sh # compile production state alias with selected tools
 bash scripts/dev-tools-test.sh   # offline tooling regressions after bootstrap
 bash Tests/packaging.sh          # inspect notices/signature after a successful build
@@ -90,6 +93,10 @@ historical run. Level configuration is resolved per process startup; building a
 bundle does not apply it to the already-running process or authorize a relaunch.
 
 ## Lightweight native UI tests
+
+For UI iteration, prefer `bash scripts/dev preview` over reinstalling the daily
+app. Batch edits and deploy once when requested. See [deployment](deployment.md)
+for session deferral, source metadata, readiness checks and retained rollback.
 
 `bash scripts/dev ui-test` builds and runs `build/Better macOS UI Test Host.app`
 (about 12 MB). It needs a macOS GUI session, no VM or OS image. The default run

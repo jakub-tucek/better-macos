@@ -7,6 +7,7 @@ struct LinkRulesEditor: View {
     @StoredState private var saveFailed = false
     @StoredState private var newAlias = ""
     @StoredState private var aliasDestination = ""
+    @StoredState private var editorID = UUID()
 
     init(module: LinksModule, initialMode: LinkRulesDraft.Mode = .text) {
         self.module = module
@@ -34,6 +35,7 @@ struct LinkRulesEditor: View {
                 .autocorrectionDisabled(true)
                 .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.secondary.opacity(0.3)))
                 .accessibilityLabel("Routing rules, one per line")
+                .accessibilityIdentifier("links.rulesText")
             DisclosureGroup("Syntax and examples") {
             Text("alias: work -> com.google.Chrome:Profile 1\n\ngithub.com/your-team -> @work\npattern: *.example.com/* -> @work\noff: contains: project=personal -> Safari")
                 .font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
@@ -68,6 +70,8 @@ struct LinkRulesEditor: View {
         .onAppear { if !loaded { reload(); loaded = true } }
         .onChange(of: module.config.rules) { _, _ in if !draft.changed { reload() } }
         .onChange(of: module.config.aliases) { _, _ in if !draft.changed { reload() } }
+        .onChange(of: draft.changed) { _, dirty in module.setEditorDirty(editorID, dirty: dirty) }
+        .onDisappear { module.setEditorDirty(editorID, dirty: false) }
     }
 
     private func aliasSettings(_ parsed: LinkRuleText.Result) -> some View {

@@ -7,7 +7,7 @@ mkdir -p "$ROOT/source/Vendor/strafe/Swift" "$ROOT/source/Scripts" "$ROOT/source
 mkdir -p "$ROOT/source/scripts"
 cp build.sh test.sh Package.swift Info.plist LICENSE "$ROOT/source/"
 cp Scripts/clipboard-package.sh "$ROOT/source/Scripts/"
-cp scripts/source-inputs.sh scripts/generate-feature-index.py "$ROOT/source/scripts/"
+cp scripts/source-inputs.sh scripts/generate-feature-index.py scripts/deploy.py "$ROOT/source/scripts/"
 cp -R Sources Tests "$ROOT/source/"
 cp Vendor/strafe/LICENSE Vendor/strafe/UPSTREAM.txt "$ROOT/source/Vendor/strafe/"
 touch "$ROOT/source/Vendor/strafe/Swift/fixture.swift"

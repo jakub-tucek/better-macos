@@ -103,6 +103,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let accessibilityCheck: () -> Bool
     private let openAccessibility: () -> Void
     private var statusObservation: AnyCancellable?
+    private var deploymentEndpoint: DeploymentEndpoint?
+    private let deploymentSession = UUID().uuidString
+    private var updateQuitRequested = false
 
      init(commandRunner: CommandRunning = CommandRunner(), spaces: SpacesModule? = nil, windowPositions: WindowPositions? = nil, clipboard: ClipboardModule? = nil, mouseLifecycle: MouseLifecycle? = nil, model: DashboardModel = DashboardModel(), preferences: UserDefaults = .standard,
           featureFactories: [AppModule: FeatureOwners.Factory] = [:],
@@ -250,6 +253,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if CommandLine.arguments.contains("--show-dashboard"), !DashboardNavigation.launch(arguments: CommandLine.arguments).isSetup {
             DispatchQueue.main.async { [weak self] in self?.showDashboard() }
         }
+        deploymentEndpoint = DeploymentEndpoint(snapshot: { [unowned self] in deploymentHealth() },
+            prepareQuit: { [unowned self] in prepareForUpdate() }, terminate: { NSApp.terminate(nil) })
+    }
+
+    var updateSessionPolicy: UpdateSessionPolicy {
+        let links = featureOwners.owner(.links, as: LinksModule.self)
+        return UpdateSessionPolicy(
+            busy: model.animationsBusy || model.monitorBusy || model.bluetoothManualBusy || !model.stoppingModules.isEmpty || recovering || activeSetupDraft?.applying == true,
+            keepAwake: awakeFeature.state.canStop || awakeFeature.state.appsPaused,
+            mouseOverride: mouseLifecycle.module?.active == true || mouseLifecycle.recoveryRequired,
+            displayRecovery: needsDisplayRecovery,
+            volatileClipboard: clipboard.map { !$0.persistence && !$0.history.entries.isEmpty } ?? false,
+            clipboardRecording: clipboard?.history.recording == true,
+            unsavedRules: links?.hasUnsavedRuleEdits == true,
+            transientUI: arrangementWindow?.isVisible == true || settingsWindow?.attachedSheet != nil || menuBar?.hidden == true,
+            browserChange: links?.changingDefaultBrowser == true,
+            audioOverride: AudioDirection.allCases.contains { audio?.isOverridden($0) == true },
+            unsavedWidgets: model.popupWidgetEditor.draft != nil || model.settingsWidgetEditor.draft != nil)
+    }
+
+    func prepareForUpdate() -> [String] {
+        guard transactions.acceptsActions else { return ["Shutdown is already in progress."] }
+        let blockers = updateSessionPolicy.blockers
+        guard blockers.isEmpty else { return blockers }
+        if let draft = activeSetupDraft, draft.step != .results { draft.saveForLater() }
+        guard preferences.synchronize() else { return ["Could not flush saved settings. Retry the update."] }
+        updateQuitRequested = true
+        return []
+    }
+
+    func deploymentHealth() -> DeploymentHealth {
+        let checks: [String: String] = [
+            "watchdog": model.watchdogReady ? "ready" : "pending",
+            "accessibility": accessibilityCheck() ? "ready" : "unavailable",
+            "bluetoothPermission": CBManager.authorization == .allowedAlways ? "ready" : "unavailable",
+            "bluetooth": bluetooth == nil ? "disabled" : (bluetooth?.lastError == nil ? "ready" : "unavailable"),
+            "spaces": spaces?.savedEnabled == true ? (spaces?.isEnabled == true ? "ready" : "unavailable") : "disabled",
+            "clipboardStorage": clipboard == nil ? "disabled" : (clipboard?.history.storagePending == false ? "ready" : "unavailable"),
+            "linksDefault": featureOwners.owner(.links, as: LinksModule.self)?.receivesWebLinks == true ? "ready" : "external",
+            "windowShortcuts": windowPositions?.shortcutsEnabled == true ? (windowPositions?.shortcutsActive == true && model.windowShortcutIssue == nil ? "ready" : "unavailable") : "disabled",
+            "screenEdges": model.matchScreenEdges ? (screenEdges?.isRunning == true ? "ready" : "unavailable") : "disabled",
+            "quitGuard": model.quitGuardEnabled ? (quitGuard?.isRunning == true ? "ready" : "unavailable") : "disabled",
+            "featureErrors": model.errorMessage == nil && moduleFailures.isEmpty && !model.keepAwakeProtectionFailed ? "ready" : "unavailable"
+        ]
+        return DeploymentHealth(session: deploymentSession, revision: Bundle.main.object(forInfoDictionaryKey: "BetterMacOSRevision") as? String ?? "unknown",
+            bundlePath: Bundle.main.bundleURL.path, blockers: updateSessionPolicy.blockers, checks: checks,
+            configurationHash: DeploymentHealth.configurationHash(preferences))
     }
 
     /// Menu-bar apps still need a (hidden) main menu: text editing shortcuts are
@@ -447,7 +497,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.onRestoreAnimations = { [weak self] in self?.actionHost?.setAnimations(false, recoverOnly: true) }
         model.onCheckUpdates = { [weak self] in self?.actionHost?.sourceUpdater.check(force: true) }
         model.onInstallUpdate = { [weak self] in
-            do { try self?.actionHost?.sourceUpdater.install() } catch { self?.showError(error) }
+            guard let self, actionHost != nil else { return }
+            let blockers = updateSessionPolicy.blockers
+            guard blockers.isEmpty else { showError(ToggleError(message: blockers.joined(separator: " "))); return }
+            do { try sourceUpdater.install() } catch { showError(error) }
         }
         model.onSpeedChanged = { [weak self] speed in self?.actionHost?.spaces?.speed = speed; self?.actionHost?.refreshPreferences() }
         model.onLoginChanged = { [weak self] enabled in
@@ -1728,8 +1781,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if updateQuitRequested, !updateSessionPolicy.blockers.isEmpty {
+            model.errorMessage = updateSessionPolicy.blockers.joined(separator: " ")
+            updateQuitRequested = false
+            return .terminateCancel
+        }
         let actions = HostTransactions.QuitActions(
-            isBusy: { self.model.animationsBusy || !self.model.stoppingModules.isEmpty || self.recovering },
+            isBusy: { self.model.animationsBusy || !self.model.stoppingModules.isEmpty || self.recovering || (self.updateQuitRequested && !self.updateSessionPolicy.blockers.isEmpty) },
             prepareMouse: { self.mouseLifecycle.prepareToQuit() },
             quiesce: { self.statusQuickMenu.dismiss(); self.keepAwakePalette.dismiss(); self.windowPositions?.invalidate(); self.screenEdges?.stop() },
             prepareClipboard: { self.clipboard?.prepareTermination() != false },
@@ -1740,6 +1798,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             restoreSpacesChoice: { if let spaces = self.spaces { spaces.requestRestore(enabled: spaces.savedEnabled) } },
             didReopen: { self.refreshPreferences() },
             didVeto: { veto in
+                self.updateQuitRequested = false
                 switch veto {
                 case .busy: self.model.errorMessage = "Wait for current settings and module operations before quitting."
                 case .clipboard: self.model.errorMessage = "Clipboard disk cleanup is pending. Retry quitting after storage becomes available."

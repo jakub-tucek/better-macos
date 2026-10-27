@@ -7,6 +7,11 @@ instructions, not a new live acceptance run. [Known validation gaps](validation/
 
 ## Start here
 
+Updates now wait for active sessions and unsaved edits before restarting. Follow
+the reported action, then retry. Setup drafts resume from their saved step. Updates
+retain the previous app and check readiness after launch; see [update and rollback
+behavior](deployment.md).
+
 Turning **Links** off hands web links back to its selected fallback browser (Safari
 if that browser is unavailable). Profile choices and rules stay saved. If macOS
 refuses the change, Links stays enabled and reports the error; retry disabling it.

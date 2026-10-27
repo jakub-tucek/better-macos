@@ -36,10 +36,14 @@ if SOURCE_STATUS="$(git status --porcelain --untracked-files=normal -- Sources M
 fi
 echo "let compiledDiagnosticSourceState = \"$SOURCE_STATE\"" >> "$STAGE/DiagnosticBuild.swift"
 plutil -insert BetterMacOSRevision -string "$REVISION" "$APP/Contents/Info.plist"
+plutil -insert BetterMacOSDeploymentProtocol -integer 1 "$APP/Contents/Info.plist"
 if [[ "${BETTER_MACOS_SOURCE_INSTALL:-0}" == 1 ]]; then
     plutil -insert BetterMacOSSourceInstall -bool YES "$APP/Contents/Info.plist"
     plutil -insert BetterMacOSSourceDirectory -string "$PWD" "$APP/Contents/Info.plist"
     plutil -insert BetterMacOSInstallDestination -string "$BETTER_MACOS_INSTALL_DESTINATION" "$APP/Contents/Info.plist"
+    if [[ "${BETTER_MACOS_LOCAL_DEVELOPMENT:-0}" == 1 ]]; then
+        plutil -insert BetterMacOSLocalDevelopment -bool YES "$APP/Contents/Info.plist"
+    fi
 fi
 source Scripts/clipboard-package.sh
 clipboard_package_build release

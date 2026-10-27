@@ -16,6 +16,9 @@
   Broader lifecycle extraction remains proposed in [the roadmap](docs/roadmap.md).
 - For testing or release claims, read [validation](docs/validation/README.md) and its linked
   revision-bound evidence. Preserve historical failures and hardware acceptance gaps.
+- For previews, deployment, restart behavior or rollback, read [deployment](docs/deployment.md).
+  Iterate UI in `bash scripts/dev preview`; batch production updates. Use
+  `bash scripts/dev deploy` for authorized installation, retaining its health and rollback checks.
 - For host coordination terminology, use [the glossary](docs/glossary.md).
 - For diagnostic events, privacy and authorized local reproduction, read [diagnostics](docs/diagnostics.md).
 - For Activity outcomes, Clear semantics or native row anchoring, read [session activity](docs/activity.md).

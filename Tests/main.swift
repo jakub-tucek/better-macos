@@ -4,6 +4,16 @@ import CStrafe
 import CoreBluetooth
 import IOKit.pwr_mgt
 
+if let index = CommandLine.arguments.firstIndex(of: "--deployment-restart-fixture"), index + 2 < CommandLine.arguments.count {
+    try runDeploymentRestartFixture(mode: CommandLine.arguments[index + 1], suite: CommandLine.arguments[index + 2])
+    exit(0)
+}
+
+if CommandLine.arguments.contains("--deployment-tests") {
+    runDeploymentHealthTests()
+    exit(0)
+}
+
 if CommandLine.arguments.contains("--presentation-tests") {
     runPresentationDisplayRefreshTests()
     exit(0)
@@ -447,6 +457,7 @@ try runUITests()
 try RegisteredFeatureTests.run()
 runScreenEdgeAccessTests()
 runSetupResumeTests()
+runDeploymentHealthTests()
 runQuitGuardAccessTests()
 try runClipboardTests()
 
