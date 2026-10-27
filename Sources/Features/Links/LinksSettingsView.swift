@@ -29,7 +29,7 @@ struct LinksSettingsView: View {
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Not your default browser yet").font(.headline)
-                        Text("Clicked links follow these rules only after Better macOS becomes the default browser.")
+                        Text("Make default to route web links.")
                             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -37,8 +37,7 @@ struct LinksSettingsView: View {
             }
             if !module.isDefaultBrowser { Button("Make default browser", action: module.makeDefaultBrowser).buttonStyle(.borderedProminent).disabled(module.changingDefaultBrowser) }
             destinationPicker("Everything else opens in", selection: Binding(get: { module.config.fallback }, set: { target in module.update { $0.fallback = target } }))
-            Text("Turning Links off makes this fallback browser handle web links directly. Your rules and profile choices are kept.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                .help("Turning Links off hands web links to this browser. Rules and profiles stay saved.")
             if module.destinations.isEmpty { Text("No browsers found. Install a browser, then refresh.").font(.caption).foregroundStyle(.secondary) }
             Button("Refresh browsers", action: module.refresh).controlSize(.small)
         }
@@ -49,7 +48,7 @@ struct LinksSettingsView: View {
             Label("Browser profiles", systemImage: "person.crop.circle").font(.headline)
             if let result = module.profileAccessResult { accessResult(result) }
             if module.profilesUnreadable {
-                Text("macOS protects your browser’s data from other apps. Allow access to its folder to list profiles automatically, or add them by hand below.")
+                Text("Allow folder access to find profiles, or add one manually.")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 ForEach(module.unreadableProfileBrowsers) { browser in
                     Button("Allow access to \(browser.name) profiles…") { module.requestProfileAccess(browser) }
@@ -123,8 +122,6 @@ struct LinksSettingsView: View {
     private var tryLink: some View {
         section {
             Text("Preview a link").font(AppStyle.sectionTitle)
-            Text("Paste a link to check its destination. It opens only when you choose Open link.")
-                .font(.caption).foregroundStyle(.secondary)
             HStack {
                 TextField("https://example.com", text: $testURL).textFieldStyle(.roundedBorder).accessibilityLabel("Link to preview")
                 Button("Open link") { module.testOpen(testURL) }.disabled(LinkURL.parse(testURL) == nil)

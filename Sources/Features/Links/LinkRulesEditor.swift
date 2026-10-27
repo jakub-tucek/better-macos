@@ -28,16 +28,18 @@ struct LinkRulesEditor: View {
             aliasSettings(parsed)
             if draft.mode == .visual { visualRules }
             else {
-            Text("One rule per line: match -> browser or profile. Checked top to bottom; first match wins.")
+            Text("One rule per line. First match wins.")
                 .font(.caption).foregroundStyle(.secondary)
             TextEditor(text: $draft.text).font(.body.monospaced()).frame(minHeight: 220, maxHeight: 340)
                 .autocorrectionDisabled(true)
                 .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(.secondary.opacity(0.3)))
                 .accessibilityLabel("Routing rules, one per line")
+            DisclosureGroup("Syntax and examples") {
             Text("alias: work -> com.google.Chrome:Profile 1\n\ngithub.com/your-team -> @work\npattern: *.example.com/* -> @work\noff: contains: project=personal -> Safari")
                 .font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
             Text("Define reusable destinations with alias: name -> profile ID, then use @name in rules. Alias names are case-sensitive; definitions can appear anywhere. Domain matching is the default. Use pattern: for wildcards, contains: for text anywhere, and off: to disable a rule. Blank text removes all rules and aliases. Changes apply only when saved.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
             }
             if conflict {
                 Label("Rules changed elsewhere. Reload before saving.", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
@@ -71,8 +73,6 @@ struct LinkRulesEditor: View {
     private func aliasSettings(_ parsed: LinkRuleText.Result) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Profile aliases").font(.subheadline.weight(.semibold))
-            Text("Choose an automatically found profile or a browser, then refer to it as @name in your rules. Changes apply with Save rules.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             ForEach(parsed.aliases.keys.sorted(), id: \.self) { name in
                 HStack {
                     Text("@" + name).font(.body.monospaced()).frame(minWidth: 90, alignment: .leading)
@@ -85,10 +85,10 @@ struct LinkRulesEditor: View {
                 }
             }
             HStack {
-                TextField("Alias name, e.g. work", text: $newAlias).textFieldStyle(.roundedBorder)
+                TextField("Alias, e.g. work", text: $newAlias).textFieldStyle(.roundedBorder)
                     .frame(maxWidth: 200).accessibilityLabel("New profile alias name")
                 Picker("Browser or profile", selection: $aliasDestination) {
-                    Text("Choose browser or profile…").tag("")
+                    Text("Choose profile…").tag("")
                     ForEach(module.destinations) { Text($0.name).tag($0.id) }
                 }.labelsHidden().accessibilityLabel("New alias browser or profile")
                 Button("Add alias") {
@@ -101,7 +101,7 @@ struct LinkRulesEditor: View {
 
     private var visualRules: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Checked top to bottom; first match wins. Changes apply only when saved.").font(.caption).foregroundStyle(.secondary)
+            Text("First match wins.").font(.caption).foregroundStyle(.secondary)
             if draft.rules.isEmpty { Text("No rules yet.").foregroundStyle(.secondary) }
             ForEach(Array(draft.rules.enumerated()), id: \.element.id) { index, rule in
                 VStack(alignment: .leading, spacing: 10) {
