@@ -36,6 +36,10 @@ private final class ExecutionTestAccess: WindowNativeAccess {
     var failWrite: Int?
     var makeValues = true
     var constrainSize = false
+    var minimumWidth: CGFloat = 0
+    var rejectResize = false
+    var displayList: [WindowDisplay] = []
+    var afterWrite: (() -> Void)?
     var adjustPositionOnResize = false
     var unreadableAfterWrite = false
     var beforeApplications: (() -> Void)?
@@ -46,7 +50,7 @@ private final class ExecutionTestAccess: WindowNativeAccess {
     var beforeBool: ((Int, WindowBoolAttribute) -> Void)?
 
     func requestPermission() { trace.append("requestPermission") }
-    func displays() -> [WindowDisplay] { [] }
+    func displays() -> [WindowDisplay] { displayList }
     func inventory() -> [Entry]? { trace.append("inventory"); return entries }
     func ownerPID(_ entry: Entry) -> Int32? { entry.pid }
     func bounds(_ entry: Entry) -> CGRect? { entry.frame }
@@ -84,12 +88,15 @@ private final class ExecutionTestAccess: WindowNativeAccess {
         trace.append("values"); beforeValues?(); return makeValues ? frame : nil
     }
     func write(_ element: Int, _ attribute: WindowGeometryAttribute, _ values: CGRect) -> Bool {
+        defer { afterWrite?() }
         trace.append("write:\(attribute):\(element)"); writes.append(attribute); writeElements.append(element)
         if failWrite == writes.count { return false }
+        if rejectResize && attribute == .size { return false }
         guard var frame = records[element]?.frame else { return false }
         if attribute == .position { frame.origin = values.origin }
         else {
             frame.size = constrainSize ? CGSize(width: values.width - 1, height: values.height) : values.size
+            frame.size.width = max(frame.width, minimumWidth)
             if adjustPositionOnResize { frame.origin.x += 20 }
         }
         records[element]?.frame = frame
@@ -113,6 +120,41 @@ func runWindowExecutionTests() {
 }
 
 private func windowExecutionChecks() throws {
+    for mode in ["positionFailure", "sizeFailure", "minimumSize", "resizeRefused", "oversized", "focusLost", "displayChanged", "focusLostAfterResize"] {
+        let access = ExecutionTestAccess()
+        let bounds = CGRect(x: 0, y: 30, width: 1000, height: 700)
+        let requested = CGRect(x: 500, y: 30, width: 500, height: 700)
+        let offscreen = CGRect(x: 800, y: 100, width: 700, height: 500)
+        access.records[1]?.frame = offscreen
+        access.entries?[0].frame = offscreen
+        access.displayList = [WindowDisplay(id: "screen", bounds: bounds)]
+        let backend = WindowExecution(access: access)
+        let window = try backend.focusedWindow()!
+        access.failWrite = mode == "sizeFailure" ? 2 : 1
+        if mode == "minimumSize" { access.failWrite = nil; access.minimumWidth = 700 }
+        if mode == "resizeRefused" { access.rejectResize = true }
+        if mode == "oversized" { access.minimumWidth = 1200 }
+        if mode == "focusLost" { access.afterWrite = { access.focus = 2 } }
+        if mode == "displayChanged" { access.afterWrite = { access.displayList = [] } }
+        if mode == "focusLostAfterResize" {
+            access.afterWrite = { if access.writes.count == 2 { access.focus = 2 } }
+        }
+        let applied = backend.moveFocused(window, to: requested)
+        if mode == "focusLost" || mode == "displayChanged" {
+            expect(!applied && access.writes.count == 1, "recovery stops after \(mode)")
+        } else if mode == "focusLostAfterResize" {
+            expect(!applied && access.writes.count == 2, "recovery rechecks focus before corrective position write")
+        } else if mode == "oversized" {
+            expect(!applied && access.records[1]?.frame?.origin == bounds.origin,
+                   "window larger than display retains an accessible top-left corner")
+        } else {
+            expect(bounds.contains(access.records[1]!.frame!), "\(mode) recovers the partly off-screen window")
+            expect(applied == (mode == "positionFailure" || mode == "sizeFailure"), "\(mode) reports success only for the exact requested frame")
+            if mode == "minimumSize" {
+                expect(access.records[1]?.frame?.maxX == bounds.maxX, "minimum-size recovery retains right-edge alignment")
+            }
+        }
+    }
     let target = CGRect(x: -800, y: 50, width: 600, height: 450)
     let other = CGRect(x: 400, y: 20, width: 300, height: 200)
 

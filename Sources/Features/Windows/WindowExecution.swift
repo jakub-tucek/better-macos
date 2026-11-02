@@ -164,12 +164,43 @@ class WindowExecution<Access: WindowNativeAccess>: WindowPositionBackend {
               access.bool(element, .minimized) == false,
               access.bool(element, .fullScreen) == false else { return false }
         guard let values = access.writeValues(frame) else { return false }
+        let recoveryDisplays = requireFocus ? access.displays() : []
         guard !requireFocus || focusedElement().map({ access.focusEqual($0, element) }) == true else { return false }
         // Move before resize, then correct any resize-induced position adjustment.
-        guard access.write(element, .position, values),
-              access.write(element, .size, values),
-              access.write(element, .position, values) else { return false }
-        guard let actual = access.frame(element) else { return false }
-        return actual.origin == frame.origin && actual.size == frame.size
+        if access.write(element, .position, values),
+           access.write(element, .size, values),
+           access.write(element, .position, values),
+           access.frame(element) == frame { return true }
+        guard requireFocus else { return false }
+        return recoverFocused(element, window: fresh[0], requested: frame,
+                              snapshot: snapshot, displays: recoveryDisplays)
+    }
+
+    /// One resize-first retry, then position using the accepted size. Never retry
+    /// discovery refusals or redirect recovery to a newly focused window.
+    private func recoverFocused(_ element: Access.Element, window: PositionedWindow, requested: CGRect,
+                                snapshot: [PositionedWindow], displays: [WindowDisplay]) -> Bool {
+        guard let bounds = displays.first(where: { $0.bounds.contains(requested) })?.bounds else { return false }
+        func admitted() -> Bool {
+            permitted && access.displays() == displays &&
+                access.string(element, .title) == window.title &&
+                access.bool(element, .minimized) == false && access.bool(element, .fullScreen) == false &&
+                focusedElement().map { access.focusEqual($0, element) } == true
+        }
+        guard let values = access.writeValues(requested), admitted() else { return false }
+        // A refused resize must not prevent a position-only rescue.
+        _ = access.write(element, .size, values)
+        guard let actual = access.frame(element),
+              [actual.minX, actual.minY, actual.width, actual.height].allSatisfy(\.isFinite),
+              actual.width > 0, actual.height > 0 else { return false }
+        let recovered = CGRect(
+            x: max(bounds.minX, min(requested.minX, bounds.maxX - actual.width)),
+            y: max(bounds.minY, min(requested.minY, bounds.maxY - actual.height)),
+            width: actual.width, height: actual.height)
+        guard Self.destinationIsClear(recovered, for: window, in: snapshot),
+              let position = access.writeValues(recovered), admitted() else { return false }
+        _ = access.write(element, .position, position)
+        // Recovery may make the window usable without achieving the requested tile.
+        return access.frame(element) == requested
     }
 }

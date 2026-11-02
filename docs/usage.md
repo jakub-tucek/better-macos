@@ -196,7 +196,11 @@ the feature discards them; saved named layouts remain.
 
 Only ordinary accessible windows on the current Space are supported. App minimum
 sizes, missing AX metadata, exclusions, focus changes, or ambiguous identity can
-refuse a move. A failed write can leave a partly moved/resized window. No drag
+refuse a move. After a shortcut or palette write fails, the app retries resize-first
+once, then brings the accepted window size within the destination display. Windows
+larger than the display keep their top-left corner accessible. Recovery stops if
+focus or displays change; refused writes can still leave a partly moved window.
+An app-enforced size that differs from the requested tile still reports failure. No drag
 snapping, custom bindings, full-screen control, or Space assignments are provided.
 
 ## Behavior and defaults

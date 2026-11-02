@@ -89,7 +89,14 @@ still require a successful fresh scan and identity validation before writing.
 The budget is checked before apps/windows, not after every native call. An in-flight
 call can overrun, including the final read. No hard preemption or end-of-scan check
 is added. Write refusal can leave a partially moved/resized window; there is no
-transactional rollback. Exact-title reuse and native timeout enforcement retain
+transactional rollback. Focused shortcut/palette writes now get one resize-first
+recovery attempt after a failed write or mismatched readback. Recovery clamps the
+accepted size's position into the original destination display, or anchors its
+top-left corner when the size exceeds that display. Each recovery write rechecks
+permission, focus, title, minimized/full-screen state and the display snapshot.
+Discovery refusals never enter recovery; saved-layout writes retain their existing
+short-circuit behavior. Exact requested geometry remains the success criterion.
+Exact-title reuse and native timeout enforcement retain
 their [existing acceptance gaps](../validation/window-positions.md).
 
 ## Foreground shortcut discovery · 2026-10-23
