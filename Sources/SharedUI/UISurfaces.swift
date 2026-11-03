@@ -370,6 +370,17 @@ struct QuickActionsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: AppStyle.spacing) {
                     SafetyAlerts(model: model, showAwakeSession: editor.draft != nil || !entries.contains { $0.known == .keepAwake && model.enabledModules.contains(.keepAwake) })
+                    if model.updateAvailable {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Update available", systemImage: "arrow.down.circle")
+                                .font(.headline)
+                            Text("Build and restart with the latest changes. Progress opens in Terminal.")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Button("Update now", action: model.onInstallUpdate)
+                                .buttonStyle(.borderedProminent)
+                        }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                            .modifier(AppSurface())
+                    }
                     if editor.draft != nil {
                         WidgetEditor(layout: Binding(get: { editor.draft ?? model.widgetLayout }, set: { editor.draft = $0 }), model: model)
                     } else {

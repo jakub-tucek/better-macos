@@ -318,8 +318,11 @@ Unchanged revisions are skipped only when signing configuration and the installe
 signature also match. Changing the selected signing identity triggers a rebuild.
 
 **Settings → General → Updates** checks GitHub source history on `main`, with a daily
-automatic check and a manual check. Installer-managed copies offer **Install update…**
-in Terminal. Updates follow source commits, not release versions. The app downloads
+automatic check and a manual check. Managed installations show an **Update now**
+prompt in Quick actions when a newer revision is available; one click starts the
+guarded update in Terminal. General also offers **Install update…**. Active sessions
+and unsaved edits can defer installation; complete the reported action and retry.
+Updates follow source commits, not release versions. The app downloads
 `install.sh` at the offered SHA and builds that exact revision. Managed local
 checkouts use the guarded deployment command at the offered revision.
 

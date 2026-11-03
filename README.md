@@ -12,6 +12,22 @@ See how much power your Mac draws from its adapter and battery, with a live powe
 
 Use guided setup to review each feature, or choose **Easy setup · enable all**. Configure features separately and pin the controls you use to the menu-bar popup. Fresh installs include all feature modules and six compact widgets; setup lets you review their settings and required permissions before applying your choices.
 
+## Screenshots
+
+Real app views rendered with sample data.
+
+| Quick actions · left-click | Quick menu · right-click |
+| --- | --- |
+| <img src="docs/images/quick-actions.png" alt="Quick actions with Keep awake, Audio and Clipboard widgets" width="390"> | <img src="docs/images/quick-menu.png" alt="Quick menu with Window actions, Quick actions, Keep awake, Settings and Quit" width="280"> |
+
+**Window actions**
+
+<img src="docs/images/window-actions.png" alt="Window action palette with halves, quarters, thirds and display movement" width="760">
+
+**Battery details**
+
+<img src="docs/images/battery.png" alt="Battery settings showing charge, adapter-to-Mac power flow and battery health" width="900">
+
 ## What it does
 
 | Feature | What you get |
@@ -58,7 +74,7 @@ curl -fsSL https://raw.githubusercontent.com/jakub-tucek/better-macos/main/insta
 
 This runs a source installer: it downloads the repository, installs `blueutil` and `switchaudio-osx`, builds locally, and opens `~/Applications/Better macOS.app`. During an update it asks the running app to quit normally before replacement. [Installer options and signing](docs/usage.md#source-installation-and-signing).
 
-**Update:** rerun the command, or use **Settings → General → Updates → Install update…** for installer-managed copies. Updates build latest `main`, not a pinned release. Ad-hoc-signed updates may require renewed macOS permission grants. No notarized binary release is provided.
+**Update:** the app checks daily and shows **Update now** in Quick actions when an update is available for a managed installation. One click starts the build in Terminal, then restarts the app with health checks and rollback. Active sessions or unsaved edits can defer installation. You can also use **Settings → General → Updates** or rerun the install command. Updates follow source commits on `main`, not versioned releases. Ad-hoc-signed updates may require renewed macOS permission grants. No notarized binary release is provided.
 
 ## Before enabling features
 

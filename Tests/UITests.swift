@@ -940,10 +940,11 @@ func renderCompactUIFixtures(directory: String) throws {
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     _ = NSApplication.shared
     for dark in [false, true] {
-        for scenario in ["inactive", "active", "retry", "recovery", "editing", "editing-bottom", "empty", "short", "long", "long-bottom"] {
+        for scenario in ["inactive", "active", "update", "retry", "recovery", "editing", "editing-bottom", "empty", "short", "long", "long-bottom"] {
             let active = scenario == "active" || scenario == "recovery" || scenario == "retry"
             let model = DashboardModel()
             model.watchdogReady = true
+            model.updateAvailable = scenario == "update"
             model.enabledModules = [.keepAwake, .audio, .clipboard, .bluetooth]
             model.widgetLayout = WidgetLayout(entries: [.init(.keepAwake), .init(.audio, expanded: true), .init(.clipboard), .init(.bluetooth)])
             model.keepAwakeActive = active; model.keepAwakeCanStop = active
