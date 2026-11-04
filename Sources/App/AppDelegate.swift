@@ -55,7 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let safety = SafetySupervisor()
     private let logger = Logger(subsystem: "io.github.jakub-tucek.better-macos", category: "Safety")
     private var loggedLoginStatus: String?
-    private lazy var displayRefresh = DisplayRefreshGate { [weak self] in self?.refreshDisplaySnapshot() }
+    private lazy var displayRefresh = DisplayRefreshGate(schedule: displayRefreshSchedule) { [weak self] in self?.refreshDisplaySnapshot() }
     private let recoveryQueue = DispatchQueue(label: "better-macos.display-recovery", qos: .userInitiated)
     private var item: NSStatusItem!
     private var recovering = false
@@ -95,6 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let controlStateSnapshot: (() -> SystemControlLifecycle.State)?
     private let displayRecoveryPending: () -> Bool
     private let displaySnapshotRefresh: (() throws -> Void)?
+    private let displayRefreshSchedule: (TimeInterval, DispatchWorkItem) -> Void
     // UI counts and controller snapshots can lag a committed helper journal by
     // the gate's quiet period. They must never decide recovery ownership.
     private var needsDisplayRecovery: Bool { displayRecoveryPending() || rollbackUUID != nil }
@@ -123,6 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
           controlStateSnapshot: (() -> SystemControlLifecycle.State)? = nil,
           displayRecoveryPending: (() -> Bool)? = nil,
           displaySnapshotRefresh: (() throws -> Void)? = nil,
+          displayRefreshSchedule: @escaping (TimeInterval, DispatchWorkItem) -> Void = DisplayRefreshGate.scheduleOnMain,
           transactions: HostTransactions = HostTransactions(),
           loginService: LoginServicing = SystemLoginService(),
           diagnostics: Diagnostics = .shared,
@@ -157,6 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
           self.controlStateSnapshot = controlStateSnapshot
           self.displayRecoveryPending = displayRecoveryPending ?? { DisplayController.hasPendingRecovery(defaults: preferences) }
           self.displaySnapshotRefresh = displaySnapshotRefresh
+          self.displayRefreshSchedule = displayRefreshSchedule
         self.model = model
         self.spaces = spaces
         self.windowPositions = windowPositions

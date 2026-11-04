@@ -36,6 +36,17 @@ complete fixture addresses in colon, dash and canonical forms, case-insensitivel
 alongside the sensitive-name sentinel. All 190 isolated Bluetooth observation
 checks, lint, formatting and whitespace pass. No production logging changed.
 
+### Native presentation deadline
+
+[Run 41812206787](https://github.com/jakub-tucek/better-macos/actions/runs/41812206787)
+at `1e1bdb8` reached the app runner, then trapped when the popup fixture could not
+mount and stabilize its client/server geometry within 0.5 seconds. The fixture
+now allows up to five seconds and includes observed geometry in failure output.
+Its host uses the injected refresh scheduler so UI mounting cannot accidentally
+expire the pending display refresh. Screen-change, retry, recovery and wake checks
+explicitly deliver queued work and verify that presentation adds no replacement
+task. All 74 focused presentation checks pass locally; hosted result still pending.
+
 ## Runner and toolchain choice
 
 Official sources inspected on 2026-10-15:

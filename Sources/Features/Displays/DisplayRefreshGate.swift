@@ -13,12 +13,15 @@ final class DisplayRefreshGate {
     var onSettlingChanged: ((Bool) -> Void)?
 
     init(delay: TimeInterval = 1.5,
-         schedule: @escaping (TimeInterval, DispatchWorkItem) -> Void = { delay, task in
-             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: task)
-         }, refresh: @escaping () -> Void) {
+         schedule: @escaping (TimeInterval, DispatchWorkItem) -> Void = DisplayRefreshGate.scheduleOnMain,
+         refresh: @escaping () -> Void) {
         self.delay = delay
         self.schedule = schedule
         self.refresh = refresh
+    }
+
+    static func scheduleOnMain(delay: TimeInterval, task: DispatchWorkItem) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: task)
     }
 
     /// Showing existing UI is not a topology change. Retry missing/failed

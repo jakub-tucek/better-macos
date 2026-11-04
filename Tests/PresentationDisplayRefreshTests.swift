@@ -141,6 +141,7 @@ func runPresentationDisplayRefreshTests() {
     var snapshots = 0
     var failSnapshot = false
     var windows: [NSWindow] = []
+    var refreshTasks: [DispatchWorkItem] = []
     let host = AppDelegate(commandRunner: PresentationDisplayRunner(), mouseLifecycle: mouse, model: model, preferences: defaults,
         presentWindow: { windows.append($0) }, displayRecoveryPending: { false }, displaySnapshotRefresh: {
             snapshots += 1
@@ -150,7 +151,8 @@ func runPresentationDisplayRefreshTests() {
                 Monitor(uuid: "fixture-second", name: "Second", id: 2, enabled: true, isMain: false, disabledByApp: false)
             ]
             model.activeMonitorCount = 2; model.displaySupported = true
-         }, loginService: PresentationLogin(), diagnostics: Diagnostics())
+         }, displayRefreshSchedule: { _, task in refreshTasks.append(task) },
+         loginService: PresentationLogin(), diagnostics: Diagnostics())
     let anchorWindow = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 60, height: 30), styleMask: [.borderless], backing: .buffered, defer: false)
     anchorWindow.isReleasedWhenClosed = false; anchorWindow.alphaValue = 0
     let anchor = NSView(frame: NSRect(x: 0, y: 0, width: 60, height: 30))
@@ -177,16 +179,18 @@ func runPresentationDisplayRefreshTests() {
             stablePasses = geometry == previousGeometry ? stablePasses + 1 : 0
             previousGeometry = geometry
             return stablePasses >= 3
-        })
+        }, timeout: 5)
         guard stablePasses >= 3 else {
-            fatalError("Production popup must mount native scroll content and stabilize client/server geometry before interaction")
+            fatalError("Production popup must mount native scroll content and stabilize client/server geometry before interaction; stable passes=\(stablePasses), geometry=\(previousGeometry)")
         }
         return root
     }
     func settle() {
-        let deadline = Date().addingTimeInterval(3)
-        while model.displaySettling && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+        let tasks = refreshTasks
+        refreshTasks.removeAll()
+        tasks.forEach { $0.perform() }
         expect(!model.displaySettling, "deferred fixture display discovery settles")
+        expect(refreshTasks.isEmpty, "display snapshot publication schedules no extra fixture refresh")
     }
     // The real module path registers the screen observer and requests startup
     // discovery; all other features are off and Mouse has an injected backend.
@@ -263,11 +267,12 @@ func runPresentationDisplayRefreshTests() {
 
     NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
     expect(model.displaySettling, "an actual screen-change observer still invalidates the settled snapshot")
-    RunLoop.main.run(until: Date().addingTimeInterval(0.9))
+    let scheduledBeforePresentation = refreshTasks.count
     let changing = show()
     presentationClick(changing, at: NSPoint(x: changing.bounds.width - 33, y: 84))
     expect(monitorActions == 1 && model.displaySettling, "opening during real settling cannot enable or dispatch a display control")
-    RunLoop.main.run(until: Date().addingTimeInterval(0.75))
+    expect(refreshTasks.count == scheduledBeforePresentation, "presentation adds no replacement topology task")
+    settle()
     expect(!model.displaySettling && snapshots == 2, "presentation does not restart the existing screen-change quiet-period deadline")
     model.onClose()
 
