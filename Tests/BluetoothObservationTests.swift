@@ -169,7 +169,9 @@ func runBluetoothObservationTests() throws {
 }
 
 private func runBluetoothControlProbeTests() throws {
-    let sink = ObservationSink(), logger = Diagnostics(sink: sink, minimumLevel: .trace)
+    // A legitimate session UUID may contain a device address's short prefix.
+    let sink = ObservationSink(), logger = Diagnostics(sink: sink,
+        session: "00000000-0000-0000-0000-00000000AABB", minimumLevel: .trace)
     var allowed = true, power: Bool? = true, now: TimeInterval = 0
     var controllerReads = 0, lookups = 0, paired = true, wrongIdentity = false
     let probe = BluetoothControlProbe(authorized: { allowed }, controllerOn: {
@@ -233,7 +235,13 @@ private func runBluetoothControlProbeTests() throws {
     }
     expect(lookups == beforeCanceled + 6, "blocked production reconciliation invokes injected app-context probe")
     expect(logger.flushForTesting(timeout: 2), "read-only probe fixture drains isolated diagnostics")
-    expect(sink.text.contains("native_control_probe") && !sink.text.contains("SENSITIVE") && !sink.text.contains("AABB") && !sink.text.contains("aa-bb"),
+    let logged = sink.text.lowercased()
+    let addresses = inventory.map(\.address) + ["AA:BB:CC:DD:EE:FF"]
+    let privateValues = addresses.flatMap { address in
+        [address, address.replacingOccurrences(of: ":", with: "-"), address.replacingOccurrences(of: ":", with: "")]
+    }.map { $0.lowercased() }
+    expect(logged.contains("native_control_probe") && !logged.contains("sensitive") &&
+           !privateValues.contains(where: logged.contains),
            "native qualification diagnostics retain stages and counts, never names or addresses")
 }
 

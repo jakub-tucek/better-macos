@@ -25,6 +25,17 @@ checks, lint, formatting and whitespace. The full local `test.sh` stopped at the
 existing macOS 27 gesture-payload requirement on this macOS 26 host, before reaching
 the app runner. Hosted validation and live display acceptance remain separate.
 
+### Follow-up privacy assertion collision
+
+[Run 41811781926](https://github.com/jakub-tucek/better-macos/actions/runs/41811781926)
+at `8041c6c` stopped earlier in the Bluetooth observation fixtures. The privacy
+assertion rejected `AABB` anywhere in the serialized logs, including a randomly
+generated session UUID. Injecting a valid UUID ending in `AABB` reproduces the
+same assertion failure locally. The fixture now retains that UUID and checks
+complete fixture addresses in colon, dash and canonical forms, case-insensitively,
+alongside the sensitive-name sentinel. All 190 isolated Bluetooth observation
+checks, lint, formatting and whitespace pass. No production logging changed.
+
 ## Runner and toolchain choice
 
 Official sources inspected on 2026-10-15:
