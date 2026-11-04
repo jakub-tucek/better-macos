@@ -23,6 +23,7 @@ private final class FakeAudio: AudioRoutingBackend {
 }
 
 func runAudioTests() {
+    runAudioPresentationTests()
     let domain = "audio.tests.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: domain)!
     defer { defaults.removePersistentDomain(forName: domain) }
@@ -109,6 +110,43 @@ func runAudioTests() {
     module.stop(); module.select(builtIn.uid, direction: .output); module.poll(); module.resume()
     expect(fake.writes.count == stoppedCount, "Stopped routing owner rejects manual and automatic work")
     runBluetoothAudioIntegrationTests()
+}
+
+func runAudioPresentationTests() {
+    let domain = "audio.presentation.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: domain)!
+    defer { defaults.removePersistentDomain(forName: domain) }
+    let settings = ModuleSettings(defaults: defaults)
+    for module in AppModule.allCases { settings.set(module, enabled: false) }
+    let fake = FakeAudio()
+    fake.available = [AudioDevice(uid: "builtin", name: "Built-in", directions: [.input, .output], bluetooth: false)]
+    fake.routes = [.input: "builtin", .output: "builtin"]
+    let audio = AudioModule(backend: fake, defaults: defaults)
+    let model = DashboardModel()
+    let mouse = MouseLifecycle(settings: settings, makeModule: { MouseModule(backend: FakeMouseBackend(), recovery: FakeMouseRecovery()) })
+    let host = AppDelegate(mouseLifecycle: mouse, model: model, preferences: defaults, makeAudio: { audio })
+    model.onModuleChanged(.audio, true)
+    defer { model.onModuleChanged(.audio, false); withExtendedLifetime(host) {} }
+    var publications = 0
+    let observation = model.objectWillChange.sink { publications += 1 }
+    defer { observation.cancel() }
+    let start = ProcessInfo.processInfo.systemUptime
+    for _ in 0..<100 { audio.poll() }
+    print("Idle audio: 100 host-projected polls in \(ProcessInfo.processInfo.systemUptime - start)s, \(publications) dashboard publications")
+    expect(publications == 0, "unchanged audio polls cause no dashboard publications through the production host")
+    fake.available[0] = AudioDevice(uid: "builtin", name: "Renamed", directions: [.input, .output], bluetooth: false)
+    audio.poll()
+    expect(publications == 1 && model.audioDevices.first?.name == "Renamed", "device metadata change still publishes immediately")
+    fake.fail = true
+    audio.poll()
+    expect(model.audioStatus == "Discovery failed", "discovery failure remains visible")
+    let failedPublications = publications
+    audio.poll()
+    expect(publications == failedPublications, "identical observation failure does not repeatedly invalidate views")
+    fake.fail = false
+    audio.poll()
+    expect(publications > failedPublications && model.audioStatus != "Discovery failed", "recovery from failure publishes immediately")
+    expect(fake.writes.isEmpty, "presentation optimization never introduces route writes")
 }
 
 private func runBluetoothAudioIntegrationTests() {

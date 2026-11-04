@@ -128,6 +128,13 @@ if CommandLine.arguments.contains("--display-refresh-gate-tests") {
     exit(0)
 }
 
+if CommandLine.arguments.contains("--idle-presentation-tests") {
+    runAudioTests()
+    runMenuBarUpdateTests()
+    print("\(checks) idle presentation checks passed")
+    exit(0)
+}
+
 if CommandLine.arguments.contains("--presentation-display-refresh-regressions") {
     runPresentationDisplayRefreshTests()
     print("\(checks) presentation display refresh regression checks passed")

@@ -104,6 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let accessibilityCheck: () -> Bool
     private let openAccessibility: () -> Void
     private var statusObservation: AnyCancellable?
+    private let menuBarUpdates = MenuBarUpdates()
     private var deploymentEndpoint: DeploymentEndpoint?
     private let deploymentSession = UUID().uuidString
     private var updateQuitRequested = false
@@ -169,7 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         self.featureOwners = FeatureOwners(context: FeatureContext(preferences: preferences, acceptsActions: { transactions.acceptsActions }), overrides: featureFactories)
         super.init()
           statusObservation = model.objectWillChange.sink { [weak self] in
-              DispatchQueue.main.async { [weak self] in self?.refreshStatusIndicator() }
+              self?.menuBarUpdates.request { [weak self] in self?.refreshStatusIndicator() }
           }
           model.featureOwners = featureOwners
           awakeFeature.activity = activity
@@ -594,9 +595,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func refreshStatusIndicator() {
+        guard let button = item?.button else { return }
         let description = model.statusNeedsAttention ? "Better macOS — attention needed" : (model.keepAwakeActive ? "Better macOS — keeping awake" : "Better macOS")
-        item?.button?.image = MenuBarIcon.image(for: model, description: description)
-        item?.button?.toolTip = model.screenEdgesIssue ?? model.quitGuardIssue ?? model.windowShortcutIssue ?? model.errorMessage ?? description
+        let image = menuBarUpdates.image(for: model, description: description)
+        if button.image !== image { button.image = image }
+        let toolTip = model.screenEdgesIssue ?? model.quitGuardIssue ?? model.windowShortcutIssue ?? model.errorMessage ?? description
+        if button.toolTip != toolTip { button.toolTip = toolTip }
     }
 
     private func refreshQuitGuard() {
@@ -1359,37 +1363,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         // Bluetooth's five-second poll must never enter graphics queries.
-        model.devices = bluetooth.displayedDevices
-        model.selectedAddresses = bluetooth.autoAddresses
-        model.automaticReconnectEnabled = bluetooth.autoEnabled
-        model.bluetoothAvailable = bluetooth.available
-        model.bluetoothBusy = bluetooth.isBusy
-        model.bluetoothManualBusy = bluetooth.isManualBusy
-        model.bluetoothRadioOn = bluetooth.displayedRadioPoweredOn
-        model.bluetoothControlsAvailable = bluetooth.controlsAvailable
-        model.bluetoothObservationSource = bluetooth.observationSource
-        model.bluetoothPermissionRequired = bluetooth.permissionRequired
-        model.bluetoothObservationStale = bluetooth.observationStale
-        model.bluetoothDeviceStates = bluetooth.deviceStates
-        model.bluetoothSummary = bluetooth.reconnectSummary
-        model.protectOtherAudio = bluetooth.protectOtherAudio
-        model.switchAudioOutput = bluetooth.switchAudioOutput
-        model.protectedAudioAddresses = bluetooth.protectedAudioAddresses
-        model.legacyServicePresent = bluetooth.legacyServicePresent
+        model.update(\.devices, to: bluetooth.displayedDevices)
+        model.update(\.selectedAddresses, to: bluetooth.autoAddresses)
+        model.update(\.automaticReconnectEnabled, to: bluetooth.autoEnabled)
+        model.update(\.bluetoothAvailable, to: bluetooth.available)
+        model.update(\.bluetoothBusy, to: bluetooth.isBusy)
+        model.update(\.bluetoothManualBusy, to: bluetooth.isManualBusy)
+        model.update(\.bluetoothRadioOn, to: bluetooth.displayedRadioPoweredOn)
+        model.update(\.bluetoothControlsAvailable, to: bluetooth.controlsAvailable)
+        model.update(\.bluetoothObservationSource, to: bluetooth.observationSource)
+        model.update(\.bluetoothPermissionRequired, to: bluetooth.permissionRequired)
+        model.update(\.bluetoothObservationStale, to: bluetooth.observationStale)
+        model.update(\.bluetoothDeviceStates, to: bluetooth.deviceStates)
+        model.update(\.bluetoothSummary, to: bluetooth.reconnectSummary)
+        model.update(\.protectOtherAudio, to: bluetooth.protectOtherAudio)
+        model.update(\.switchAudioOutput, to: bluetooth.switchAudioOutput)
+        model.update(\.protectedAudioAddresses, to: bluetooth.protectedAudioAddresses)
+        model.update(\.legacyServicePresent, to: bluetooth.legacyServicePresent)
         if let data = bluetooth.diagnostics() { preferences.set(data, forKey: "bluetooth.lastSnapshot") }
         checkGUIBluetoothTest()
     }
 
     private func refreshAudio() {
-        model.audioDevices = audio?.devices ?? []
-        model.audioRoutes = audio?.routes ?? [:]
-        model.audioAutomatic = audio?.automatic ?? false
-        model.audioStatus = audio?.status ?? "Audio module is off"
+        model.update(\.audioDevices, to: audio?.devices ?? [])
+        model.update(\.audioRoutes, to: audio?.routes ?? [:])
+        model.update(\.audioAutomatic, to: audio?.automatic ?? false)
+        model.update(\.audioStatus, to: audio?.status ?? "Audio module is off")
+        var preferences = model.audioPreferences
+        var fallbacks = model.audioFallbacks
+        var overrides = model.audioOverrides
         for direction in AudioDirection.allCases {
-            model.audioPreferences[direction] = audio?.preferences(direction) ?? []
-            model.audioFallbacks[direction] = audio?.fallback(direction) ?? ""
-            model.audioOverrides[direction] = audio?.isOverridden(direction) ?? false
+            preferences[direction] = audio?.preferences(direction) ?? []
+            fallbacks[direction] = audio?.fallback(direction) ?? ""
+            overrides[direction] = audio?.isOverridden(direction) ?? false
         }
+        model.update(\.audioPreferences, to: preferences)
+        model.update(\.audioFallbacks, to: fallbacks)
+        model.update(\.audioOverrides, to: overrides)
     }
 
     private func checkGUIBluetoothTest() {

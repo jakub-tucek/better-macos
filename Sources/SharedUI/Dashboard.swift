@@ -89,6 +89,12 @@ struct DashboardNavigation: Equatable {
 /// The same state drives the persistent popover and its controls. Refreshes
 /// update values without destroying the UI or closing its containing popover.
 final class DashboardModel: ObservableObject {
+    /// Poll-driven projections should not invalidate every retained view when
+    /// their value is unchanged. Explicit actions keep their existing callbacks.
+    func update<Value: Equatable>(_ keyPath: ReferenceWritableKeyPath<DashboardModel, Value>, to value: Value) {
+        guard self[keyPath: keyPath] != value else { return }
+        self[keyPath: keyPath] = value
+    }
     @Published var windowPositions: WindowPositions?
     var featureOwners: FeatureOwners?
     @Published var audioDevices: [AudioDevice] = []
