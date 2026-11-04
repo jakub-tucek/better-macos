@@ -122,6 +122,12 @@ func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
     print("PASS: \(message)")
 }
 
+if CommandLine.arguments.contains("--display-refresh-gate-tests") {
+    runPresentationGateTests()
+    print("\(checks) display refresh gate checks passed")
+    exit(0)
+}
+
 if CommandLine.arguments.contains("--presentation-display-refresh-regressions") {
     runPresentationDisplayRefreshTests()
     print("\(checks) presentation display refresh regression checks passed")

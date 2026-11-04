@@ -5,14 +5,19 @@ import Foundation
 final class DisplayRefreshGate {
     private let delay: TimeInterval
     private let refresh: () -> Void
+    private let schedule: (TimeInterval, DispatchWorkItem) -> Void
     private var work: DispatchWorkItem?
     private var generation = 0
     private var refreshing = false
     private(set) var isSettling = false
     var onSettlingChanged: ((Bool) -> Void)?
 
-    init(delay: TimeInterval = 1.5, refresh: @escaping () -> Void) {
+    init(delay: TimeInterval = 1.5,
+         schedule: @escaping (TimeInterval, DispatchWorkItem) -> Void = { delay, task in
+             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: task)
+         }, refresh: @escaping () -> Void) {
         self.delay = delay
+        self.schedule = schedule
         self.refresh = refresh
     }
 
@@ -41,7 +46,7 @@ final class DisplayRefreshGate {
             self.refresh()
         }
         work = task
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: task)
+        schedule(delay, task)
     }
 
     func cancel() {

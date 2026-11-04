@@ -1,11 +1,29 @@
 # Continuous integration
 
 [The CI workflow](../.github/workflows/ci.yml) adds one GitHub-hosted arm64 job
-for pull requests targeting `main`, pushes to `main`, and manual dispatch. It has
-**not been executed on GitHub as part of this change**. Adding the workflow does
-not enable Actions, approve fork runs, configure organization policies or make its
-check required in branch protection. Independently reviewed integration is recorded
-below; after an authorized push, record the actual run URL, source revision and results.
+for pull requests targeting `main`, pushes to `main`, and manual dispatch. Hosted
+runs are active; the original integration evidence below predates those runs.
+Adding the workflow does not approve fork runs, configure organization policies
+or make its check required in branch protection.
+
+## Hosted timing failure · 2026-11-04
+
+[Run 41627852283](https://github.com/jakub-tucek/better-macos/actions/runs/41627852283)
+at `706d116` failed in the presentation refresh-gate test. Its two 50 ms run-loop
+waits assumed a refresh scheduled for 80 ms could not finish before the simulated
+presentation storm. A delayed first wait lets the refresh finish first; the storm
+then correctly requests another refresh for the explicitly stale snapshot.
+An isolated reproduction with a 100 ms first wait produces `reads=1, settling=true`.
+
+The gate now accepts an injected scheduler, retaining main-queue `asyncAfter` as
+the production default. Tests deliver queued tasks explicitly and assert the
+original delay, no storm/reentrant rescheduling, cancellation and topology-task
+replacement. Run the focused checks with
+`build/isolated-tests --display-refresh-gate-tests` after compiling via `test.sh`.
+Local validation passed 13 focused gate checks, all 64 presentation/display-refresh
+checks, lint, formatting and whitespace. The full local `test.sh` stopped at the
+existing macOS 27 gesture-payload requirement on this macOS 26 host, before reaching
+the app runner. Hosted validation and live display acceptance remain separate.
 
 ## Runner and toolchain choice
 

@@ -311,10 +311,15 @@ func runPresentationDisplayRefreshTests() {
     expect(snapshots == 8, "cold initialization retry discovers once and can become fresh")
 }
 
-private func runPresentationGateTests() {
+func runPresentationGateTests() {
     var reads = 0
+    var pending: [DispatchWorkItem] = []
+    var delays: [TimeInterval] = []
     weak var activeGate: DisplayRefreshGate?
-    let gate = DisplayRefreshGate(delay: 0.08) {
+    let gate = DisplayRefreshGate(delay: 0.08, schedule: { delay, task in
+        delays.append(delay)
+        pending.append(task)
+    }) {
         reads += 1
         // Reentrant UI publication during discovery must not enqueue a second
         // quiet period, even before the host marks that snapshot fresh.
@@ -325,19 +330,28 @@ private func runPresentationGateTests() {
     expect(!gate.isSettling, "presentation of a fresh snapshot does not enter settling")
     gate.requestRefreshForPresentation(snapshotIsFresh: false)
     expect(gate.isSettling && reads == 0, "missing snapshot presentation requests deferred discovery")
-    RunLoop.main.run(until: Date().addingTimeInterval(0.05))
     for _ in 0..<100 { gate.requestRefreshForPresentation(snapshotIsFresh: false) }
-    RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    expect(pending.count == 1 && delays == [0.08] && reads == 0,
+           "presentation storms preserve the original scheduled deadline before delivery")
+    pending.removeFirst().perform()
     expect(reads == 1 && !gate.isSettling, "presentation storms and reentrant discovery cannot extend or recreate the refresh")
-    RunLoop.main.run(until: Date().addingTimeInterval(0.1))
-    expect(reads == 1 && !gate.isSettling, "no hidden follow-up discovery remains after presentation during refresh")
+    expect(pending.isEmpty, "no hidden follow-up discovery remains after presentation during refresh")
     gate.requestRefresh()
     gate.requestRefreshForPresentation(snapshotIsFresh: true)
     expect(gate.isSettling, "fresh presentation cannot cancel an explicit topology refresh")
-    RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+    expect(pending.count == 1, "fresh presentation preserves the explicit topology task")
+    pending.removeFirst().perform()
     expect(reads == 2 && !gate.isSettling, "explicit refresh still runs even when the UI already has a snapshot")
     gate.requestRefreshForPresentation(snapshotIsFresh: false)
     gate.cancel()
-    RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+    expect(pending.count == 1 && pending[0].isCancelled, "shutdown cancels the queued presentation task")
+    pending.removeFirst().perform()
     expect(reads == 2 && !gate.isSettling, "shutdown cancellation still rejects deferred presentation work")
+    gate.requestRefresh()
+    gate.requestRefresh()
+    expect(pending.count == 2 && pending[0].isCancelled, "real topology changes replace the quiet-period task")
+    pending.removeFirst().perform()
+    expect(reads == 2 && gate.isSettling, "superseded topology task cannot finish the current refresh")
+    pending.removeFirst().perform()
+    expect(reads == 3 && !gate.isSettling && pending.isEmpty, "latest topology task refreshes exactly once")
 }
