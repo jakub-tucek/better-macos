@@ -404,7 +404,7 @@ struct MonitorLayoutMap: View {
                         let monitor = monitors.first { $0.uuid == position.uuid }
                         let width = CGFloat(position.width ?? 0) * scale
                         let height = CGFloat(position.height ?? 0) * scale
-                        let name = monitor?.name ?? "Display"
+                        let name = monitor?.displayName ?? "Display"
                         let tile = VStack(spacing: 2) {
                             Image(systemName: monitor?.isBuiltIn == true ? "laptopcomputer" : "display")
                             Text(name).font(.system(size: 9, weight: .medium)).lineLimit(2).multilineTextAlignment(.center)
@@ -821,14 +821,14 @@ struct DashboardView: View {
                         Image(systemName: monitor.isBuiltIn ? "laptopcomputer" : "display")
                             .frame(width: 22).foregroundStyle(.secondary)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(monitor.name).font(.system(size: 13, weight: .medium))
+                            Text(monitor.displayName).font(.system(size: 13, weight: .medium))
                             if monitor.isMain || !monitor.enabled {
                                 Text(monitor.isMain ? "Main" : "Off").font(.caption).foregroundStyle(.secondary)
                             }
                         }
                         Spacer()
                         if model.enabledModules.contains(.monitors) {
-                        BlueSwitch(label: "\(monitor.name) enabled", isOn: Binding(
+                        BlueSwitch(label: "\(monitor.displayName) enabled", isOn: Binding(
                             get: { monitor.enabled }, set: { model.onMonitorChanged(monitor.uuid, $0) }))
                             .disabled(model.displaySettling || model.monitorBusy || !model.displaySupported || monitor.id == nil || (monitor.enabled && model.activeMonitorCount <= 1))
                         }

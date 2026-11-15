@@ -713,7 +713,7 @@ struct QuickWidget: View {
         VStack(alignment: .leading, spacing: 8) {
             if model.monitors.isEmpty { Text("No displays available. Check connections or Displays settings.").font(.caption) }
             ForEach(model.monitors, id: \.uuid) { monitor in
-                DashboardSwitchRow(title: monitor.name, isOn: Binding(get: { monitor.enabled }, set: { model.onMonitorChanged(monitor.uuid, $0) }))
+                DashboardSwitchRow(title: monitor.displayName, isOn: Binding(get: { monitor.enabled }, set: { model.onMonitorChanged(monitor.uuid, $0) }))
                     .disabled(model.displaySettling || model.monitorBusy || !model.displaySupported || monitor.id == nil || (monitor.enabled && model.activeMonitorCount <= 1))
             }
             if model.monitorBusy || model.displaySettling { Text("Waiting for display operation…").font(.caption) }

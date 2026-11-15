@@ -81,6 +81,10 @@ can refuse an action rather than redirect it.
 | Clipboard | Capture, exclusions, retention, privacy, storage recovery |
 | Links | Default browser, fallback browser, ordered routing rules, test link |
 
+Display names include the diagonal in inches when macOS reports physical dimensions,
+for example `Studio Display · 27.0″`. Reported dimensions may differ from marketed sizes;
+the size is omitted when unavailable.
+
 Links opens in **Text** mode, with **Visual / Text** modes sharing one unsaved draft. Visual mode provides
 rule toggles, match and destination fields, reordering and deletion. Text mode uses
 **one rule per line**. Both apply edits with **Save rules**; switching modes preserves

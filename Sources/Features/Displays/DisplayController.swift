@@ -41,6 +41,9 @@ struct Monitor {
     let isMain: Bool
     let disabledByApp: Bool
     var isBuiltIn: Bool = false
+    var diagonalInches: Double? = nil
+
+    var displayName: String { DisplaySize.label(name: name, diagonalInches: diagonalInches) }
 }
 
 enum DisplaySafety {
@@ -307,7 +310,8 @@ final class DisplayController {
             let id = displayID(for: record.uuid)
             return Monitor(uuid: record.uuid, name: record.name, id: id, enabled: isEnabled(record.uuid),
                            isMain: id.map { CGDisplayIsMain($0) != 0 } ?? false, disabledByApp: record.disabledByApp,
-                           isBuiltIn: id.map { CGDisplayIsBuiltin($0) != 0 } ?? false)
+                           isBuiltIn: id.map { CGDisplayIsBuiltin($0) != 0 } ?? false,
+                           diagonalInches: id.flatMap { DisplaySize.diagonalInches(for: CGDisplayScreenSize($0)) })
         }.sorted { $0.name == $1.name ? $0.uuid < $1.uuid : $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 

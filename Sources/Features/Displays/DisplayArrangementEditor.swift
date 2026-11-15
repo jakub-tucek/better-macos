@@ -46,7 +46,7 @@ struct DisplayArrangementEditor: View {
                         let delta = dragging == position.uuid ? translation : .zero
                         VStack(spacing: 5) {
                             Image(systemName: monitor?.isBuiltIn == true ? "laptopcomputer" : "display")
-                            Text(monitor?.name ?? "Display").font(.caption).multilineTextAlignment(.center).lineLimit(2)
+                            Text(monitor?.displayName ?? "Display").font(.caption).multilineTextAlignment(.center).lineLimit(2)
                             if position.uuid == mainUUID { Text("Main").font(.caption2).bold() }
                         }
                         .frame(width: max(1, CGFloat(position.width ?? 0) * scale - 2),
@@ -66,7 +66,7 @@ struct DisplayArrangementEditor: View {
                                 dragging = nil
                                 translation = .zero
                             })
-                        .help("Drag \(monitor?.name ?? "display") to arrange")
+                        .help("Drag \(monitor?.displayName ?? "display") to arrange")
                     }
                 }.clipped()
             }.frame(minHeight: 260)
