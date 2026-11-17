@@ -49,8 +49,9 @@ class WindowExecution<Access: WindowNativeAccess>: WindowPositionBackend {
     // Keep identities for shortcut originals across foreground-app changes. Every
     // write still requires a fresh app scan and native identity/focus validation.
     private var focusedElements: [String: Access.Element] = [:]
+    private let diagnostics: Diagnostics
 
-    init(access: Access) { self.access = access }
+    init(access: Access, diagnostics: Diagnostics = .shared) { self.access = access; self.diagnostics = diagnostics }
     var permitted: Bool { access.permitted }
     func requestPermission() { access.requestPermission() }
     func displays() -> [WindowDisplay] { access.displays() }
@@ -156,58 +157,84 @@ class WindowExecution<Access: WindowNativeAccess>: WindowPositionBackend {
         move(window, to: frame, requireFocus: false)
     }
     private func move(_ window: PositionedWindow, to frame: CGRect, requireFocus: Bool) -> Bool {
-        guard permitted, let element = elements[window.token] ?? (requireFocus ? focusedElements[window.token] : nil) else { return false }
+        // Geometry and a closed reason only; titles and app identities stay out of logs.
+        func refuse(_ reason: String, actual: CGRect? = nil) -> Bool {
+            var fields = ["reason": reason, "focused": String(requireFocus), "requested": Self.describe(frame),
+                          "displays": access.displays().map { Self.describe($0.bounds) }.joined(separator: " ")]
+            if let actual { fields["actual"] = Self.describe(actual) }
+            diagnostics.emit("windows", "move_refused", outcome: "blocked", level: .warning, fields: fields)
+            return false
+        }
+        guard permitted else { return refuse("permission") }
+        guard let element = elements[window.token] ?? (requireFocus ? focusedElements[window.token] : nil) else {
+            return refuse("unknown_window")
+        }
         let application: WindowApplication?
         if requireFocus {
             guard let frontmost = access.frontmostApplication(), frontmost.pid != access.ownPID,
-                  frontmost.bundle == window.app else { return false }
+                  frontmost.bundle == window.app else { return refuse("frontmost_changed") }
             application = frontmost
         } else { application = nil }
-        guard let snapshot = try? windows(in: application) else { return false }
+        guard let snapshot = try? windows(in: application) else { return refuse("discovery_failed") }
         let fresh = snapshot.filter { $0.app == window.app && $0.title == window.title }
-        guard fresh.count == 1, fresh[0].supported, let freshElement = elements[fresh[0].token], access.equal(element, freshElement) else { return false }
-        guard Self.destinationIsClear(frame, for: fresh[0], in: snapshot) else { return false }
+        guard fresh.count == 1 else { return refuse(fresh.isEmpty ? "title_missing" : "title_ambiguous") }
+        guard fresh[0].supported else { return refuse("unsupported", actual: fresh[0].frame) }
+        guard let freshElement = elements[fresh[0].token], access.equal(element, freshElement) else { return refuse("identity_changed") }
+        guard Self.destinationIsClear(frame, for: fresh[0], in: snapshot) else { return refuse("destination_occupied") }
         guard access.string(element, .title) == window.title,
               access.bool(element, .minimized) == false,
-              access.bool(element, .fullScreen) == false else { return false }
-        guard let values = access.writeValues(frame) else { return false }
+              access.bool(element, .fullScreen) == false else { return refuse("window_state_changed") }
+        guard let values = access.writeValues(frame) else { return refuse("write_values") }
         let recoveryDisplays = requireFocus ? access.displays() : []
-        guard !requireFocus || focusedElement().map({ access.focusEqual($0, element) }) == true else { return false }
+        guard !requireFocus || focusedElement().map({ access.focusEqual($0, element) }) == true else { return refuse("focus_changed") }
         // Move before resize, then correct any resize-induced position adjustment.
-        if access.write(element, .position, values),
-           access.write(element, .size, values),
-           access.write(element, .position, values),
-           requireFocus ? Self.reached(access.frame(element), frame) : access.frame(element) == frame { return true }
-        guard requireFocus else { return false }
-        return recoverFocused(element, window: fresh[0], requested: frame,
-                              snapshot: snapshot, displays: recoveryDisplays)
+        let written = access.write(element, .position, values) && access.write(element, .size, values) &&
+            access.write(element, .position, values)
+        let readback = written ? access.frame(element) : nil
+        if written, requireFocus ? Self.reached(readback, frame) : readback == frame { return true }
+        guard requireFocus else { return refuse(written ? "readback_mismatch" : "write_failed", actual: readback) }
+        var reason = written ? "readback_mismatch" : "write_failed"
+        if recoverFocused(element, window: fresh[0], requested: frame, snapshot: snapshot,
+                          displays: recoveryDisplays, reason: &reason) { return true }
+        return refuse(reason, actual: readback)
     }
 
     /// One resize-first retry, then position using the accepted size. Never retry
     /// discovery refusals or redirect recovery to a newly focused window.
     private func recoverFocused(_ element: Access.Element, window: PositionedWindow, requested: CGRect,
-                                snapshot: [PositionedWindow], displays: [WindowDisplay]) -> Bool {
-        guard let bounds = displays.first(where: { $0.bounds.contains(requested) })?.bounds else { return false }
+                                snapshot: [PositionedWindow], displays: [WindowDisplay], reason: inout String) -> Bool {
+        guard let bounds = displays.first(where: { $0.bounds.contains(requested) })?.bounds else {
+            reason += "+recovery_no_display"; return false
+        }
         func admitted() -> Bool {
             permitted && access.displays() == displays &&
                 access.string(element, .title) == window.title &&
                 access.bool(element, .minimized) == false && access.bool(element, .fullScreen) == false &&
                 focusedElement().map { access.focusEqual($0, element) } == true
         }
-        guard let values = access.writeValues(requested), admitted() else { return false }
+        guard let values = access.writeValues(requested), admitted() else { reason += "+recovery_not_admitted"; return false }
         // A refused resize must not prevent a position-only rescue.
         _ = access.write(element, .size, values)
         guard let actual = access.frame(element),
               [actual.minX, actual.minY, actual.width, actual.height].allSatisfy(\.isFinite),
-              actual.width > 0, actual.height > 0 else { return false }
+              actual.width > 0, actual.height > 0 else { reason += "+recovery_unreadable"; return false }
         let recovered = CGRect(
             x: max(bounds.minX, min(requested.minX, bounds.maxX - actual.width)),
             y: max(bounds.minY, min(requested.minY, bounds.maxY - actual.height)),
             width: actual.width, height: actual.height)
-        guard Self.destinationIsClear(recovered, for: window, in: snapshot),
-              let position = access.writeValues(recovered), admitted() else { return false }
+        guard Self.destinationIsClear(recovered, for: window, in: snapshot) else { reason += "+recovery_occupied"; return false }
+        guard let position = access.writeValues(recovered), admitted() else { reason += "+recovery_not_admitted"; return false }
         _ = access.write(element, .position, position)
         // A size the app limits still counts once the window sits fully on the display.
-        return bounds.contains(recovered) && Self.reached(access.frame(element), recovered)
+        guard bounds.contains(recovered) else { reason += "+recovery_oversized"; return false }
+        let final = access.frame(element)
+        guard Self.reached(final, recovered) else {
+            reason += "+recovery_readback_mismatch:" + (final.map(Self.describe) ?? "unreadable")
+            return false
+        }
+        return true
+    }
+    private static func describe(_ rect: CGRect) -> String {
+        "\(rect.minX),\(rect.minY),\(rect.width)x\(rect.height)"
     }
 }

@@ -128,7 +128,8 @@ private func windowExecutionChecks() throws {
         access.records[1]?.frame = offscreen
         access.entries?[0].frame = offscreen
         access.displayList = [WindowDisplay(id: "screen", bounds: bounds)]
-        let backend = WindowExecution(access: access)
+        let memory = MemoryDiagnosticSink(), diagnostics = Diagnostics(sink: memory)
+        let backend = WindowExecution(access: access, diagnostics: diagnostics)
         let window = try backend.focusedWindow()!
         access.failWrite = mode == "sizeFailure" ? 2 : 1
         if mode == "minimumSize" { access.failWrite = nil; access.minimumWidth = 700 }
@@ -147,6 +148,11 @@ private func windowExecutionChecks() throws {
         } else if mode == "oversized" {
             expect(!applied && access.records[1]?.frame?.origin == bounds.origin,
                    "window larger than display retains an accessible top-left corner")
+            _ = diagnostics.flushForTesting()
+            let fields = memory.records.last { $0["event"] as? String == "move_refused" }?["fields"] as? [String: String]
+            expect(fields?["reason"] == "write_failed+recovery_oversized" && fields?["requested"] == "500.0,30.0,500.0x700.0" &&
+                   fields?["displays"] == "0.0,30.0,1000.0x700.0" && !memory.lines.contains { String(decoding: $0, as: UTF8.self).contains("Document") || String(decoding: $0, as: UTF8.self).contains("test.app") },
+                   "refused shortcut move logs its closed reason and geometry without title or app identity")
         } else {
             expect(bounds.contains(access.records[1]!.frame!), "\(mode) recovers the partly off-screen window")
             expect(applied, "\(mode) reports success once the app-accepted size sits fully on the display")
