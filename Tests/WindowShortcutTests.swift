@@ -361,7 +361,8 @@ private func runWindowShortcutAccessReturnTests() {
            "Global shortcut retry clears its own issue without clearing unrelated failures")
     backend.succeeds = false
     owner.performShortcut(.left)
-    expect(model.windowShortcutIssue?.contains("could not reach") == true, "Failed window movement is visible in the global issue surface")
+    expect(model.windowShortcutIssue == nil && owner.shortcutStatus.contains("could not reach"),
+           "Failed window movement stays in the feature status, out of the global issue surface")
     owner.stop()
 }
 

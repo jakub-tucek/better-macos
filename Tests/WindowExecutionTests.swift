@@ -149,7 +149,7 @@ private func windowExecutionChecks() throws {
                    "window larger than display retains an accessible top-left corner")
         } else {
             expect(bounds.contains(access.records[1]!.frame!), "\(mode) recovers the partly off-screen window")
-            expect(applied == (mode == "positionFailure" || mode == "sizeFailure"), "\(mode) reports success only for the exact requested frame")
+            expect(applied, "\(mode) reports success once the app-accepted size sits fully on the display")
             if mode == "minimumSize" {
                 expect(access.records[1]?.frame?.maxX == bounds.maxX, "minimum-size recovery retains right-edge alignment")
             }
@@ -422,6 +422,14 @@ private func windowExecutionChecks() throws {
                "\(mode) readback uses exact geometry, without tolerance or assumed write success")
         expect(access.writes == [.position, .size, .position] && access.records[1]?.frame?.origin == target.origin,
                "\(mode) readback follows correction of resize-induced position shift")
+    }
+    do {
+        let access = ExecutionTestAccess(), backend: WindowExecution<ExecutionTestAccess>
+        backend = WindowExecution(access: access)
+        let original = try backend.focusedWindow()!
+        access.constrainSize = true
+        expect(backend.moveFocused(original, to: target) && access.writes == [.position, .size, .position],
+               "shortcut readback tolerates one-point AX rounding without recovery writes")
     }
     for fact in ["subrole", "minimized", "fullScreen", "position", "size", "offScreen", "layer"] {
         let access = ExecutionTestAccess(), backend: WindowExecution<ExecutionTestAccess>

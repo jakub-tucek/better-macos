@@ -117,6 +117,13 @@ class WindowExecution<Access: WindowNativeAccess>: WindowPositionBackend {
     static func hasUniqueGeometry(_ frame: CGRect, in frames: [CGRect]) -> Bool {
         frames.filter { $0 == frame }.count == 1
     }
+    /// Shortcut readback only: AX rounds fractional tiles, so allow one point per edge.
+    /// Saved layouts keep exact verification.
+    static func reached(_ actual: CGRect?, _ expected: CGRect) -> Bool {
+        guard let actual else { return false }
+        return abs(actual.minX - expected.minX) <= 1 && abs(actual.minY - expected.minY) <= 1 &&
+            abs(actual.maxX - expected.maxX) <= 1 && abs(actual.maxY - expected.maxY) <= 1
+    }
     static func destinationIsClear(_ frame: CGRect, for window: PositionedWindow, in snapshot: [PositionedWindow]) -> Bool {
         !snapshot.contains { $0.app == window.app && $0.token != window.token && $0.frame == frame }
     }
@@ -170,7 +177,7 @@ class WindowExecution<Access: WindowNativeAccess>: WindowPositionBackend {
         if access.write(element, .position, values),
            access.write(element, .size, values),
            access.write(element, .position, values),
-           access.frame(element) == frame { return true }
+           requireFocus ? Self.reached(access.frame(element), frame) : access.frame(element) == frame { return true }
         guard requireFocus else { return false }
         return recoverFocused(element, window: fresh[0], requested: frame,
                               snapshot: snapshot, displays: recoveryDisplays)
@@ -200,7 +207,7 @@ class WindowExecution<Access: WindowNativeAccess>: WindowPositionBackend {
         guard Self.destinationIsClear(recovered, for: window, in: snapshot),
               let position = access.writeValues(recovered), admitted() else { return false }
         _ = access.write(element, .position, position)
-        // Recovery may make the window usable without achieving the requested tile.
-        return access.frame(element) == requested
+        // A size the app limits still counts once the window sits fully on the display.
+        return bounds.contains(recovered) && Self.reached(access.frame(element), recovered)
     }
 }
