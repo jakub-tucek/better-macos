@@ -86,4 +86,8 @@ struct AXWindowNativeAccess: WindowNativeAccess {
     func write(_ element: AXUIElement, _ attribute: WindowGeometryAttribute, _ values: WriteValues) -> Bool {
         AXUIElementSetAttributeValue(element, key(attribute) as CFString, attribute == .position ? values.position : values.size) == .success
     }
+    func enhancedUserInterface(_ root: AXUIElement) -> Bool? { value(root, "AXEnhancedUserInterface") as? Bool }
+    func setEnhancedUserInterface(_ root: AXUIElement, _ enabled: Bool) {
+        AXUIElementSetAttributeValue(root, "AXEnhancedUserInterface" as CFString, enabled as CFBoolean)
+    }
 }

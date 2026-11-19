@@ -39,6 +39,8 @@ protocol WindowNativeAccess {
     func focusEqual(_ focus: Focus, _ element: Element) -> Bool
     func writeValues(_ frame: CGRect) -> WriteValues?
     func write(_ element: Element, _ attribute: WindowGeometryAttribute, _ values: WriteValues) -> Bool
+    func enhancedUserInterface(_ root: Element) -> Bool?
+    func setEnhancedUserInterface(_ root: Element, _ enabled: Bool)
 }
 
 /// Verified window execution. Host admission and queued lifecycle checks
@@ -190,10 +192,25 @@ class WindowExecution<Access: WindowNativeAccess>: WindowPositionBackend {
         guard let values = access.writeValues(frame) else { return refuse("write_values", frame, focused: true) }
         let displays = access.displays()
         guard focusedElement().map({ access.focusEqual($0, element) }) == true else { return refuse("focus_changed", frame, focused: true) }
-        // Move before resize, then correct any resize-induced position adjustment.
-        let written = access.write(element, .position, values) && access.write(element, .size, values) &&
-            access.write(element, .position, values)
-        let readback = written ? access.frame(element) : nil
+        // Apps with AXEnhancedUserInterface on (Chrome, when an assistive app requests it)
+        // animate or drop AX size changes. Rectangle disables it for the adjustment.
+        let root = access.application(frontmost.pid)
+        let enhancedUI = access.enhancedUserInterface(root) == true
+        if enhancedUI { access.setEnhancedUserInterface(root, false) }
+        defer { if enhancedUI { access.setEnhancedUserInterface(root, true) } }
+        return place(element, at: frame, values: values, displays: displays)
+    }
+
+    private func place(_ element: Access.Element, at frame: CGRect, values: Access.WriteValues, displays: [WindowDisplay]) -> Bool {
+        // macOS caps size to the window's current display, so size again after crossing displays.
+        let written = access.write(element, .size, values) && access.write(element, .position, values) &&
+            access.write(element, .size, values)
+        var readback = written ? access.frame(element) : nil
+        if written, let current = readback, !Self.reached(current, frame),
+           abs(current.width - frame.width) <= 1, abs(current.height - frame.height) <= 1,
+           access.write(element, .position, values) {
+            readback = access.frame(element)
+        }
         if written, Self.reached(readback, frame) { return true }
         var reason = written ? "readback_mismatch" : "write_failed"
         if recoverFocused(element, requested: frame, displays: displays, reason: &reason) { return true }

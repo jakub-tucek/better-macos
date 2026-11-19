@@ -138,7 +138,10 @@ enum WindowShortcutAction: UInt32, CaseIterable, Identifiable {
                               width: useLeft ? split : display.width - split, height: display.height)
             }
             let snapped = half(in: bounds)
-            guard frame == snapped else { return snapped }
+            // AX readback can be a point off; an exact match would trap the window on this display.
+            let atHalf = abs(frame.minX - snapped.minX) <= 1 && abs(frame.minY - snapped.minY) <= 1 &&
+                abs(frame.maxX - snapped.maxX) <= 1 && abs(frame.maxY - snapped.maxY) <= 1
+            guard atHalf else { return snapped }
             // Continue in the physical direction only after reaching that half.
             // Prefer a side-by-side neighbor over a diagonally placed display.
             let candidates = ordered.filter { self == .left ? $0.bounds.midX < bounds.midX : $0.bounds.midX > bounds.midX }

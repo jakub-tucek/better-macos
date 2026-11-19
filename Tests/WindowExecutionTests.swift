@@ -84,6 +84,11 @@ private final class ExecutionTestAccess: WindowNativeAccess {
     func equal(_ lhs: Int, _ rhs: Int) -> Bool { (identities[lhs] ?? lhs) == (identities[rhs] ?? rhs) }
     func focused(_ root: Int) -> Int? { trace.append("focused:\(root)"); return focus }
     func focusEqual(_ focus: Int, _ element: Int) -> Bool { equal(focus, element) }
+    var enhancedUI: Bool?
+    var capSizeToDisplay: ((CGPoint) -> CGSize?)?
+    var enhancedUIWrites: [Bool] = []
+    func enhancedUserInterface(_ root: Int) -> Bool? { enhancedUI }
+    func setEnhancedUserInterface(_ root: Int, _ enabled: Bool) { enhancedUI = enabled; enhancedUIWrites.append(enabled) }
     func writeValues(_ frame: CGRect) -> CGRect? {
         trace.append("values"); beforeValues?(); return makeValues ? frame : nil
     }
@@ -94,8 +99,12 @@ private final class ExecutionTestAccess: WindowNativeAccess {
         if rejectResize && attribute == .size { return false }
         guard var frame = records[element]?.frame else { return false }
         if attribute == .position { frame.origin = values.origin }
+        else if enhancedUI == true { return true }
         else {
             frame.size = constrainSize ? CGSize(width: values.width - 1, height: values.height) : values.size
+            if let cap = capSizeToDisplay?(frame.origin) {
+                frame.size = CGSize(width: min(frame.width, cap.width), height: min(frame.height, cap.height))
+            }
             frame.size.width = max(frame.width, minimumWidth)
             if adjustPositionOnResize { frame.origin.x += 20 }
         }
@@ -198,6 +207,32 @@ private func windowExecutionChecks() throws {
             expect(focused.map { backend.moveFocused($0, to: target) } == true && access.writeElements == [1, 1, 1],
                    "sibling window's missing \(missing) does not block the focused window")
         }
+    }
+    for enhanced in [false, true] {
+        let access = ExecutionTestAccess()
+        let backend = WindowExecution(access: access)
+        access.enhancedUI = enhanced
+        let focused = try backend.focusedWindow()
+        expect(focused.map { backend.moveFocused($0, to: target) } == true && access.records[1]?.frame == target,
+               "focused move reaches the target with AXEnhancedUserInterface \(enhanced)")
+        expect(access.enhancedUIWrites == (enhanced ? [false, true] : []) && access.enhancedUI == enhanced,
+               "AXEnhancedUserInterface \(enhanced) is suspended only while moving and then restored")
+    }
+    do {
+        let access = ExecutionTestAccess()
+        let backend = WindowExecution(access: access)
+        let small = CGRect(x: 2560, y: 30, width: 960, height: 1170), large = CGRect(x: 0, y: 30, width: 1280, height: 1410)
+        access.records[1]?.frame = small; access.entries?[0].frame = small
+        access.displayList = [WindowDisplay(id: "a", bounds: CGRect(x: 0, y: 30, width: 2560, height: 1410)),
+                              WindowDisplay(id: "b", bounds: CGRect(x: 2560, y: 30, width: 1920, height: 1170))]
+        access.capSizeToDisplay = { $0.x >= 2560 ? CGSize(width: 1920, height: 1170) : nil }
+        let focused = try backend.focusedWindow()
+        expect(focused.map { backend.moveFocused($0, to: large) } == true && access.records[1]?.frame == large,
+               "cross-display move resizes again after leaving the smaller display")
+        access.entries?[0].frame = large
+        let moved = try backend.focusedWindow()
+        expect(moved.map { backend.moveFocused($0, to: small) } == true && access.records[1]?.frame == small,
+               "cross-display move back to the smaller display reaches its half")
     }
     for sibling in ["sameGeometry", "sameTitle", "atDestination"] {
         let access = ExecutionTestAccess()
@@ -384,8 +419,8 @@ private func windowExecutionChecks() throws {
                "focus is rechecked after payload creation immediately before first write")
         access.beforeValues = nil; access.focus = 1; access.trace = []
         expect(backend.moveFocused(original, to: target), "focused move succeeds after fresh identity and focus validation")
-        expect(access.trace.suffix(5) == ["focused:-1", "write:position:1", "write:size:1", "write:position:1", "frame:1"],
-               "focus recheck, position-size-position, readback order is exact")
+        expect(access.trace.suffix(6) == ["focused:-1", "root:1", "write:size:1", "write:position:1", "write:size:1", "frame:1"],
+               "focus recheck, size-position-size, readback order is exact")
     }
     for phase in 1...3 {
         let access = ExecutionTestAccess(), backend: WindowExecution<ExecutionTestAccess>
@@ -446,7 +481,7 @@ private func windowExecutionChecks() throws {
         backend = WindowExecution(access: access)
         let original = try backend.focusedWindow()!
         access.constrainSize = true
-        expect(backend.moveFocused(original, to: target) && access.writes == [.position, .size, .position],
+        expect(backend.moveFocused(original, to: target) && access.writes == [.size, .position, .size],
                "shortcut readback tolerates one-point AX rounding without recovery writes")
     }
     for fact in ["subrole", "minimized", "fullScreen", "position", "size", "offScreen", "layer"] {

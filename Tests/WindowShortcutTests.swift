@@ -141,6 +141,9 @@ func runWindowShortcutTests() {
     let thirdLeft = WindowShortcutAction.left.destination(for: secondLeft, displays: desk)!
     let fourthLeft = WindowShortcutAction.left.destination(for: thirdLeft, displays: desk)!
     let fifthLeft = WindowShortcutAction.left.destination(for: fourthLeft, displays: desk)!
+    let nearlyLeft = CGRect(x: lhs.minX, y: lhs.minY + 1, width: lhs.width - 1, height: lhs.height - 1)
+    expect(WindowShortcutAction.left.destination(for: nearlyLeft, displays: desk) == secondLeft,
+           "a half one point off after AX readback still continues to the next display")
     expect(firstLeft == lhs && secondLeft == CGRect(x: -450, y: -500, width: 450, height: 700) &&
            thirdLeft == CGRect(x: -900, y: -500, width: 450, height: 700) &&
            fourthLeft == CGRect(x: -1501, y: -500, width: 601, height: 900) &&
