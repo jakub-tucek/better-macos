@@ -191,9 +191,23 @@ private func windowExecutionChecks() throws {
         if missing == "title" { access.records[2]?.title = nil }
         if missing == "frame" { access.records[2]?.frame = nil }
         if missing == "windows" { access.appWindows[-1] = nil }
-        var failed = false
-        do { _ = try backend.focusedWindow() } catch { failed = true }
-        expect(failed && access.writes.isEmpty, "focused app's missing \(missing) still fails closed")
+        let focused = try backend.focusedWindow()
+        if missing == "windows" {
+            expect(focused == nil && access.writes.isEmpty, "focused app without a window list fails closed")
+        } else {
+            expect(focused.map { backend.moveFocused($0, to: target) } == true && access.writeElements == [1, 1, 1],
+                   "sibling window's missing \(missing) does not block the focused window")
+        }
+    }
+    for sibling in ["sameGeometry", "sameTitle", "atDestination"] {
+        let access = ExecutionTestAccess()
+        let backend = WindowExecution(access: access)
+        let frame = access.records[1]!.frame!
+        access.addWindow(2, title: sibling == "sameTitle" ? "Document" : "Other",
+                         frame: sibling == "sameGeometry" ? frame : sibling == "atDestination" ? target : other)
+        let focused = try backend.focusedWindow()
+        expect(focused.map { backend.moveFocused($0, to: target) } == true && access.writeElements == [1, 1, 1],
+               "\(sibling) sibling does not block a shortcut on the focused window")
     }
     do {
         let access = ExecutionTestAccess()
@@ -298,8 +312,6 @@ private func windowExecutionChecks() throws {
         let snapshot = try backend.windows()
         expect(snapshot.count == 2 && snapshot.allSatisfy { !$0.supported },
                "same-geometry sibling is unsupported even with different title and one CG correlation")
-        let focused = try backend.focusedWindow()
-        expect(focused == nil, "unsupported geometry is not returned as focused")
         expect(!backend.move(snapshot[0], to: target) && access.writes.isEmpty,
                "production move rejects same-geometry ambiguity")
     }
