@@ -25,7 +25,14 @@ private func runDeploymentEndpointTests() {
     var quits = 0
     let endpoint = DeploymentEndpoint(snapshot: {
         DeploymentHealth(session: "fixture", revision: "fixture", bundlePath: "/isolated", blockers: [], checks: ["watchdog": "ready"], configurationHash: "fixture")
-    }, prepareQuit: { blocked ? ["Active session"] : [] }, terminate: { quits += 1 })
+    }, prepareQuit: { blocked ? ["Active session"] : [] }, terminate: {
+        // Mirror AppKit's terminateLater loop waiting for a drain completed on the main queue.
+        var drained = false
+        DispatchQueue.main.async { drained = true }
+        let deadline = Date().addingTimeInterval(1)
+        while !drained && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+        if drained { quits += 1 }
+    })
     center.addObserver(probe, selector: #selector(DeploymentReplyProbe.receive(_:)), name: DeploymentEndpoint.response, object: nonce)
     defer { center.removeObserver(probe) }
     func send(_ action: String, expired: Bool = false) {
@@ -45,7 +52,7 @@ private func runDeploymentEndpointTests() {
     send("quit", expired: true)
     expect(quits == 0, "Expired update requests cannot terminate the GUI after the client gives up")
     send("quit")
-    expect(quits == 1 && probe.replies.last?.blockers.isEmpty == true, "Approved endpoint request replies before invoking normal host termination")
+    expect(quits == 1 && probe.replies.last?.blockers.isEmpty == true, "Approved endpoint request replies before invoking normal host termination, whose deferred drain can still complete")
     withExtendedLifetime(endpoint) {}
 }
 

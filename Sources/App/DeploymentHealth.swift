@@ -91,7 +91,9 @@ final class DeploymentEndpoint: NSObject {
         if let blockers { report.blockers = blockers }
         guard let data = try? JSONEncoder().encode(report), let text = String(data: data, encoding: .utf8) else { return }
         DistributedNotificationCenter.default().postNotificationName(Self.response, object: nonce, userInfo: ["report": text], deliverImmediately: true)
-        if action == "quit", report.blockers.isEmpty { DispatchQueue.main.async { self.terminate() } }
+        // Not a main-queue block: a deferred quit drains through main-queue callbacks,
+        // which cannot run while terminate's nested loop sits inside another one.
+        if action == "quit", report.blockers.isEmpty { RunLoop.main.perform { self.terminate() } }
     }
 }
 
