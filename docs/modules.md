@@ -7,9 +7,9 @@ not a completed lifecycle refactor; see [move evidence](validation/source-organi
 
 ## Modules, not a plugin system
 
-The thirteen [AppModule](../Sources/App/AppModules.swift) identities retain persisted enable-choice IDs
+The fourteen [AppModule](../Sources/App/AppModules.swift) identities retain persisted enable-choice IDs
 (`ModuleSettings`). [BuiltinFeatures.swift](../Sources/App/BuiltinFeatures.swift) registers inert
-titles, descriptions, dashboard destinations, Settings order and seven widget definitions (six suggested);
+titles, descriptions, dashboard destinations, Settings order and eight widget definitions (six suggested);
 identity properties delegate to that catalog without constructing owners.
 Developers compile feature owners into the app through [build.sh](../build.sh).
 
@@ -18,7 +18,7 @@ and retains activation, reconciliation, readiness and shutdown authority.
 [BuiltinChoicePreparations.swift](../Sources/App/BuiltinChoicePreparations.swift) registers typed
 Keep awake disable, Clipboard unload and shared Displays preparation before choice
 commit. It preserves refusal/retry and does not replace admission or quit coordination.
-Links and Battery use feature-local `FeatureRegistration` files and `FeatureOwners`.
+Links, Battery and Screenshots use feature-local `FeatureRegistration` files and `FeatureOwners`.
 New independent features use the [contribution workflow](architecture/builtin-registration.md#adding-an-independent-feature)
 without editing central identity, compiler-input or test-suite lists. Recovery/drain
 features still require explicit typed host coordination. There is no runtime loader.
@@ -28,7 +28,7 @@ setup and native host integration; `Core/` owns host transactions, readiness and
 shared command execution; `SharedUI/` holds the shared Settings/widget shell,
 feature configuration views and `StoredState`. `Features/<owner>/` co-locates
 feature implementations: Displays, Windows, Audio, Bluetooth, Clipboard, Mouse,
-Animations, MenuBar, QuitGuard, KeepAwake, Links and Battery. Shared display geometry, refresh and
+Animations, MenuBar, QuitGuard, KeepAwake, Links, Battery and Screenshots. Shared display geometry, refresh and
 cursor recovery remain together under Displays; Windows retains its own owner/UI.
 These folders are not module/package boundaries.
 `Sources/App/main.swift` remains the app/helper/CLI entry point; tests retain
@@ -80,6 +80,24 @@ Cleanup describes the relevant owner and path, not proof of live acceptance.
   the timer and clears the reading. No writes, helper, history, or sleep assertions.
 - **Checks:** injected readings, decoding and light/dark presentation fixtures in
   `Tests/Features/Battery/BatteryFeatureTests.swift`.
+
+### Screenshots · `screenshots`
+
+- **Owner/UI:** `Sources/Features/Screenshots/ScreenshotsModule.swift`; registration, Settings page
+  and optional widget in `ScreenshotsFeatureRegistration.swift`. Ported from Shottie: capture
+  overlay, editor, renderer, pin, preview and collage keep `Shot`-prefixed types.
+- **Access:** Screen Recording via ScreenCaptureKit, requested on first capture. Global
+  shortcuts use Carbon hot keys (no Accessibility). The handler claims only the `SHTT`
+  signature, so Windows and Clipboard shortcuts on the same target still arrive.
+- **Lifecycle:** enable registers shortcuts; user actions also require host admission.
+  Disable/quit cancels a pending selection or delayed capture, saves editor edits to
+  Recent Captures, closes editors, pins and preview, and releases shortcuts. Idempotent.
+- **Storage:** `screenshots.*` preferences in the host domain; recent captures in
+  `~/Library/Caches/Better macOS/Screenshots/Recent` (latest 20).
+- **Checks:** `Tests/Features/Screenshots/` ports Shottie's rendering/editing/storage tests and
+  covers owner lifecycle, admission, hot-key signature filtering, preference prefixing,
+  editor key commands and Settings fixtures. Outside an `.app` bundle, the owner gets an
+  inert hot-key binding, so isolated runs never grab live shortcuts.
 
 ### Monitor switching · `monitors`
 

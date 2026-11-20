@@ -27,7 +27,7 @@ xcrun swiftc -swift-version 5 -warnings-as-errors -target arm64-apple-macos15.0 
     -I "$CLIPBOARD_PACKAGE_MODULES" "$CLIPBOARD_PACKAGE_ARCHIVE" \
     -I Vendor/strafe/CStrafe/include -I MouseHID build/ui-harness/objects/*.o \
     -framework AppKit -framework ServiceManagement -framework SwiftUI -framework CoreBluetooth -framework ApplicationServices -framework CoreGraphics \
-    -framework Carbon -framework CoreAudio -framework CoreFoundation -framework IOKit -o "$APP/Contents/MacOS/ui-test-host"
+    -framework Carbon -framework CoreAudio -framework CoreFoundation -framework IOKit -framework ScreenCaptureKit -framework Vision -o "$APP/Contents/MacOS/ui-test-host"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

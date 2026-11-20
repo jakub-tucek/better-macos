@@ -57,7 +57,7 @@ remain loaded until their work is safe.
 | Right-click menu-bar icon | Window actions, Quick actions, Keep awake, Settings, Quit |
 | Window actions palette | Illustrated window layouts and display movement |
 | Keep awake palette | Duration presets, custom duration, display wake, extension, End session |
-| Settings | Configuration in nine tabs; reused rather than opening another window |
+| Settings | Configuration in ten tabs; reused rather than opening another window |
 | Clipboard panel · ⌘⇧V | Search, select, copy, pin, and delete history entries |
 | General → Show activity… | Session-only operation outcomes, not technical logs |
 
@@ -266,6 +266,36 @@ measurements; sensors can update at different times. Missing or contradictory re
 stay unavailable. Unplugging discards stale adapter telemetry. A battery can supply
 power while an adapter is connected; the diagram shows both sources in that case.
 
+## Screenshots
+
+Screenshots brings the Shottie capture editor into Better macOS. While enabled it owns
+three global shortcuts, editable in **Settings → Screenshots**:
+
+| Shortcut | Action |
+| --- | --- |
+| ⇧⌘3 | Capture area: drag a box, click a window, Return for the whole display, Esc cancels |
+| ⌥⇧1 | Capture the screen under the pointer |
+| ⌥⇧3 | Reopen the last capture with its annotations |
+
+⇧⌘3 replaces the macOS full-screen screenshot shortcut while Screenshots is on;
+disabling the feature releases all three. A shortcut another app already holds is
+reported in Settings rather than silently ignored. Add the optional **Screenshots**
+widget in Quick actions for capture buttons; the popup closes before capturing.
+`--show-screenshots` opens the Settings page on launch.
+
+The editor offers box, text, arrow, select, crop, measure, pixelate, ellipse, line,
+pen, highlighter, numbered-step and spotlight tools, a beautify backdrop (F), color
+picking (Tab/I), pinning on top (⌘P), retake (⌘R), save (⌘S, ⇧⌘S), OCR to the
+clipboard (⇧⌘C) and collages. The full key list is under **Editor keys** in Settings.
+After ⌘C the editor closes and a preview stays in the corner for six seconds by default;
+click it to reopen or drag it into another app. Editors don't add a Dock icon.
+
+The latest 20 captures and their edits are kept in
+`~/Library/Caches/Better macOS/Screenshots/Recent`. Disabling the feature or quitting
+saves open edits there, then closes editors, pins and previews. ⌘S writes to the
+Desktop unless you choose another folder. Choices are stored under the `screenshots.`
+preference prefix.
+
 ## Clipboard privacy and retention
 
 **Record automatically when Clipboard starts** controls startup capture and is recommended
@@ -363,8 +393,10 @@ Run developer checks with [these commands](development.md#commands).
   capture/restore, and window tiling. Grant access for the features you use.
 - **Bluetooth:** contextual authorization for device management. Parent app access
   does not independently prove external helper access.
-- **Microphone / Screen Recording:** selecting an audio input does not record it.
-  Production features need neither microphone-recording nor Screen Recording access.
+- **Screen Recording:** Screenshots only, requested on your first capture. macOS
+  may ask you to reopen Better macOS after granting it.
+- **Microphone:** selecting an audio input does not record it. No feature needs
+  microphone-recording access.
 
 Display and gesture features use private macOS APIs. The watchdog cannot guarantee
 recovery from a stalled WindowServer or graphics driver. Physical monitor recovery,

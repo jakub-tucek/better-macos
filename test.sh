@@ -25,7 +25,7 @@ xcrun swiftc -swift-version 5 -warnings-as-errors -target arm64-apple-macos15.0 
     -I Vendor/strafe/CStrafe/include -I MouseHID \
     build/objects/CStrafe.o build/objects/IOHIDPayload.o build/objects/MouseHID.o \
     -framework AppKit -framework ServiceManagement -framework SwiftUI -framework CoreBluetooth -framework ApplicationServices -framework CoreGraphics \
-    -framework Carbon -framework CoreAudio -framework CoreFoundation -framework IOKit -o build/isolated-tests
+    -framework Carbon -framework CoreAudio -framework CoreFoundation -framework IOKit -framework ScreenCaptureKit -framework Vision -o build/isolated-tests
 build/isolated-tests
 bash Tests/ui-harness.sh
 bash Tests/install.sh

@@ -38,6 +38,7 @@ Real app views rendered with sample data.
 | Bluetooth reconnect | Reconnect chosen paired devices or connect/disconnect manually when helper reads are verified. Conflicting helper/macOS status blocks control. |
 | Keep awake | Prevent idle sleep for a timer or while selected apps run, optionally keeping the display awake too. |
 | Battery | Live adapter/battery power flow, estimated Mac consumption, charge, condition, cycles and temperature. Dedicated details page and optional widget; charging stays under macOS control. |
+| Screenshots | Capture an area (⇧⌘3), a window or a screen (⌥⇧1), then annotate, crop, pixelate, beautify, pin or copy text (OCR) in a focused editor. Reopen the last capture with its edits (⌥⇧3). Shortcuts are editable; needs Screen Recording. |
 | Clipboard | Search text/PNG history with ⌘⇧V, pin entries, and copy them back without automatic paste. Choose automatic recording at startup; history stays in memory unless you enable disk storage. |
 | Hold to quit | Hold ⌘Q through a countdown to avoid accidental quits. |
 | Animations | Reduce selected system effects, with optional fast horizontal desktop switching. Some animations remain. |
@@ -49,7 +50,7 @@ Real app views rendered with sample data.
 
 - **Left-click the menu-bar icon:** your chosen quick-action widgets.
 - **Right-click:** Window actions, Quick actions, Keep awake, Settings, and Quit.
-- **Settings:** nine tabs for configuration; **General → Run setup again** revisits setup.
+- **Settings:** ten tabs for configuration; **General → Run setup again** revisits setup.
 - **Quick actions → Edit:** add, reorder, or remove widgets. Removing a widget does not disable its feature or delete its data.
 
 Window and Keep awake palettes offer larger, keyboard-navigable controls. Opening a palette changes nothing until you choose an action. [Usage, shortcuts, and defaults →](docs/usage.md)
@@ -78,7 +79,7 @@ This runs a source installer: it downloads the repository, installs `blueutil` a
 
 ## Before enabling features
 
-- **Permissions are contextual.** Window actions, matched edges, desktop switching, and Hold to quit need Accessibility. Bluetooth management needs Bluetooth access. Audio input selection does not record sound; production features need neither microphone-recording nor Screen Recording permission.
+- **Permissions are contextual.** Window actions, matched edges, desktop switching, and Hold to quit need Accessibility. Bluetooth management needs Bluetooth access. Screenshots needs Screen Recording. Audio input selection does not record sound or need microphone-recording permission.
 - **Clipboard disk history is optional and unencrypted.** Capture, retention, and deleting history are separate choices. [Privacy and retention](docs/usage.md#clipboard-privacy-and-retention).
 - **Some controls use private macOS APIs.** Display/gesture recovery cannot guarantee recovery from a stalled WindowServer or graphics driver. Bluetooth reconnect remains blocked on helper/native disagreement; the native probe is not a control fallback.
 - **Scope has limits.** No cross-Space/full-screen window restore, per-device mouse or wheel controls, notch-overflow panel, or runtime plugins. Live hardware and VoiceOver checks remain open. [Validation and known gaps](docs/validation/README.md).
