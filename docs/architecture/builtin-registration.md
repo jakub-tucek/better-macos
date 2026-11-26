@@ -5,11 +5,11 @@ feature lifecycle framework. All owners remain compiled into the app executable.
 
 ## Presentation catalog
 
-[BuiltinFeatures.swift](../../Sources/App/BuiltinFeatures.swift) registers thirteen `AppModule` identities and seven widget
+[BuiltinFeatures.swift](../../Sources/App/BuiltinFeatures.swift) registers fourteen `AppModule` identities and eight widget
 kinds. The catalog contains values only: titles, descriptions, dashboard
 destinations, Settings membership/order and widget ownership/suggestion order.
 `AppModule`, `DashboardTab`, `SettingsGroup` and `WidgetKind` are extensible raw-value
-identities. Legacy definitions remain in the shared catalog; Links and Battery
+identities. Legacy definitions remain in the shared catalog; Links, Battery and Screenshots
 contribute feature-local definitions, view factories and independent owners through
 `FeatureRegistration`. No view or owner factory executes during metadata lookup.
 

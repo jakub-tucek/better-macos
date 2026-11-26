@@ -61,7 +61,7 @@ xcrun swiftc -swift-version 5 -warnings-as-errors -O -target arm64-apple-macos15
     -I Vendor/strafe/CStrafe/include -I MouseHID \
     build/objects/CStrafe.o build/objects/IOHIDPayload.o build/objects/MouseHID.o \
     -framework Carbon -framework CoreAudio -framework AppKit -framework ServiceManagement \
-    -framework SwiftUI -framework CoreBluetooth -framework ApplicationServices -framework CoreGraphics -framework CoreFoundation -framework IOKit \
+    -framework SwiftUI -framework CoreBluetooth -framework ApplicationServices -framework CoreGraphics -framework CoreFoundation -framework IOKit -framework ScreenCaptureKit -framework Vision \
     -o "$APP/Contents/MacOS/better-macos"
 codesign --force --sign "$SIGNING_IDENTITY" "$APP"
 codesign --verify --strict "$APP"
