@@ -165,7 +165,8 @@ final class ScreenshotsModule: NSObject, ObservableObject {
     private func hasPermission() -> Bool {
         refresh()
         if hasScreenAccess { return true }
-        CGRequestScreenCaptureAccess()
+        requestScreenRecordingAccess()
+        if hasScreenAccess { return true }
         let alert = NSAlert()
         alert.messageText = "Screenshots needs Screen Recording access"
         alert.informativeText = "Turn on Better macOS in System Settings › Privacy & Security › Screen & System Audio Recording, then try again. macOS may ask you to reopen Better macOS."
@@ -174,6 +175,14 @@ final class ScreenshotsModule: NSObject, ObservableObject {
         activate()
         if alert.runModal() == .alertFirstButtonReturn { openScreenRecordingSettings() }
         return false
+    }
+
+    func requestScreenRecordingAccess() {
+        guard acceptsActions() else { return }
+        refresh()
+        guard !hasScreenAccess else { return }
+        CGRequestScreenCaptureAccess()
+        refresh()
     }
 
     func openScreenRecordingSettings() {

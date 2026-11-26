@@ -117,6 +117,9 @@ struct ScreenshotsSettingsView: View {
                 }
             }
         }.onAppear(perform: module.refresh)
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                module.refresh()
+            }
     }
 
     private var status: some View {
@@ -128,7 +131,7 @@ struct ScreenshotsSettingsView: View {
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Screen Recording access needed").font(.headline)
-                        Text("Allow Better macOS in Privacy & Security › Screen & System Audio Recording. macOS may ask you to reopen Better macOS.")
+                        Text("Request access to capture your screen. If access was previously denied, enable Better macOS in Privacy settings. macOS may ask you to reopen the app.")
                             .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -136,7 +139,8 @@ struct ScreenshotsSettingsView: View {
             }
             if !module.hasScreenAccess {
                 HStack {
-                    Button("Open Privacy settings", action: module.openScreenRecordingSettings).buttonStyle(.borderedProminent)
+                    Button("Request access", action: module.requestScreenRecordingAccess).buttonStyle(.borderedProminent)
+                    Button("Open Privacy settings", action: module.openScreenRecordingSettings)
                     Button("Check again", action: module.refresh)
                 }
             }
