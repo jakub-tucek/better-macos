@@ -46,7 +46,6 @@ struct UpdateSessionPolicy {
     var unsavedRules = false
     var transientUI = false
     var browserChange = false
-    var audioOverride = false
     var unsavedWidgets = false
 
     var blockers: [String] {
@@ -59,7 +58,6 @@ struct UpdateSessionPolicy {
          (unsavedRules, "Save or discard the Links draft before updating."),
          (transientUI, "Close the display editor or settings sheet and reveal hidden menu-bar icons before updating."),
          (browserChange, "Wait for the default-browser change to finish."),
-         (audioOverride, "A manual Audio override is active. Resolve it with Resume in Audio before updating."),
          (unsavedWidgets, "Finish or cancel widget editing before updating.")].compactMap { $0.0 ? $0.1 : nil }
     }
 }

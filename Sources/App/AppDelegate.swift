@@ -278,7 +278,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             unsavedRules: links?.hasUnsavedRuleEdits == true,
             transientUI: arrangementWindow?.isVisible == true || settingsWindow?.attachedSheet != nil || menuBar?.hidden == true,
             browserChange: links?.changingDefaultBrowser == true,
-            audioOverride: AudioDirection.allCases.contains { audio?.isOverridden($0) == true },
             unsavedWidgets: model.popupWidgetEditor.draft != nil || model.settingsWidgetEditor.draft != nil)
     }
 

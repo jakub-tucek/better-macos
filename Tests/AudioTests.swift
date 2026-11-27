@@ -147,6 +147,16 @@ func runAudioPresentationTests() {
     audio.poll()
     expect(publications > failedPublications && model.audioStatus != "Discovery failed", "recovery from failure publishes immediately")
     expect(fake.writes.isEmpty, "presentation optimization never introduces route writes")
+
+    let wiredOutput = AudioDevice(uid: "wired", name: "Wired speaker", directions: [.output], bluetooth: false)
+    fake.available.append(wiredOutput)
+    audio.poll()
+    model.onAudioSelect(wiredOutput.uid, .output)
+    expect(audio.isOverridden(.output), "Selecting a wired speaker establishes a manual output override")
+    expect(host.prepareForUpdate().isEmpty && host.deploymentHealth().blockers.isEmpty,
+           "A manual Audio override does not defer updates")
+    expect(audio.isOverridden(.output) && fake.routes[.output] == wiredOutput.uid && fake.writes.count == 1,
+           "Update preparation leaves the current Audio route alone")
 }
 
 private func runBluetoothAudioIntegrationTests() {

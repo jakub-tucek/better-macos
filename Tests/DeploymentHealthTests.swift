@@ -110,7 +110,7 @@ func runDeploymentHealthTests() {
     expect(UpdateSessionPolicy().blockers.isEmpty, "Idle update policy permits deployment")
     for policy in [UpdateSessionPolicy(busy: true), UpdateSessionPolicy(keepAwake: true), UpdateSessionPolicy(mouseOverride: true),
                    UpdateSessionPolicy(displayRecovery: true), UpdateSessionPolicy(volatileClipboard: true), UpdateSessionPolicy(clipboardRecording: true),
-                   UpdateSessionPolicy(unsavedRules: true), UpdateSessionPolicy(transientUI: true), UpdateSessionPolicy(browserChange: true), UpdateSessionPolicy(audioOverride: true), UpdateSessionPolicy(unsavedWidgets: true)] {
+                   UpdateSessionPolicy(unsavedRules: true), UpdateSessionPolicy(transientUI: true), UpdateSessionPolicy(browserChange: true), UpdateSessionPolicy(unsavedWidgets: true)] {
         expect(!policy.blockers.isEmpty, "Transient or unrecovered session defers updates instead of losing state")
     }
     let suite = "better-macos.deployment-tests.\(UUID().uuidString)"

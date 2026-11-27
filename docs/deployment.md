@@ -69,7 +69,7 @@ saved choices, not Clipboard content, URLs, profile names or device identifiers.
 | Unsaved Links or widget edits | Defer until Save/Discard or Done/Cancel |
 | Timed/app Keep awake, including paused app rules | Defer; never silently end or resume a session |
 | Mouse override, pending display restoration | Defer until explicitly restored |
-| Manual Audio override | Defer until resolved with Audio Resume |
+| Manual Audio override | Continue; startup can reapply saved automatic routing preferences |
 | Clipboard recording | Defer until paused; startup remains paused |
 | Memory-only Clipboard history | Defer; explicitly persist or clear it first, never silently write it to disk |
 | Persistent Clipboard history | Existing archive/recovery policy applies; host vetoes pending cleanup |
