@@ -370,15 +370,9 @@ struct QuickActionsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: AppStyle.spacing) {
                     SafetyAlerts(model: model, showAwakeSession: editor.draft != nil || !entries.contains { $0.known == .keepAwake && model.enabledModules.contains(.keepAwake) })
-                    if model.updateAvailable {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Label("Update available", systemImage: "arrow.down.circle")
-                                .font(.headline)
-                            Text("Build and restart with the latest changes. Progress opens in Terminal.")
-                                .font(.caption).foregroundStyle(.secondary)
-                            Button("Update now", action: model.onInstallUpdate)
-                                .buttonStyle(.borderedProminent)
-                        }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                    if editor.draft == nil, model.updateAvailable || model.updateInstalling {
+                        UpdateControls(model: model, compact: true)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(12)
                             .modifier(AppSurface())
                     }
                     if editor.draft != nil {
@@ -977,10 +971,7 @@ struct SettingsView: View {
                 }
             }
             DashboardCard {
-                Label("Updates", systemImage: "arrow.triangle.2.circlepath").font(.headline)
-                Text(model.updateStatus)
-                Button("Check for updates", action: model.onCheckUpdates).disabled(model.updateChecking)
-                if model.updateAvailable { Button("Install update…", action: model.onInstallUpdate) }
+                UpdateControls(model: model)
             }
             DashboardCard {
                 HStack(alignment: .top, spacing: 16) {
@@ -994,6 +985,58 @@ struct SettingsView: View {
             }
             DisclosureGroup("Diagnostics") { Text(model.watchdogStatus).textSelection(.enabled) }
         }
+    }
+}
+
+private struct UpdateControls: View {
+    @ObservedObject var model: DashboardModel
+    var compact = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: model.updateInstallFailed ? "exclamationmark.circle" : "arrow.down.circle")
+                .font(.headline)
+            if let message = model.updateInstallMessage {
+                Text(message)
+                    .font(.caption).foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            if model.updateInstalling {
+                ProgressView().progressViewStyle(.linear)
+                    .accessibilityLabel("Update in progress")
+            } else {
+                if !compact {
+                    Text(model.updateStatus).font(.caption).foregroundStyle(.secondary)
+                }
+                if compact, !model.updateInstallFailed {
+                    Text("Better macOS builds the update before restarting.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if model.updateAvailable {
+                    HStack {
+                        Button("Update & restart", action: model.onInstallUpdate)
+                            .buttonStyle(.borderedProminent)
+                            .disabled(model.updateChecking)
+                        if let changes = model.updateChangesURL {
+                            Link("What’s new", destination: changes)
+                        }
+                    }
+                }
+                if !compact {
+                    Button(model.updateChecking ? "Checking…" : "Check for updates", action: model.onCheckUpdates)
+                        .disabled(model.updateChecking)
+                }
+            }
+            if model.updateHasLog, !compact || model.updateInstallFailed {
+                Button("Show update log in Finder", action: model.onRevealUpdateLog)
+            }
+        }
+    }
+
+    private var title: String {
+        if model.updateInstalling { return "Updating Better macOS" }
+        if model.updateInstallFailed { return "Update needs attention" }
+        return compact ? "Update available" : "Updates"
     }
 }
 

@@ -210,6 +210,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             model.updateStatus = sourceUpdater.status
             model.updateChecking = sourceUpdater.isChecking
             model.updateAvailable = sourceUpdater.canInstall
+            model.updateInstalling = sourceUpdater.isInstalling
+            model.updateInstallMessage = sourceUpdater.installMessage
+            model.updateInstallFailed = sourceUpdater.installFailed
+            model.updateChangesURL = sourceUpdater.changesURL
+            model.updateHasLog = sourceUpdater.logURL != nil
         }
         sourceUpdater.start()
         safety.onStatusChanged = { [weak self] status in
@@ -502,9 +507,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model.onCheckUpdates = { [weak self] in self?.actionHost?.sourceUpdater.check(force: true) }
         model.onInstallUpdate = { [weak self] in
             guard let self, actionHost != nil else { return }
-            let blockers = updateSessionPolicy.blockers
-            guard blockers.isEmpty else { showError(ToggleError(message: blockers.joined(separator: " "))); return }
-            do { try sourceUpdater.install() } catch { showError(error) }
+            sourceUpdater.install(blockers: updateSessionPolicy.blockers)
+        }
+        model.onRevealUpdateLog = { [weak self] in
+            guard let log = self?.actionHost?.sourceUpdater.logURL else { return }
+            NSWorkspace.shared.activateFileViewerSelecting([log])
         }
         model.onSpeedChanged = { [weak self] speed in self?.actionHost?.spaces?.speed = speed; self?.actionHost?.refreshPreferences() }
         model.onLoginChanged = { [weak self] enabled in

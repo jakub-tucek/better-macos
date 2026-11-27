@@ -31,6 +31,9 @@ local-development update mode. In-app updates then fast-forward that clean local
 main checkout to the exact offered revision and deploy it. Installer-managed
 checkouts use their installer path, also pinned to the offered revision. Local
 changes, divergent/ahead histories and unavailable revisions stop the update.
+**Update & restart** launches a background worker that survives normal app quit.
+Settings → General → Updates shows progress and the latest result and can reveal
+the latest update log. A second in-app update cannot start while that worker is running.
 
 ### What the transaction does
 

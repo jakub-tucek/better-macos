@@ -9,6 +9,21 @@ if let index = CommandLine.arguments.firstIndex(of: "--deployment-restart-fixtur
     exit(0)
 }
 
+if let index = CommandLine.arguments.firstIndex(of: "--source-update-worker-fixture"), index + 2 < CommandLine.arguments.count {
+    let run = SourceUpdateRun(directory: URL(fileURLWithPath: CommandLine.arguments[index + 1], isDirectory: true))
+    try run.start(revision: CommandLine.arguments[index + 2], script: """
+        for ((attempt = 0; attempt < 100; attempt++)); do
+            if [[ -f finish ]]; then
+                printf 'Update deferred: finish the test session.\\n' >&2
+                exit 1
+            fi
+            sleep 0.1
+        done
+        exit 2
+        """)
+    exit(0)
+}
+
 if CommandLine.arguments.contains("--deployment-tests") {
     runDeploymentHealthTests()
     exit(0)
@@ -1300,6 +1315,11 @@ UpdateURLProtocol.configure(body: comparisonJSON("ahead"))
 updater.check(force: true)
 finishUpdateCheck()
 expect(updater.availableRevision == newerRevision && updater.canInstall, "Source-managed install exposes an available update")
+expect(updater.changesURL?.path.hasSuffix("/compare/\(sourceRevision)...\(newerRevision)") == true,
+       "What’s new links to the exact offered update")
+updater.install(blockers: ["Pause recording before updating."])
+expect(updater.installFailed && !updater.isInstalling && updater.installMessage == "Pause recording before updating.",
+       "Active sessions defer installation and report the blocker inline")
 let requestsBeforeCache = UpdateURLProtocol.requestCount
 updater.check()
 expect(UpdateURLProtocol.requestCount == requestsBeforeCache && updater.canInstall, "Daily update throttle preserves the cached available revision")
@@ -1314,6 +1334,41 @@ expect(updater.status.contains("not published") && !updater.canInstall, "Unpubli
 updater.stop()
 updateSession.invalidateAndCancel()
 updateDefaults.removePersistentDomain(forName: updateDomain)
+
+do {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("source-update-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let run = SourceUpdateRun(directory: directory)
+    let launcher = Process()
+    launcher.executableURL = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL
+    launcher.arguments = ["--source-update-worker-fixture", directory.path, newerRevision]
+    try launcher.run()
+    launcher.waitUntilExit()
+    expect(launcher.terminationStatus == 0 && run.status(installedRevision: sourceRevision) == .running(newerRevision),
+           "Update worker and its lock survive the launching GUI process")
+    do {
+        try run.start(revision: sourceRevision, script: "exit 0")
+        expect(false, "A running update must reject a duplicate worker after relaunch")
+    } catch {
+        expect(error.localizedDescription.contains("already in progress"), "Duplicate update is rejected")
+    }
+    try Data().write(to: directory.appendingPathComponent("finish"))
+    func waitForUpdateResult(installedRevision: String) -> SourceUpdateRun.Status? {
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline {
+            let status = run.status(installedRevision: installedRevision)
+            if status?.isRunning != true { return status }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+        return run.status(installedRevision: installedRevision)
+    }
+    expect(waitForUpdateResult(installedRevision: sourceRevision) == .failed("Update deferred: finish the test session."),
+           "A late deferral survives process exit and exposes the worker’s error")
+    try run.start(revision: newerRevision, script: "exit 0")
+    expect(waitForUpdateResult(installedRevision: newerRevision) == .installed(newerRevision),
+           "A retry records successful installation for the matching relaunched revision")
+    expect(run.status(installedRevision: sourceRevision) == nil, "A different running revision never reports that it was updated")
+}
 
 let spacingDomain = "better-macos.spacing-test.\(UUID().uuidString)"
 let spacingDefaults = UserDefaults(suiteName: spacingDomain)!

@@ -1,4 +1,4 @@
-import AppKit
+import Foundation
 
 enum SourceUpdateComparison {
     case current
@@ -74,18 +74,34 @@ struct SourceInstallation {
     }
 }
 
-/// Only checks source history automatically. Installation requires a user action
-/// and runs in Terminal so it survives the old app's graceful shutdown.
 final class SourceUpdater {
     private let installation: SourceInstallation
     private let defaults: UserDefaults
     private let session: URLSession
+    private let updateRun: SourceUpdateRun?
     private var timer: Timer?
+    private var installTimer: Timer?
     private var task: URLSessionDataTask?
     private(set) var status = "Not checked yet"
     private(set) var isChecking = false
     private(set) var availableRevision: String?
+    private(set) var installStatus: SourceUpdateRun.Status?
+    private(set) var installError: String?
+    var isInstalling: Bool { installStatus?.isRunning == true }
     var canInstall: Bool { installation.managed && availableRevision != nil }
+    var installFailed: Bool {
+        if installError != nil { return true }
+        if case .failed = installStatus { return true }
+        return false
+    }
+    var changesURL: URL? {
+        guard let revision = availableRevision else { return nil }
+        return URL(string: "https://github.com/jakub-tucek/better-macos/compare/\(installation.revision)...\(revision)")
+    }
+    var logURL: URL? {
+        guard let log = updateRun?.log, FileManager.default.fileExists(atPath: log.path) else { return nil }
+        return log
+    }
     var onChange: (() -> Void)?
 
     init(installation: SourceInstallation = SourceInstallation(), defaults: UserDefaults = .standard,
@@ -93,16 +109,25 @@ final class SourceUpdater {
         self.installation = installation
         self.defaults = defaults
         self.session = session
+        updateRun = installation.destination.map { SourceUpdateRun(destination: $0) }
     }
 
     func start() {
+        refreshInstallStatus()
         check()
         let timer = Timer(timeInterval: 3600, repeats: true) { [weak self] _ in self?.check() }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
     }
 
-    func stop() { timer?.invalidate(); timer = nil; task?.cancel(); task = nil }
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+        installTimer?.invalidate()
+        installTimer = nil
+        task?.cancel()
+        task = nil
+    }
 
     func check(force: Bool = false) {
         guard !isChecking else { return }
@@ -185,16 +210,47 @@ final class SourceUpdater {
         onChange?()
     }
 
-    func install() throws {
-        guard let revision = availableRevision else { return }
-        let script = try installation.updateScript(revision: revision)
-        let directory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Better macOS")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let file = directory.appendingPathComponent("Update Better macOS.command")
-        try Data(script.utf8).write(to: file, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: file.path)
-        NSWorkspace.shared.open([file], withApplicationAt: URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"), configuration: .init()) { [weak self] _, error in
-            if let error { DispatchQueue.main.async { self?.status = error.localizedDescription; self?.onChange?() } }
+    func install(blockers: [String]) {
+        guard !isChecking, !isInstalling, let revision = availableRevision, let updateRun else { return }
+        if !blockers.isEmpty {
+            installError = blockers.joined(separator: " ")
+            onChange?()
+            return
+        }
+        installError = nil
+        do {
+            try updateRun.start(revision: revision, script: installation.updateScript(revision: revision))
+        } catch {
+            installError = error.localizedDescription
+        }
+        refreshInstallStatus()
+        onChange?()
+    }
+
+    private func refreshInstallStatus() {
+        let status = updateRun?.status(installedRevision: installation.revision)
+        let changed = installStatus != status
+        installStatus = status
+        if isInstalling, installTimer == nil {
+            let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.refreshInstallStatus() }
+            RunLoop.main.add(timer, forMode: .common)
+            installTimer = timer
+        } else if !isInstalling {
+            installTimer?.invalidate()
+            installTimer = nil
+        }
+        if changed { onChange?() }
+    }
+
+    var installMessage: String? {
+        if let installError { return installError }
+        switch installStatus {
+        case .running(let revision):
+            if revision == installation.revision { return "Checking the updated app…" }
+            return "Preparing \(revision.prefix(7))… Better macOS will restart when ready."
+        case .installed(let revision): return "Updated to \(revision.prefix(7))."
+        case .failed(let details): return details
+        case nil: return nil
         }
     }
 }

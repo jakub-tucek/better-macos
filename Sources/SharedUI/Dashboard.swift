@@ -197,6 +197,11 @@ final class DashboardModel: ObservableObject {
     @Published var updateStatus = "Not checked yet"
     @Published var updateChecking = false
     @Published var updateAvailable = false
+    @Published var updateInstalling = false
+    @Published var updateInstallMessage: String?
+    @Published var updateInstallFailed = false
+    @Published var updateChangesURL: URL?
+    @Published var updateHasLog = false
     @Published var compactMenuBar = false
     @Published var menuBarHiding = false
     @Published var menuBarHidden = false
@@ -286,6 +291,7 @@ final class DashboardModel: ObservableObject {
     var onOpenLoginSettings: () -> Void = {}
     var onCheckUpdates: () -> Void = {}
     var onInstallUpdate: () -> Void = {}
+    var onRevealUpdateLog: () -> Void = {}
     var onClose: () -> Void = {}
     var onQuit: () -> Void = {}
 

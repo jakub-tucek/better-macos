@@ -352,10 +352,12 @@ Unchanged revisions are skipped only when signing configuration and the installe
 signature also match. Changing the selected signing identity triggers a rebuild.
 
 **Settings → General → Updates** checks GitHub source history on `main`, with a daily
-automatic check and a manual check. Managed installations show an **Update now**
-prompt in Quick actions when a newer revision is available; one click starts the
-guarded update in Terminal. General also offers **Install update…**. Active sessions
-and unsaved edits can defer installation; complete the reported action and retry.
+automatic check and a manual check. When a newer revision is available, managed
+installations offer **Update & restart** and **What’s new** in Quick actions and
+General. The app shows progress while the update builds in the background, then
+restarts through the guarded update flow. Active sessions and unsaved edits can
+defer installation; complete the reported action and retry. General shows the
+result and can reveal the latest update log in Finder.
 Updates follow source commits, not release versions. The app downloads
 `install.sh` at the offered SHA and builds that exact revision. Managed local
 checkouts use the guarded deployment command at the offered revision.
